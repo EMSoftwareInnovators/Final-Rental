@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>BE KIND, REWIND</title>
+<link rel="stylesheet" href="src/style.css">
+</head>
+<body>
+<div id="cabinet">
+  <canvas id="screen" width="320" height="240"></canvas>
+
+  <!-- ============ HUD ============ -->
+  <div id="hud" class="layer">
+    <div id="clock"><span id="clock-time">9:00 PM</span><span id="clock-night">NIGHT 1</span></div>
+    <div id="till">TILL $<span id="till-amt">0</span></div>
+    <div id="hands"></div>
+    <div id="reticle"></div>
+    <div id="prompt"></div>
+    <div id="toasts"></div>
+    <div id="objective"></div>
+  </div>
+
+  <!-- ============ DIALOGUE ============ -->
+  <div id="dialogue" class="layer hidden">
+    <div id="dlg-portrait"><canvas id="dlg-face" width="64" height="64"></canvas></div>
+    <div id="dlg-body">
+      <div id="dlg-name">CUSTOMER</div>
+      <div id="dlg-text"></div>
+      <ul id="dlg-choices"></ul>
+    </div>
+  </div>
+
+  <!-- ============ NOTEPAD ============ -->
+  <div id="notes" class="layer hidden">
+    <div class="pad">
+      <div class="sheet">
+        <div>
+          <h2>SUSPECT BULLETIN</h2>
+          <ul id="notes-suspect"></ul>
+        </div>
+        <div>
+          <h2 id="notes-target-hdr">PERSON IN VIEW</h2>
+          <ul id="notes-target"></ul>
+        </div>
+      </div>
+      <p class="pad-foot">[TAB] close &nbsp;&middot;&nbsp; matches highlighted</p>
+    </div>
+  </div>
+
+  <!-- ============ PHONE ============ -->
+  <div id="phone-ui" class="layer hidden">
+    <div class="pad">
+      <h2 id="phone-hdr">9-1-1 &mdash; WHAT IS YOUR EMERGENCY?</h2>
+      <div id="phone-text"></div>
+      <ul id="phone-choices"></ul>
+    </div>
+  </div>
+
+  <!-- ============ TITLE / MENU ============ -->
+  <div id="title" class="layer">
+    <div class="title-wrap">
+      <div class="title-logo">
+        <span class="l1">BE KIND,</span>
+        <span class="l2">REWIND</span>
+      </div>
+      <p class="tag">SUNSET VIDEO &middot; OCT 1996 &middot; GRAVEYARD SHIFT</p>
+      <ul id="title-menu">
+        <li data-act="start" class="sel">START SHIFT</li>
+        <li data-act="howto">HOW TO WORK THE COUNTER</li>
+        <li data-act="options">OPTIONS</li>
+      </ul>
+      <p class="hint">arrows / mouse &middot; ENTER to select</p>
+    </div>
+  </div>
+
+  <!-- ============ PANEL (howto / options / report / ending) ============ -->
+  <div id="panel" class="layer hidden"><div class="pad" id="panel-body"></div></div>
+
+  <div id="fade" class="layer"></div>
+  <div id="letterbox-top"></div>
+  <div id="letterbox-bot"></div>
+</div>
+<div id="rotate">TURN DEVICE / USE A LARGER SCREEN</div>
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

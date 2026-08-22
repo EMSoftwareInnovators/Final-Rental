@@ -1,0 +1,13 @@
+{
+  "name": "vhs-horror",
+  "version": "1.0.0",
+  "private": true,
+  "description": "BE KIND, REWIND - a first-person PS1-era horror game set in a 1996 video rental store",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.js",
+    "dev": "node serve.js",
+    "check": "node tools/check.js"
+  },
+  "engines": { "node": ">=18" }
+}
