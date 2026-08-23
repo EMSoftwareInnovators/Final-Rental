@@ -8,7 +8,7 @@ const run = (cmd, args) => new Promise((res) => {
   p.on('exit', (code) => res(code || 0));
 });
 
-const server = spawn(process.execPath, ['serve.js'], { stdio: 'ignore', env: { ...process.env, PORT: '8080' } });
+const server = spawn(process.execPath, ['serve.cjs'], { stdio: 'ignore', env: { ...process.env, PORT: '8080' } });
 await new Promise((r) => setTimeout(r, 700));
 
 let failed = 0;

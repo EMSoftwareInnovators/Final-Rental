@@ -25,9 +25,25 @@ npm start          # serves on http://localhost:8080
 
 Then open <http://localhost:8080> and click to grab the mouse.
 
-There is no build step and no dependency to install — the whole game is
-hand-written ES modules. It **must** be served over `http://`, because browsers
-refuse to load ES modules from `file://`.
+There is no build step and nothing to install. The server is plain CommonJS
+and starts on any Node from v8 onwards — if `npm start` complains about
+`import` or `Unexpected token {`, you are running an old Node against an old
+copy of this file; `git pull` and try again.
+
+No Node at all? Anything that serves a directory works:
+
+```bash
+python3 -m http.server 8080        # macOS and Linux already have this
+npx serve .                        # or this
+```
+
+It **must** be served over `http://`. Opening `index.html` straight off disk
+will show a blank screen, because browsers refuse to load ES modules from
+`file://`.
+
+**Browser:** anything from about 2018 on — Safari 12+, Chrome 63+, Firefox 60+.
+The game needs ES modules and `<canvas>`, and nothing newer than that. Sound
+starts on your first click.
 
 To run the automated checks (renderer, simulation soak, scripted playthrough):
 

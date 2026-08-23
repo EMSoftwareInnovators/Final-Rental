@@ -53,8 +53,8 @@ export class Input {
     this.target.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
-  requestLock() { if (!this.locked) this.target.requestPointerLock?.(); }
-  exitLock() { if (this.locked) document.exitPointerLock?.(); }
+  requestLock() { if (!this.locked && this.target.requestPointerLock) this.target.requestPointerLock(); }
+  exitLock() { if (this.locked && document.exitPointerLock) document.exitPointerLock(); }
 
   isDown(...keys) { return keys.some((k) => this.down.has(k)); }
   hit(...keys) { return keys.some((k) => this.pressed.has(k)); }

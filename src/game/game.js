@@ -54,6 +54,7 @@ export class Game {
     this.nightNo = 1;
     this.seed = (Math.random() * 0xffffffff) >>> 0;
     this._mats = { view: mat(), cam: mat(), m: mat(), tmp: mat() };
+    this.frame = this.frame.bind(this);   // handed straight to requestAnimationFrame
     // safe defaults so the attract-mode camera can render before a shift starts
     this.customers = [];
     this.queue = [];
@@ -179,7 +180,7 @@ export class Game {
   /* ============================================================
      MAIN LOOP
      ============================================================ */
-  frame = (now) => {
+  frame(now) {
     let dt = (now - this.last) / 1000;
     this.last = now;
     if (dt > 0.1) dt = 0.1;
@@ -214,7 +215,7 @@ export class Game {
     this.render(dt);
     this.input.endFrame();
     requestAnimationFrame(this.frame);
-  };
+  }
 
   /* ---------------- title ---------------- */
   updateTitle(dt) {
@@ -956,7 +957,7 @@ export class Game {
     rz.drawMesh(dm, M.m, { shade: L * 0.95 });
 
     // ---- tapes sitting around ----
-    for (let i = 0; i < this.counterSlots?.length; i++) {
+    for (let i = 0; this.counterSlots && i < this.counterSlots.length; i++) {
       const t = this.counterSlots[i];
       if (!t) continue;
       const s = COUNTER_SLOTS[i];
@@ -968,7 +969,7 @@ export class Game {
         this.drawTape(t, PROPS.bin.x0 + 0.34, PROPS.bin.y1 - 0.06 - i * 0.035, PROPS.bin.z0 + 0.28, 0.1 + i * 0.15, 0.28);
       }
     }
-    if (this.rewinder?.tape) {
+    if (this.rewinder && this.rewinder.tape) {
       this.drawTape(this.rewinder.tape, 11.88, PROPS.rewinder.y1 + 0.02, 1.58, 0, Math.PI / 2);
     }
 
