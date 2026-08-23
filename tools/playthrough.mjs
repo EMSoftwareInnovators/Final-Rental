@@ -80,10 +80,15 @@ check('late-fee line offered up front', await pickByText('days? late'));
 await ev(() => window.__game.ui.finishTyping()); await wait(200);
 await page.keyboard.press('Enter'); await wait(300);          // dispatch the "that's $3.00" node
 await ev(() => window.__game.ui.finishTyping()); await wait(200);
-check('they agree to pay', await pickByText('out of the drawer|Thank you'));
+check('they agree to pay', await pickByText("I'll take that|Thank you"));
 await wait(300);
-const till = await ev(() => window.__game.till);
-check('the money is in the till', till >= 3, `$${till.toFixed(2)}`);
+const hand = await ev(() => ({
+  cash: window.__game.player.cash.tendered,
+  owed: window.__game.player.cash.owed,
+  till: window.__game.till,
+}));
+check('the cash is in your hand, not the till', hand.cash >= 3 && hand.owed >= 3 && hand.till === 0,
+  `hand $${hand.cash.toFixed(2)} / owed $${hand.owed.toFixed(2)} / till $${hand.till.toFixed(2)}`);
 
 await ev(() => window.__game.ui.finishTyping()); await wait(200);
 await page.keyboard.press('Enter'); await wait(300);
@@ -98,6 +103,48 @@ for (let i = 0; i < 8; i++) {
   if (!(await ev(() => !!window.__game.dlg.node))) break;
   await ev(() => window.__game.ui.finishTyping()); await wait(120);
   await page.keyboard.press('Enter'); await wait(220);
+}
+
+// the money has to be walked to the register
+await look(12.6, 2.75, Math.PI, -0.45);
+await wait(250);
+const pReg = await prompt();
+check('the register offers to take the cash', /Ring up/.test(pReg), pReg.slice(0, 60));
+await page.keyboard.press('KeyE');
+await wait(300);
+const after = await ev(() => ({
+  till: window.__game.till,
+  cash: window.__game.player.cash.owed,
+  change: window.__game.changeOwed === undefined ? window.__game.player.changeInHand : 0,
+}));
+check('ringing up moves it into the drawer', after.till >= 3 && after.cash === 0,
+  `till $${after.till.toFixed(2)}`);
+
+// if they overpaid, they are still standing there waiting
+const owedChange = await ev(() => {
+  const c = window.__game.customers[0];
+  return c ? { waiting: !!c.awaitingChange, due: c.changeDue || 0, inHand: window.__game.player.changeInHand } : null;
+});
+if (owedChange && owedChange.waiting) {
+  check('change was counted out of the drawer', owedChange.inHand >= owedChange.due - 0.001,
+    `$${owedChange.inHand.toFixed(2)} for $${owedChange.due.toFixed(2)} owed`);
+  await look(10.75, 3.05, Math.PI, 0.0);
+  await wait(250);
+  await page.keyboard.press('KeyE');
+  await wait(350);
+  await ev(() => window.__game.ui.finishTyping()); await wait(150);
+  const gave = await pickByText('Sorry about that');
+  await wait(300);
+  check('you can hand the change back', gave);
+  check('and it leaves your hand',
+    (await ev(() => window.__game.player.changeInHand)) < 0.001);
+  for (let i = 0; i < 8; i++) {
+    if (!(await ev(() => !!window.__game.dlg.node))) break;
+    await ev(() => window.__game.ui.finishTyping()); await wait(110);
+    await page.keyboard.press('Enter'); await wait(200);
+  }
+} else {
+  console.log('      (exact change this run - skipped the change leg)');
 }
 
 // rewind it

@@ -19,17 +19,30 @@ export const ATLAS = {
   arm: [96, 48, 16, 44], leg: [112, 48, 16, 44],
   shoe: [0, 96, 16, 16], hatS: [16, 96, 32, 16], hatT: [48, 96, 24, 24],
   bag: [72, 96, 24, 24],
+  hair: [96, 96, 32, 32],     // the hair *mesh*, not the painted-on kind
+  prop: [0, 112, 48, 16],     // walkman, umbrella
 };
 export const ATLAS_SIZE = 128;
 
 /* ---------------- trait tables ---------------- */
 const T = (id, label, bulletin, extra = {}) => ({ id, label, bulletin, ...extra });
 
+export const GENDERS = [
+  T('m', 'Man', 'a man'),
+  T('f', 'Woman', 'a woman'),
+];
+
 export const HEIGHTS = [
   T('short', `Short — about 5'3"`, `short. Five three, five four maybe`, { scale: 0.88 }),
   T('average', `Average height — about 5'8"`, `average height, call it five eight`, { scale: 1.0 }),
   T('tall', `Tall — about 6'1"`, `tall. Six foot one`, { scale: 1.09 }),
   T('verytall', `Very tall — 6'4" or more`, `real tall, six four or better`, { scale: 1.17 }),
+];
+const HEIGHTS_F = [
+  T('short', `Short — about 5'0"`, `short. Five foot nothing`, { scale: 0.845 }),
+  T('average', `Average height — about 5'4"`, `average height, about five four`, { scale: 0.945 }),
+  T('tall', `Tall — about 5'9"`, `tall for a woman. Five nine`, { scale: 1.035 }),
+  T('verytall', `Very tall — 6'0" or more`, `real tall, six foot or better`, { scale: 1.10 }),
 ];
 
 export const BUILDS = [
@@ -54,6 +67,12 @@ const HAIR_STYLES = [
   { id: 'curly', name: 'curly and thick' }, { id: 'buzz', name: 'buzzed down to the scalp' },
   { id: 'bald', name: 'bald on top' }, { id: 'greasy', name: 'greasy, combed flat' },
 ];
+/* Weighted so a 1996 street reads right, and so the silhouette says
+   something about the person before you are close enough to see a face. */
+const HAIR_BY_GENDER = {
+  m: ['short', 'short', 'short', 'buzz', 'buzz', 'mullet', 'mullet', 'bald', 'bald', 'greasy', 'greasy', 'curly', 'ponytail', 'long'],
+  f: ['long', 'long', 'long', 'long', 'ponytail', 'ponytail', 'ponytail', 'curly', 'curly', 'short', 'short', 'greasy'],
+};
 
 export const FACIAL = [
   T('clean', 'Clean shaven', 'clean shaven'),
@@ -114,7 +133,7 @@ export const GAITS = [
   T('limp', 'Walks with a limp', 'a limp. Favors the right leg', { limp: 1 }),
   T('shuffle', 'Shuffles, drags the feet', 'shuffles. Drags the feet', { speed: 0.75 }),
   T('brisk', 'Moves fast, in a hurry', 'moves fast. Always in a hurry', { speed: 1.3 }),
-  T('stiff', 'Stiff, upright walk', 'stiff. Holds himself very straight', { stiff: 1 }),
+  T('stiff', 'Stiff, upright walk', 'stiff. Very upright, like a soldier', { stiff: 1 }),
 ];
 
 export const CARRY = [
@@ -140,36 +159,41 @@ export const VOICES = [
   T('low', 'Low, quiet voice', 'a low voice. Quiet talker', { pitch: 0.72, rough: 0.3 }),
   T('raspy', 'Raspy voice', 'raspy, like a smoker', { pitch: 0.85, rough: 0.9 }),
   T('nasal', 'Nasal voice', 'nasal', { pitch: 1.32, rough: 0.2 }),
-  T('soft', 'Soft, careful voice', 'soft spoken. Picks his words', { pitch: 1.1, rough: 0.1 }),
-  T('loud', 'Loud, carrying voice', 'loud. You will hear him from the door', { pitch: 0.98, rough: 0.5 }),
+  T('soft', 'Soft, careful voice', 'soft spoken. Picks every word', { pitch: 1.1, rough: 0.1 }),
+  T('loud', 'Loud, carrying voice', 'loud. You will hear it from the door', { pitch: 0.98, rough: 0.5 }),
   T('flat', 'Flat, no inflection', 'flat. No music in it at all', { pitch: 0.9, rough: 0.15 }),
 ];
 
 const SKIN = ['#d8ab84', '#c08e63', '#8d5f3c', '#5e3c26', '#e8c39e', '#a6714a', '#3f2a1c'];
 
 /* Traits the player can verify by LOOKING. */
-export const VISIBLE_KEYS = ['height', 'build', 'hair', 'facial', 'glasses', 'hat', 'jacket', 'pants', 'mark', 'gait', 'carry'];
+export const VISIBLE_KEYS = ['gender', 'height', 'build', 'hair', 'facial', 'glasses', 'hat', 'jacket', 'pants', 'mark', 'gait', 'carry'];
 /* Traits that need conversation or proximity. */
 export const HIDDEN_KEYS = ['smell', 'voice'];
 export const ALL_KEYS = [...VISIBLE_KEYS, ...HIDDEN_KEYS];
 
 export const KEY_LABEL = {
-  height: 'Height', build: 'Build', hair: 'Hair', facial: 'Face', glasses: 'Eyewear',
+  gender: 'Sex', height: 'Height', build: 'Build', hair: 'Hair', facial: 'Face', glasses: 'Eyewear',
   hat: 'Headwear', jacket: 'Outerwear', pants: 'Trousers', mark: 'Distinguishing mark',
   gait: 'Walk', carry: 'Carrying', smell: 'Smell', voice: 'Voice',
 };
 
 /* ---------------- generation ---------------- */
 export function randomAppearance(rng, force = {}) {
+  let gender = force.gender || rng.pick(GENDERS);
+  if (typeof gender === 'string') gender = GENDERS.find((x) => x.id === gender) || GENDERS[0];
+  const g = gender.id;
   const hairColor = rng.pick(HAIR_COLORS);
-  const hairStyle = rng.pick(HAIR_STYLES);
+  const styleId = rng.pick(HAIR_BY_GENDER[g]);
+  const hairStyle = HAIR_STYLES.find((h) => h.id === styleId);
   const jacketColor = rng.pick(COLORS);
   const jacketKind = rng.pick(JACKET_KIND);
   const pantsColor = rng.pick(COLORS);
   const shirtColor = rng.pick(COLORS);
   const a = {
+    gender,
     skin: rng.pick(SKIN),
-    height: rng.pick(HEIGHTS),
+    height: rng.pick(g === 'f' ? HEIGHTS_F : HEIGHTS),
     build: rng.pick(BUILDS),
     hair: {
       id: `${hairColor.id}-${hairStyle.id}`,
@@ -177,7 +201,7 @@ export function randomAppearance(rng, force = {}) {
       label: hairStyle.id === 'bald' ? `Bald, ${hairColor.name} at the sides` : `${cap(hairColor.name)} hair, ${hairStyle.name}`,
       bulletin: hairStyle.id === 'bald' ? `bald, what is left of it is ${hairColor.name}` : `${hairColor.name} hair, ${hairStyle.name}`,
     },
-    facial: rng.pick(FACIAL),
+    facial: g === 'f' ? FACIAL[0] : rng.pick(FACIAL),
     glasses: rng.pick(GLASSES),
     hat: rng.pick(HATS),
     jacket: {
@@ -198,8 +222,12 @@ export function randomAppearance(rng, force = {}) {
     carry: rng.pick(CARRY),
     smell: rng.pick(SMELLS),
     voice: rng.pick(VOICES),
+    voicePitch: g === 'f' ? 1.22 : 0.92,
   };
   Object.assign(a, force);
+  // `force` may hand us a bare 'm'/'f'; normalise again so downstream code
+  // can always rely on a.gender being a trait object
+  if (typeof a.gender === 'string') a.gender = GENDERS.find((x) => x.id === a.gender) || GENDERS[0];
   return a;
 }
 
@@ -230,17 +258,23 @@ export function traitBulletin(a, key) {
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
 /* ---------------- names ---------------- */
-const FIRST = ['Denise', 'Marty', 'Curtis', 'Ray', 'Lorraine', 'Ed', 'Patty', 'Duane',
-  'Sheila', 'Vern', 'Bobbi', 'Gil', 'Wanda', 'Stan', 'Charlene', 'Dale', 'Roberta',
-  'Kenny', 'Yvette', 'Norm', 'Trish', 'Hank', 'Marcy', 'Terry', 'Faye', 'Dwight',
-  'Colleen', 'Rudy', 'Janine', 'Wes', 'Bev', 'Lonnie', 'Arlene', 'Merle', 'Doreen'];
+const FIRST_M = ['Marty', 'Curtis', 'Ray', 'Ed', 'Duane', 'Vern', 'Gil', 'Stan', 'Dale',
+  'Kenny', 'Norm', 'Hank', 'Terry', 'Dwight', 'Rudy', 'Wes', 'Lonnie', 'Merle', 'Bud',
+  'Lyle', 'Chet', 'Roy', 'Clyde', 'Dennis', 'Gary', 'Ron', 'Walt', 'Otis', 'Earl',
+  'Delbert', 'Marv', 'Sal', 'Gene', 'Howie', 'Ike'];
+const FIRST_F = ['Denise', 'Lorraine', 'Patty', 'Sheila', 'Bobbi', 'Wanda', 'Charlene',
+  'Roberta', 'Yvette', 'Trish', 'Marcy', 'Faye', 'Colleen', 'Janine', 'Bev', 'Arlene',
+  'Doreen', 'Joanne', 'Rhonda', 'Peggy', 'Lynette', 'Gail', 'Maureen', 'Dot', 'Sherri',
+  'Carla', 'Nadine', 'Verna', 'Cheryl', 'Marlene', 'Ruthie', 'Sondra', 'Elaine'];
 const LAST = ['Pallozzi', 'Krebs', 'Vance', 'Dunlop', 'Marchetti', 'Ostrowski', 'Hale',
   'Bunting', 'Ferris', 'Novak', 'Cardoza', 'Whitlock', 'Deemer', 'Sackett', 'Rennick',
   'Pruitt', 'Mabry', 'Colley', 'Vogel', 'Tunstall', 'Ashby', 'Rierdon', 'Kowalczyk',
   'Bellweather', 'Stumpf', 'Draper', 'Hoyt', 'Lindqvist', 'Barrone', 'Mercer'];
 
-export function randomName(rng) {
-  return `${rng.pick(FIRST)} ${rng.pick(LAST)}`;
+/** @param gender a GENDERS entry, an 'm'/'f' string, or nothing for a coin flip */
+export function randomName(rng, gender) {
+  const g = (gender && gender.id) || gender || (rng.chance(0.5) ? 'm' : 'f');
+  return `${rng.pick(g === 'f' ? FIRST_F : FIRST_M)} ${rng.pick(LAST)}`;
 }
 
 /* ============================================================
@@ -477,6 +511,30 @@ export function paintSkin(a) {
     px(R('bag'), 0, 8, 24, 3, '#15151a');
     px(R('bag'), 3, 3, 6, 4, '#8d8a84');
 
+    /* ---- the hair *mesh* (long, ponytail, mullet all have geometry) ---- */
+    box(R('hair'), hair.hex);
+    {
+      const r = R('hair');
+      // a few darker strands so the shell does not read as a plastic helmet
+      for (let i = 0; i < 40; i++) {
+        g.fillStyle = i % 3 ? hair.dark : shade(hair.hex, 1.12);
+        g.fillRect(r[0] + ((i * 7) % r[2]), r[1] + ((i * 11) % r[3]), 1, 2 + (i % 4));
+      }
+      g.fillStyle = hexA(hair.dark, 0.5);
+      g.fillRect(r[0], r[1] + r[3] - 5, r[2], 5);
+    }
+
+    /* ---- carried props: dark object, one highlight ---- */
+    {
+      const r = R('prop');
+      const isBag = a.carry.id === 'walkman';
+      box(r, isBag ? '#1b1b20' : '#22252e');
+      g.fillStyle = isBag ? '#8d8a84' : shade('#22252e', 1.5);
+      g.fillRect(r[0] + 3, r[1] + 4, isBag ? 14 : r[2] - 6, isBag ? 7 : 2);
+      g.fillStyle = isBag ? '#c02020' : '#4a4e58';
+      g.fillRect(r[0] + 20, r[1] + 5, 3, 3);
+    }
+
     /* ---- worn, dirty, 1996 ---- */
     const d = g.getImageData(0, 0, ATLAS_SIZE, ATLAS_SIZE), p = d.data;
     for (let i = 0; i < p.length; i += 4) {
@@ -551,6 +609,17 @@ export function paintPortrait(a, canvas) {
   const d = g.getImageData(0, 0, W, H), p = d.data;
   for (let i = 0; i < p.length; i += 4) { const n = (Math.random() - 0.5) * 26; p[i] += n; p[i + 1] += n; p[i + 2] += n; }
   g.putImageData(d, 0, 0);
+}
+
+/** Blip pitch for a person: archetype voice, shifted by sex. */
+export function voicePitchOf(app) {
+  return (app.voice.pitch || 1) * (app.voicePitch || 1);
+}
+
+/** he / she, for the deputy and the endings. */
+export function pronounOf(app) {
+  const f = app.gender && app.gender.id === 'f';
+  return { subj: f ? 'she' : 'he', obj: f ? 'her' : 'him', poss: f ? 'her' : 'his' };
 }
 
 /* ---------------- colour helpers ---------------- */

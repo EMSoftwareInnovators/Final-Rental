@@ -182,6 +182,106 @@ if (probe) {
 }
 await ev(() => { const g = window.__game; if (g.dlg.node) g.dlg.cancel(); });
 
+/* ---------- 4c. names have to match the people wearing them ---------- */
+const nameCheck = await ev(() => {
+  const { makeRng } = window.__mathx;
+  const A = window.__app;
+  const rng = makeRng(4242);
+  const MALE = new Set(['Marty','Curtis','Ray','Ed','Duane','Vern','Gil','Stan','Dale','Kenny','Norm','Hank','Terry','Dwight','Rudy','Wes','Lonnie','Merle','Bud','Lyle','Chet','Roy','Clyde','Dennis','Gary','Ron','Walt','Otis','Earl','Delbert','Marv','Sal','Gene','Howie','Ike']);
+  const FEMALE = new Set(['Denise','Lorraine','Patty','Sheila','Bobbi','Wanda','Charlene','Roberta','Yvette','Trish','Marcy','Faye','Colleen','Janine','Bev','Arlene','Doreen','Joanne','Rhonda','Peggy','Lynette','Gail','Maureen','Dot','Sherri','Carla','Nadine','Verna','Cheryl','Marlene','Ruthie','Sondra','Elaine']);
+  let bad = 0, n = 0, beards = 0, unknown = 0;
+  for (let i = 0; i < 400; i++) {
+    const c = window.__cust.createCustomer(rng, { intent: 'RENT' });
+    const first = c.name.split(' ')[0];
+    const g = c.app.gender.id;
+    n++;
+    if (g === 'm' && FEMALE.has(first)) bad++;
+    else if (g === 'f' && MALE.has(first)) bad++;
+    else if (!MALE.has(first) && !FEMALE.has(first)) unknown++;
+    if (g === 'f' && c.app.facial.id !== 'clean') beards++;
+  }
+  return { n, bad, unknown, beards };
+});
+check('names match the person', nameCheck.bad === 0 && nameCheck.unknown === 0,
+  `${nameCheck.n} people, ${nameCheck.bad} mismatched, ${nameCheck.unknown} off-list`);
+check('no bearded women', nameCheck.beards === 0);
+
+/* ---------- 4d. they actually shop ---------- */
+const peruse = await ev(async () => {
+  const g = window.__game;
+  g.customers.length = 0;
+  g.killer.ent.hidden = true; g.killer.phase = 'ABSENT';
+  const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+  c.personality = { ...c.personality, confused: null };
+  c.script = 'rent'; c.browsesFirst = false;
+  g.customers.push(c);
+  window.__watch = { pulls: 0, putbacks: 0, shelves: new Set(), phases: new Set() };
+  return true;
+});
+await ev(() => { window.__game.timeScale = 8; });
+for (let i = 0; i < 200; i++) {
+  const st = await ev(() => {
+    const g = window.__game;
+    const c = g.customers[0];
+    if (!c) return { gone: true };
+    const w = window.__watch;
+    if (c.browse) {
+      w.phases.add(c.browse.phase);
+      if (c.browse.shelf) w.shelves.add(c.browse.shelf.genre);
+      w.pulls = Math.max(w.pulls, c.browse.seen);
+    }
+    return { state: c.state, holding: !!c.tape,
+      shelves: [...w.shelves], phases: [...w.phases], seen: w.pulls };
+  });
+  if (st.gone || st.state === 'WAITING' || st.state === 'TALKING') {
+    check('a shopper browses, pulls boxes and puts them back',
+      st.phases && st.phases.includes('READ') && st.phases.includes('SCAN'),
+      `phases ${(st.phases || []).join('/')}`);
+    check('and comes to the counter holding what they picked', !!st.holding);
+    console.log(`      visited: ${(st.shelves || []).join(', ')} | put back ${st.seen} before deciding`);
+    break;
+  }
+  await wait(150);
+}
+
+/* ---------- 4e. the ones who are in the wrong building ---------- */
+const lost = await ev(() => {
+  const g = window.__game;
+  g.customers.length = 0;
+  const A = window.__app;
+  const P = window.__dlg;
+  const arch = window.__pers.ARCHETYPES.find((a) => a.id === 'LOST');
+  const c = window.__cust.createCustomer(g.rng, { intent: 'RENT', personality: arch });
+  c.state = 'WAITING'; c.path = null; c.hidden = false; c.moveSpeed = 0;
+  c.x = 10.75; c.z = 0.8; c.yaw = 0;
+  g.customers.push(c);
+  g.player.x = 10.75; g.player.z = 3.05; g.player.yaw = Math.PI;
+  g.talkToPerson(c);
+  return { premise: c.premise, script: c.script, tag: c.personality.tag,
+    text: g.dlg.node.text, choices: g.dlg.node.choices.map((x) => x.label) };
+});
+check('someone walks in thinking this is another shop entirely',
+  lost.script === 'confused' && !!lost.premise, `premise: ${lost.premise}`);
+console.log('      them: "' + lost.text.replace(/\n/g, ' ') + '"');
+console.log('      you:  ' + lost.choices.map((x) => `[${x}]`).join(' '));
+const lostRun = [];
+for (let i = 0; i < 10; i++) {
+  const n = await ev(() => {
+    const g = window.__game;
+    if (!g.dlg.node) return null;
+    return { text: g.dlg.node.text, choices: (g.dlg.node.choices || []).map((c) => c.label) };
+  });
+  if (!n) break;
+  lostRun.push(n.text);
+  await ev(() => window.__game.ui.finishTyping());
+  await wait(70);
+  await page.keyboard.press('Enter');
+  await wait(190);
+}
+check('the misunderstanding plays out to an ending', lostRun.length >= 3, `${lostRun.length} beats`);
+console.log('      -> "' + (lostRun[lostRun.length - 1] || '').replace(/\n/g, ' ').slice(0, 90) + '"');
+await ev(() => { const g = window.__game; if (g.dlg.node) g.dlg.cancel(); g.customers.length = 0; g.timeScale = 4; });
+
 /* ---------- 5. the killer's whole arc ---------- */
 const arc = await ev(async () => {
   const g = window.__game;
@@ -279,10 +379,14 @@ for (let i = 0; i < 140; i++) {
 check('a quiet night runs to close and produces a report', reached);
 const rep = await ev(() => ({ stats: window.__game.stats, grade: window.__game.grade }));
 console.log('      ', JSON.stringify(rep.stats), rep.grade);
-await page.keyboard.press('Enter');
-await wait(800);
-check('report advances to the next night',
-  (await ev(() => window.__game.nightNo)) === 2 && ['ESTABLISH', 'PLAY'].includes(await ev(() => window.__game.state)));
+let advanced = false;
+for (let i = 0; i < 25; i++) {
+  await page.keyboard.press('Enter');
+  await wait(220);
+  const st = await ev(() => ({ n: window.__game.nightNo, s: window.__game.state }));
+  if (st.n === 2 && (st.s === 'ESTABLISH' || st.s === 'PLAY')) { advanced = true; break; }
+}
+check('report advances to the next night', advanced);
 
 /* ---------- done ---------- */
 console.log('\n--- page errors ---');

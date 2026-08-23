@@ -6,8 +6,8 @@
    ============================================================ */
 import { makeRng } from '../engine/mathx.js';
 import {
-  randomAppearance, randomName, ALL_KEYS, VISIBLE_KEYS, HIDDEN_KEYS,
-  traitBulletin, traitLabel, sameTrait, HATS, GLASSES, HEIGHTS, BUILDS, MARKS, GAITS, CARRY,
+  randomAppearance, randomName, pronounOf, ALL_KEYS, VISIBLE_KEYS,
+  traitBulletin, sameTrait, HATS, GLASSES, HEIGHTS, BUILDS, MARKS, GAITS, CARRY, GENDERS,
 } from './appearance.js';
 import { planKiller } from './killer.js';
 import { GENRES } from './tapes.js';
@@ -42,8 +42,9 @@ export function makeNight(seed, n) {
   const nKeys = bulletinKeyCount(n);
   const pool = PRIORITY.slice();
   // jacket is nearly always in a witness statement; keep the rest weighted but random
-  const keys = ['jacket'];
-  const rest = rng.shuffle(pool.filter((k) => k !== 'jacket'));
+  // Sex and outerwear are what a witness leads with, every time.
+  const keys = ['gender', 'jacket'];
+  const rest = rng.shuffle(pool.filter((k) => k !== 'jacket' && k !== 'gender'));
   // bias toward the visible ones early, let hidden ones creep in later
   rest.sort((a, b) => {
     const av = VISIBLE_KEYS.includes(a) ? 0 : 1, bv = VISIBLE_KEYS.includes(b) ? 0 : 1;
@@ -107,7 +108,9 @@ function sampleKeys(rng, keys, k) { return rng.sample(keys, Math.max(1, Math.min
  */
 export function makeDecoyAppearance(rng, suspect, keys, forced) {
   for (let attempt = 0; attempt < 40; attempt++) {
-    const a = randomAppearance(rng);
+    // decoys always share the suspect's sex -- otherwise the very first line
+    // of the bulletin clears them and they are not decoys at all
+    const a = randomAppearance(rng, { gender: suspect.gender });
     for (const k of forced) a[k] = suspect[k];
     const differs = keys.some((k) => !sameTrait(a, suspect, k));
     if (differs) return a;
@@ -120,7 +123,7 @@ export function makeDecoyAppearance(rng, suspect, keys, forced) {
 }
 
 function pickDifferent(rng, suspect, key) {
-  const TABLES = { hat: HATS, glasses: GLASSES, height: HEIGHTS, build: BUILDS, mark: MARKS, gait: GAITS, carry: CARRY };
+  const TABLES = { hat: HATS, glasses: GLASSES, height: HEIGHTS, build: BUILDS, mark: MARKS, gait: GAITS, carry: CARRY, gender: GENDERS };
   const tbl = TABLES[key];
   if (tbl) {
     const opts = tbl.filter((t) => t.id !== suspect[key].id);
@@ -143,9 +146,11 @@ export function sanitizeInnocent(rng, app, suspect, keys) {
 /* ---------------- the deputy's speech ---------------- */
 function composeBulletin(a, keys, rng, n) {
   const has = (k) => keys.includes(k);
+  const P = pronounOf(a);
   const S = [];
 
   const physical = [];
+  if (has('gender')) physical.push(traitBulletin(a, 'gender'));
   if (has('height')) physical.push(traitBulletin(a, 'height'));
   if (has('build')) physical.push(traitBulletin(a, 'build'));
   if (physical.length) S.push(`Suspect is ${physical.join(', ')}.`);
@@ -169,7 +174,7 @@ function composeBulletin(a, keys, rng, n) {
       : `And this is the one that matters: ${traitBulletin(a, 'mark')}.`);
   }
   if (has('carry') && a.carry.id !== 'none') S.push(`Carrying ${traitBulletin(a, 'carry')}.`);
-  if (has('gait')) S.push(`Witness says he ${traitBulletin(a, 'gait')}.`);
+  if (has('gait')) S.push(`Witness says ${P.subj} ${traitBulletin(a, 'gait')}.`);
   if (has('voice')) S.push(`Voice is ${traitBulletin(a, 'voice')}.`);
   if (has('smell') && a.smell.id !== 'none') S.push(`One more thing, and I know how it sounds: ${traitBulletin(a, 'smell')}.`);
 
@@ -195,6 +200,7 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 /* ---------------- the deputy's own look ---------------- */
 function makeOfficerApp(rng) {
   const a = randomAppearance(rng);
+  a.facial = a.gender.id === 'f' ? a.facial : a.facial;
   a.jacket = {
     id: 'sheriff', color: { id: 'navy', name: 'sheriff navy', hex: '#141c33' }, kind: 'sheriff jacket',
     label: 'Sheriff department jacket', bulletin: 'a sheriff department jacket',
@@ -234,6 +240,9 @@ export function gradeNight(stats) {
   score -= stats.stormedOut * 25;
   score -= stats.unshelved * 8;
   score -= stats.turnedAway * 22;
+  score -= stats.changeStiffed * 20;
+  score -= stats.cashLoose * 6;
+  score += stats.tips * 3;
   score += stats.served * 8;
   const letter = score >= 150 ? 'A' : score >= 100 ? 'B' : score >= 55 ? 'C' : score >= 15 ? 'D' : 'F';
   return { score: Math.round(score), letter };

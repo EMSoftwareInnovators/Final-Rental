@@ -79,6 +79,71 @@ export class MeshBuilder {
   }
 
   /**
+   * Skin a stack of cross-sections into a tapered, faceted solid -- the
+   * shape PS1 characters were actually built from. Boxes read as Minecraft;
+   * a torso that narrows at the waist and slopes at the shoulders does not.
+   *
+   * @param rings  [{ y, w, d, ox, oz }] bottom to top; w/d scale `section`
+   * @param section [[x,z], ...] unit cross-section, traversed front-left ->
+   *                front-right -> around. Side i spans point i to i+1.
+   * @param sideTex [{tex, uv}] one entry per side (or a single entry for all)
+   * @param caps   { top, bottom } face descriptors, or null to leave open
+   */
+  loft(rings, section, sideTex, caps) {
+    const n = section.length;
+    const at = (r, i) => [
+      section[i][0] * r.w + (r.ox || 0),
+      r.y,
+      section[i][1] * r.d + (r.oz || 0),
+    ];
+    // v runs 0 at the bottom ring to 1 at the top, so a texture spans the
+    // whole limb instead of repeating once per segment
+    const y0 = rings[0].y, y1 = rings[rings.length - 1].y;
+    const span = (y1 - y0) || 1;
+    const vAt = (r) => (r.y - y0) / span;
+
+    for (let s = 0; s < rings.length - 1; s++) {
+      const A = rings[s], B = rings[s + 1];
+      const va = vAt(A), vb = vAt(B);
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        const f = sideTex.length === 1 ? sideTex[0] : sideTex[i % sideTex.length];
+        if (!f) continue;
+        const r = f.uv;
+        // slice the rect vertically to this segment's share
+        const uv = [r[0], r[1] + (r[3] - r[1]) * (1 - vb), r[2], r[1] + (r[3] - r[1]) * (1 - va)];
+        this.quad(at(A, i), at(A, j), at(B, j), at(B, i), f.tex, uv, f.flags | 0);
+      }
+    }
+    if (caps && caps.top) this.fan(rings[rings.length - 1], section, caps.top, false);
+    if (caps && caps.bottom) this.fan(rings[0], section, caps.bottom, true);
+  }
+
+  /** Triangle fan closing off one end of a loft. */
+  fan(ring, section, face, flip) {
+    const n = section.length;
+    const pts = [];
+    for (let i = 0; i < n; i++) {
+      pts.push([
+        section[i][0] * ring.w + (ring.ox || 0),
+        ring.y,
+        section[i][1] * ring.d + (ring.oz || 0),
+      ]);
+    }
+    const order = flip ? pts.slice().reverse() : pts;
+    const r = face.uv;
+    const slot = typeof face.tex === 'number' ? face.tex : this.slot(face.tex);
+    // project the section onto the uv rect so the cap is not stretched
+    const idx = order.map((p, i) => {
+      const src = flip ? section[n - 1 - i] : section[i];
+      const u = r[2] + (r[0] - r[2]) * (src[0] * 0.5 + 0.5);
+      const v = r[3] + (r[1] - r[3]) * (src[1] * 0.5 + 0.5);
+      return this.vert(p[0], p[1], p[2], u, v, 0, flip ? -1 : 1, 0);
+    });
+    for (let i = 1; i < n - 1; i++) this.tri(idx[0], idx[i], idx[i + 1], slot, face.flags | 0);
+  }
+
+  /**
    * Axis-aligned box from (x0,y0,z0) to (x1,y1,z1).
    * `faces` maps side -> {tex, uv, flags, sub} ; `faces.all` is the fallback.
    * A side set to null is skipped (handy for open-backed shelving).

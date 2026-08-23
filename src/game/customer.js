@@ -9,6 +9,7 @@ import { makeAnim, updateAnim } from './actor.js';
 import { randomAppearance, randomName, paintSkin, VISIBLE_KEYS } from './appearance.js';
 import { pickPersonality, line } from './personality.js';
 import { GENRES, makeTape, tapeLabel } from './tapes.js';
+import { LOST_PREMISES, DIM_PREMISES } from './dialogue.js';
 
 export const CS = {
   ARRIVING: 'ARRIVING', ENTERING: 'ENTERING', BROWSING: 'BROWSING', PICKING: 'PICKING',
@@ -23,7 +24,7 @@ export function createCustomer(rng, opts = {}) {
   const personality = opts.personality || pickPersonality(rng);
   const c = {
     id: nextId++,
-    name: opts.name || randomName(rng),
+    name: opts.name || randomName(rng, app.gender),
     app,
     personality,
     skin: paintSkin(app),
@@ -74,6 +75,19 @@ export function createCustomer(rng, opts = {}) {
     c.script = 'return';
   } else {
     c.script = 'rent';
+  }
+  // Some people are not here for any of that.
+  if (personality.confused) {
+    c.script = 'confused';
+    const table = personality.confused === 'lost' ? LOST_PREMISES : DIM_PREMISES;
+    c.premise = rng.pick(Object.keys(table));
+    c.browsesFirst = personality.confused === 'dim' && rng.chance(0.6);
+    // the ones in the wrong building are not carrying one of your tapes
+    if (personality.confused === 'lost') c.tape = null;
+    else if (c.premise === 'wedding' || c.premise === 'otherchain') {
+      c.tape = makeTape(rng.pick(GENRES), rng, { rewound: rng.chance(0.3), daysLate: 0 });
+      c.browsesFirst = false;
+    }
   }
   return c;
 }
@@ -137,32 +151,83 @@ export function updateCustomer(c, dt, ctx) {
     case CS.ENTERING: {
       if (!c.path) setDest(c, SPOTS.door.x, SPOTS.door.z + 0.9, ctx);
       if (step(c, dt, ctx)) {
-        if (c.script === 'return') { c.state = CS.TO_COUNTER; c.path = null; }
-        else { c.state = CS.BROWSING; c.path = null; c.timer = 0; }
+        const browses = c.script === 'rent' || c.browsesFirst;
+        if (browses) { c.state = CS.BROWSING; c.path = null; c.timer = 0; }
+        else { c.state = CS.TO_COUNTER; c.path = null; }
       }
       break;
     }
 
     case CS.BROWSING: {
-      if (!c.path && !c.browseSpot) {
-        const shelf = SHELVES.find((s) => s.genre === c.wantGenre) || SHELVES[0];
-        c.browseSpot = shelf.browse[rng.int(shelf.browse.length)];
-        c.browseShelf = shelf;
-        setDest(c, c.browseSpot.x, c.browseSpot.z, ctx);
-        c.browseTime = c.personality.browse * rng.range(0.7, 1.35);
+      /* People do not walk in knowing what they want. They drift to a
+         section, read the backs of a few boxes, pull one out, turn it over,
+         put it back, and try somewhere else. The picky ones do that three
+         times before they settle.                                          */
+      if (!c.browse) {
+        c.browse = {
+          visits: 1 + rng.int(rng.chance(0.45) ? 3 : 2),
+          seen: 0, phase: 'GOTO', t: 0, shelf: null, spot: null,
+        };
+        c.browse.genre = c.wantGenre;
       }
-      if (c.path) { step(c, dt, ctx); break; }
-      // arrived: face the shelf and read boxes for a while
-      c.yaw = angleTowards(c.yaw, c.browseSpot.yaw, dt * 4);
-      c.timer += dt;
-      c.anim.headYaw = Math.sin(c.timer * 0.8) * 0.4;
-      c.anim.headPitch = -0.12 + Math.sin(c.timer * 0.53) * 0.18;
-      if (c.timer > c.browseTime) {
-        c.tape = makeTape(c.browseShelf.genre, rng, { rewound: true });
-        c.tape.heldBy = c.id;
-        ctx.tookFromShelf(c);
-        c.state = CS.TO_COUNTER; c.path = null; c.timer = 0;
-        c.anim.headYaw = 0; c.anim.headPitch = 0;
+      const B = c.browse;
+      B.t += dt;
+
+      if (B.phase === 'GOTO') {
+        if (!B.shelf) {
+          B.shelf = SHELVES.find((s) => s.genre === B.genre) || SHELVES[rng.int(SHELVES.length)];
+          B.spot = B.shelf.browse[rng.int(B.shelf.browse.length)];
+          setDest(c, B.spot.x, B.spot.z, ctx);
+        }
+        if (step(c, dt, ctx)) { B.phase = 'SCAN'; B.t = 0; B.dur = 2.4 + rng() * c.personality.browse * 0.45; }
+        break;
+      }
+
+      c.yaw = angleTowards(c.yaw, B.spot.yaw, dt * 4);
+
+      if (B.phase === 'SCAN') {
+        // eyes tracking along the spines
+        c.anim.headYaw = Math.sin(B.t * 1.15) * 0.46;
+        c.anim.headPitch = -0.10 + Math.sin(B.t * 0.74) * 0.22;
+        if (B.t > B.dur) {
+          B.phase = 'PULL'; B.t = 0;
+          c.anim.headYaw = 0; c.anim.headPitch = 0;
+        }
+      } else if (B.phase === 'PULL') {
+        c.anim.headPitch = -0.05;
+        if (B.t > 0.65) {
+          c.tape = makeTape(B.shelf.genre, rng, { rewound: true });
+          c.tape.heldBy = c.id;
+          ctx.tookFromShelf(c);
+          B.phase = 'READ'; B.t = 0; B.dur = 1.9 + rng() * 2.6;
+        }
+      } else if (B.phase === 'READ') {
+        // holding it up, reading the back
+        c.anim.headPitch = 0.16;
+        c.anim.headYaw = Math.sin(B.t * 0.6) * 0.08;
+        if (B.t > B.dur) {
+          B.seen++;
+          const lastChance = B.seen >= B.visits;
+          const keep = lastChance || rng() < 0.30 + B.seen * 0.22;
+          if (keep) {
+            c.anim.headPitch = 0;
+            ctx.chose(c);
+            c.state = CS.TO_COUNTER; c.path = null; c.timer = 0;
+          } else {
+            B.phase = 'PUTBACK'; B.t = 0;
+          }
+        }
+      } else if (B.phase === 'PUTBACK') {
+        c.anim.headPitch = -0.05;
+        if (B.t > 0.6) {
+          c.tape = null;
+          ctx.putBack(c);
+          // try somewhere else -- often a different section entirely
+          B.genre = rng.chance(0.55) ? rng.pick(GENRES) : B.genre;
+          B.shelf = null; B.spot = null;
+          B.phase = 'GOTO'; B.t = 0;
+          c.anim.headPitch = 0; c.anim.headYaw = 0;
+        }
       }
       break;
     }
@@ -187,6 +252,19 @@ export function updateCustomer(c, dt, ctx) {
         break;
       }
       c.yaw = angleTowards(c.yaw, c.queueIndex === 0 ? 0 : 0.2, dt * 4);
+      if (c.awaitingChange) {
+        // they are not going anywhere until the drawer opens
+        c.changeTimer = (c.changeTimer || 0) + dt;
+        c.mood -= (100 / c.personality.patience) * 0.55 * dt;
+        if (c.changeTimer > 60) {
+          ctx.stiffed(c);
+          c.awaitingChange = false; c.changeDue = 0;
+          c.mood = 0; c.wentAngry = true;
+          ctx.wentAngry(c);
+          c.leaving = true; c.state = CS.LEAVING; c.path = null; ctx.releaseCounterSpot(c);
+        }
+        break;
+      }
       if (c.served) {
         c.doneTimer = (c.doneTimer || 0) + dt;
         if (c.doneTimer > 10) { c.leaving = true; c.state = CS.LEAVING; c.path = null; ctx.releaseCounterSpot(c); }
@@ -230,10 +308,15 @@ export function updateCustomer(c, dt, ctx) {
   }
 
   const talking = c.state === CS.TALKING && ctx.speaking === c;
+  const reading = c.state === CS.BROWSING && c.browse
+    && (c.browse.phase === 'READ' || c.browse.phase === 'PULL' || c.browse.phase === 'PUTBACK');
   updateAnim(c.anim, dt, c.moveSpeed, c.app, {
     talking,
+    reading,
     reach: c.state === CS.TALKING && c.tape && !c.gaveTape && !c.checkedOut,
+    headYaw: c.anim.headYaw, headPitch: c.anim.headPitch,
   });
+  c.reading = reading;
 
   // proximity reveals what you cannot see from across the room
   if (!c.smelled && dist(c.x, c.z, ctx.player.x, ctx.player.z) < 1.9) {

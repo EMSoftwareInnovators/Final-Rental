@@ -498,6 +498,20 @@ export function buildTextures() {
     noise(g, w, h, 9);
   });
 
+  /* -------- a fold of bills -------- */
+  T.cash = makeTex(64, 32, (g, w, h) => {
+    fill(g, '#5d7a4e', w, h);
+    g.fillStyle = '#6d8a5c'; g.fillRect(2, 2, w - 4, h - 4);
+    g.strokeStyle = '#3f5636'; g.lineWidth = 1; g.strokeRect(4.5, 4.5, w - 9, h - 9);
+    g.fillStyle = '#41563a';
+    g.beginPath(); g.ellipse(w / 2, h / 2, 9, 8, 0, 0, 7); g.fill();
+    g.fillStyle = '#8aa377';
+    g.beginPath(); g.ellipse(w / 2, h / 2, 6, 5.5, 0, 0, 7); g.fill();
+    g.fillStyle = '#3f5636'; g.font = 'bold 8px "Courier New",monospace';
+    g.textAlign = 'center'; g.fillText('1', 10, h / 2 + 3); g.fillText('1', w - 10, h / 2 + 3);
+    noise(g, w, h, 12); grime(g, w, h, 0.22);
+  });
+
   T.dark = makeTex(8, 8, (g, w, h) => fill(g, '#05060a', w, h));
   T.black = makeTex(8, 8, (g, w, h) => fill(g, '#000000', w, h));
   T.blood = makeTex(64, 64, (g, w, h) => {

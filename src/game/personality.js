@@ -35,7 +35,7 @@ export const ARCHETYPES = [
       smalltalk: [
         `Street lights are out on Ninth again. Whole block's dark.`,
         `You working alone tonight? That's a lot of store for one person.`,
-        `My wife wants the comedy section reorganized. I told her that's your job.`,
+        `Somebody at home wants the comedy section reorganized. I told them that's your job.`,
       ],
     },
   }),
@@ -234,7 +234,7 @@ export const ARCHETYPES = [
       feeDispute: [`Nah. Nah nah nah. No fee. We're friends.`],
       feeWaived: [`I LOVE this place.`],
       noMoney: [`I spent it. All of it. On somethin' stupid.`],
-      thanks: [`You're a prince. A PRINCE.`],
+      thanks: [`You're a SAINT. A saint.`],
       wait: [`I'll wait. I got nowhere. Nowhere at all.`],
       angry: [`Don't you look at me like that. DON'T.`],
       bye: [`I'm walkin'. It's fine. It's four blocks.`],
@@ -328,7 +328,7 @@ export const ARCHETYPES = [
       greetRent: [`Something for the sleeper cab. Two hours, no thinking.`],
       feeAccept: [`Yep. Cash alright?`],
       feeDispute: [`I was in Ohio. Physically in Ohio.`],
-      feeWaived: [`Good man. Good man.`],
+      feeWaived: [`You're alright. You're alright.`],
       noMoney: [`Company card's frozen till Monday.`],
       thanks: [`Preciate you.`],
       wait: [`I got nothin' but road ahead of me.`],
@@ -337,6 +337,51 @@ export const ARCHETYPES = [
       smalltalk: [`Saw a guy walking the shoulder out by the quarry. No car. No flashlight. Just walking.`],
     },
   }),
+
+  P('LOST', {
+    tag: 'in the wrong building',
+    weight: 7, patience: 70, irascibility: 0.35, honesty: 0.9, generosity: 0.3,
+    chattiness: 0.8, wealth: 0.8, speed: 0.95, browse: 0,
+    confused: 'lost',
+    lines: {
+      greetReturn: [`Hi, yeah — order for pickup?`],
+      greetRent: [`Hi, yeah — order for pickup?`],
+      feeAccept: [`Sure, sure.`],
+      feeDispute: [`That is not what the sign out front said.`],
+      feeWaived: [`Well that's more like it.`],
+      noMoney: [`Can I be billed? I'm usually billed.`],
+      thanks: [`Great. Thanks. Great.`],
+      wait: [`Is there a number I should be taking?`, `Should I sit down?`],
+      angry: [`This is the worst run one of these I have ever been in.`],
+      bye: [`I'll be back when you're better organized.`],
+      smalltalk: [`How late are you open? For the other thing, I mean.`],
+    },
+  }),
+
+  P('DIM', {
+    tag: 'not the sharpest',
+    weight: 8, patience: 85, irascibility: 0.25, honesty: 0.95, generosity: 0.4,
+    chattiness: 0.85, wealth: 0.75, speed: 0.9, browse: 14,
+    confused: 'dim',
+    lines: {
+      greetReturn: [`Okay so I have a question and it's going to sound dumb.`],
+      greetRent: [`Okay so I have a question and it's going to sound dumb.`],
+      feeAccept: [`Oh! Money. Right. Yes.`],
+      feeDispute: [`I don't think that's how days work.`],
+      feeWaived: [`Wow. Okay. Wow.`],
+      noMoney: [`Do you take a check? I have a check. It's not mine.`],
+      thanks: [`You've been so patient with me.`],
+      wait: [`I'll just be over here being confused.`],
+      angry: [`Now see, THAT'S rude.`],
+      bye: [`Okay! Bye! Thank you! Bye!`],
+      smalltalk: [
+        `Does the tape know when it's the end? Like, how does it know?`,
+        `My brother says there's a movie inside every tape already and you just pick which one comes out.`,
+        `Which one of these is the one everybody's talking about?`,
+      ],
+    },
+  }),
+
 ];
 
 /** The mask the killer wears while he's pretending to be a customer. */

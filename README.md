@@ -83,9 +83,33 @@ keeps running while you serve somebody else.
 the wrong run counts against your shift. So does a tape you shelved without
 rewinding, and so does anything still sitting on the counter at midnight.
 
-**Rentals.** People pull their own tapes. Ring them up, take the money. Some of
-them do not have any money, and what you do about that is up to you — an
-account, a partial payment, a free rental out of your own numbers, or a no.
+**Rentals.** People pull their own tapes — and they take their time about it.
+They drift to a section, read the backs of a few boxes, pull one out, turn it
+over, put it back and try somewhere else. Tell them one is good and they will
+take your word for it. Tell them you close soon and they will settle for
+whatever is in their hand.
+
+**Money is paper.** Nothing goes straight into the till. They hand you a bill,
+it sits in your hand until you walk it to the register and ring it up, and if
+they gave you a twenty for a three dollar rental they are standing at your
+counter until you count their change back out of the drawer. Cash still in your
+hand at midnight is cash you have to explain.
+
+Some of them do not have any money at all, and what you do about that is up to
+you — an account, a partial payment, a free rental out of your own numbers, or
+a no.
+
+**And some of them are not all there.** A man wants the number three with no
+onions and asks whether the shake machine is working. A woman has a load of
+whites in the car and wants change for the machines. Someone is holding ticket
+B-forty-one and would like to renew their license. You can explain, or you can
+play along and see how far it goes — playing along makes them love you, and
+people who love you buy things.
+
+Others are in the right shop with the wrong idea entirely: the tape that has to
+work in a Betamax, the one returned to the wrong chain, the customer who
+believes renting is just buying very slowly, and the man who has brought his
+entire VCR in on a cart because yours does not make the noise.
 
 **Patience.** Everyone has a fuse and the length of it depends on who they are.
 The commuter who is double-parked is not the retiree who wants to tell you about
@@ -100,9 +124,11 @@ The deputy's description is the only thing you get. It is never complete, and it
 gets thinner every night as the witness statements dry up.
 
 - **Look at people.** Standing in front of someone long enough takes in the
-  obvious things — height, build, hair, coat, whatever is on their face and in
-  their hands. Getting close enough tells you what they smell like. Talking to
-  them tells you what they sound like.
+  obvious things — sex, height, build, hair, coat, whatever is on their face and
+  in their hands. Getting close enough tells you what they smell like. Talking
+  to them tells you what they sound like. Everything the deputy can describe is
+  on the model: a ponytail is a ponytail, a limp is a limp, and the duffel bag
+  is really there.
 - **`TAB` compares.** The bulletin on the left, the person in front of you on the
   right, matches highlighted. Someone can match four of six lines and be nobody.
 - **He may come in first as a customer**, browse, and check out a tape. He is
@@ -134,6 +160,12 @@ sound is generated at runtime by about 6,000 lines of JavaScript.
 - **Integer vertex snapping.** Projected vertices are rounded to whole pixels,
   exactly like the PlayStation's GTE, which had no subpixel precision. This is
   the source of the polygon wobble on anything that moves.
+- **Lofted, faceted bodies.** People are not boxes. Every part is a stack of
+  cross-sections skinned into a tapered solid — a torso that narrows at the
+  waist and slopes at the shoulders, an eight-sided skull with one flat panel
+  for the face, limbs that thin toward the wrist. Build and sex are baked into
+  separate meshes rather than squashed in with a scale factor, so "heavy set"
+  and "thin, narrow shoulders" read from across the shop, which they have to.
 - **Affine texture mapping.** UVs are interpolated linearly in screen space with
   no perspective correction, so textures swim across large surfaces. The period
   fix was to subdivide big polygons, so the floor, ceiling and walls are built as
@@ -167,7 +199,7 @@ Everything renders into a 320×240 buffer and is scaled up with nearest-neighbou
 | `game/customer.js` | arrival, browsing, queueing, patience, anger, leaving |
 | `game/killer.js` | the two acts |
 | `game/night.js` | the shift director: suspect, bulletin, decoys, schedule, difficulty |
-| `game/actor.js` | the low-poly humanoid — about ninety triangles a person |
+| `game/actor.js` | the low-poly humanoid — about 240 triangles a person |
 
 ### Difficulty
 

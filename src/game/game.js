@@ -14,15 +14,15 @@ import {
   DOOR_X0, DOOR_X1, D,
 } from './world.js';
 import { buildActorMeshes, drawActor, ACTOR_HEIGHT, makeAnim, updateAnim } from './actor.js';
-import { createPlayer, updatePlayer, buildCamera, castInteract, canCarry, takeTape, topTape, heldTapeMatrix, forwardOf } from './player.js';
+import { createPlayer, updatePlayer, buildCamera, castInteract, canCarry, takeTape, topTape, heldTapeMatrix, heldCashMatrix, forwardOf } from './player.js';
 import { createCustomer, updateCustomer, CS, observeVisible, moodLabel } from './customer.js';
 import { createKiller, updateKiller, KP, killerActive, killerInView, addIntel } from './killer.js';
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight } from './night.js';
 import { DialogueRunner, buildOfficerIntro, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, reportHtml, endingHtml } from './ui.js';
-import { randomAppearance, paintSkin } from './appearance.js';
+import { randomAppearance, paintSkin, voicePitchOf, pronounOf } from './appearance.js';
 import { OFFICER } from './personality.js';
-import { GENRE_LABEL } from './tapes.js';
+import { GENRE_LABEL, GENRES, makeTape } from './tapes.js';
 
 const ST = {
   BOOT: 'BOOT', TITLE: 'TITLE', HOWTO: 'HOWTO', OPTIONS: 'OPTIONS',
@@ -131,6 +131,7 @@ export class Game {
       served: 0, rentalsRung: 0, feesCollected: 0, feesWaived: 0,
       shelvedRight: 0, shelvedWrong: 0, shelvedUnrewound: 0, unshelved: 0,
       angered: 0, stormedOut: 0, turnedAway: 0,
+      cashLoose: 0, changeStiffed: 0, tips: 0,
     };
 
     this.door = { locked: false, swing: 0, target: 0, holdOpen: 0 };
@@ -206,9 +207,9 @@ export class Game {
     if (typed >= 0) {
       if (Math.floor(typed / 3) > Math.floor(this._lastTyped / 3)) {
         const node = this.phone.active ? this.phone.node : this.dlg.node;
-        const v = node && !node.asPlayer && node.person && node.person.app
-          ? node.person.app.voice : { pitch: 1.05, rough: 0.5 };
-        this.sound.blip(v.pitch, v.rough);
+        const app = node && !node.asPlayer && node.person && node.person.app;
+        if (app) this.sound.blip(voicePitchOf(app), app.voice.rough);
+        else this.sound.blip(1.05, 0.5);
       }
       this._lastTyped = typed;
     } else this._lastTyped = -1;
@@ -368,7 +369,7 @@ export class Game {
     // ---- HUD ----
     this.ui.setClock(clockString(this.elapsed, this.night.length), this.nightNo);
     this.ui.setTill(this.till);
-    this.ui.setHands(this.player.held, this.rewinder);
+    this.ui.setHands(this.player.held, this.rewinder, this.player);
     if (this.notesOpen) this.ui.showNotes(this.night.bulletin, this.player.lookTarget);
 
     // ---- night end ----
@@ -601,12 +602,15 @@ export class Game {
     t.push({ kind: 'bin', aabb: box(PROPS.bin) });
     t.push({ kind: 'rewinder', aabb: box(PROPS.rewinder) });
     t.push({ kind: 'register', aabb: box(PROPS.register) });
-    t.push({ kind: 'phone', aabb: box(PROPS.phone) });
+    t.push({ kind: 'phone', aabb: pad(PROPS.phone, 0.14, 0.22, 0.16) });
     t.push({ kind: 'door', aabb: { x0: DOOR_X0 - 0.2, x1: DOOR_X1 + 0.2, y0: 0.2, y1: 2.1, z0: -0.35, z1: 0.35 } });
     for (const c of this.people()) {
       if (c.hidden) continue;
       const h = ACTOR_HEIGHT * c.app.height.scale;
-      t.push({ kind: 'person', c, cyl: { x: c.x, z: c.z, r: 0.42, y0: 0.1, y1: h } });
+      // Deliberately taller and wider than the person. A five-foot customer's
+      // head sits below the clerk's eye line, and looking straight ahead at
+      // someone should always offer to talk to them.
+      t.push({ kind: 'person', c, cyl: { x: c.x, z: c.z, r: 0.46, y0: 0.05, y1: Math.max(h + 0.30, 1.90) } });
     }
     return t;
   }
@@ -660,8 +664,22 @@ export class Game {
         break;
       }
       case 'register': {
-        prompt = `${K('E')}Count the drawer\n<span class="sub">$${this.till.toFixed(2)} tonight${this.owedTotal ? ` / $${this.owedTotal.toFixed(2)} on accounts` : ''}</span>`;
-        act = () => { this.sound.cashDrawer(); this.ui.toast(`Drawer: $${this.till.toFixed(2)}`, ''); };
+        const cash = this.player.cash;
+        if (cash.owed > 0.001) {
+          prompt = `${K('E')}Ring up $${cash.owed.toFixed(2)}\n<span class="sub">$${cash.tendered.toFixed(2)} in your hand</span>`;
+          act = () => this.ringUp();
+        } else if (this.player.changeInHand > 0.001) {
+          prompt = `${K('E')}Put $${this.player.changeInHand.toFixed(2)} back in the drawer\n<span class="sub">nobody waiting on it</span>`;
+          act = () => {
+            this.till = round2(this.till + this.player.changeInHand);
+            this.ui.toast(`Returned $${this.player.changeInHand.toFixed(2)} to the drawer`, '');
+            this.player.changeInHand = 0;
+            this.sound.cashDrawer();
+          };
+        } else {
+          prompt = `${K('E')}Count the drawer\n<span class="sub">$${this.till.toFixed(2)} tonight${this.owedTotal ? ` / $${this.owedTotal.toFixed(2)} on accounts` : ''}</span>`;
+          act = () => { this.sound.cashDrawer(); this.ui.toast(`Drawer: $${this.till.toFixed(2)}`, ''); };
+        }
         break;
       }
       case 'phone': {
@@ -745,6 +763,42 @@ export class Game {
     if (free >= 0 && nearCounter) this.counterSlots[free] = t;
     else this.bin.push(t);
     this.sound.drop();
+  }
+
+  /* ---------------- cash ----------------
+     Nothing goes straight into the till. A customer hands you paper, it sits
+     in your hand until you walk it to the register, and if they gave you a
+     twenty for a three dollar rental they are standing there until you count
+     their change back.                                                      */
+  takeCashFrom(owed, c, why, exact) {
+    const tendered = (exact || this.rng.chance(0.42)) ? owed : nextBill(owed);
+    const change = Math.round((tendered - owed) * 100) / 100;
+    this.player.cash.tendered = round2(this.player.cash.tendered + tendered);
+    this.player.cash.owed = round2(this.player.cash.owed + owed);
+    if (why === 'late fee') this.stats.feesCollected += owed;
+    if (change > 0.001) {
+      c.awaitingChange = true;
+      c.changeDue = round2((c.changeDue || 0) + change);
+      c.changeTimer = 0;
+    }
+    this.sound.paper();
+    this.ui.toast(change > 0.001
+      ? `Took $${tendered.toFixed(2)} — $${change.toFixed(2)} change owed`
+      : `Took $${tendered.toFixed(2)}`, 'good');
+    return { tendered, change };
+  }
+
+  ringUp() {
+    const cash = this.player.cash;
+    if (cash.owed <= 0.001) return;
+    this.till = round2(this.till + cash.owed);
+    const surplus = round2(cash.tendered - cash.owed);
+    this.ui.toast(`Drawer: +$${cash.owed.toFixed(2)}`
+      + (surplus > 0.001 ? ` — $${surplus.toFixed(2)} counted out` : ''), 'good');
+    this.player.cash = { tendered: 0, owed: 0 };
+    this.player.changeInHand = round2(this.player.changeInHand + surplus);
+    this.sound.cashDrawer();
+    this.sound.kaching();
   }
 
   toggleLock() {
@@ -888,6 +942,7 @@ export class Game {
     // anything still in your hands, on the counter or in the bin is a black mark
     this.stats.unshelved = this.player.held.length + this.bin.length
       + this.counterSlots.filter(Boolean).length + (this.rewinder.tape ? 1 : 0);
+    this.stats.cashLoose = round2(this.player.cash.owed + this.player.changeInHand);
     const grade = gradeNight(this.stats);
     this.grade = grade;
     this.state = ST.REPORT;
@@ -981,6 +1036,12 @@ export class Game {
       if (c.tape && !c.gaveTape && !c.checkedOut) this.drawHeldByNpc(c, shade);
     }
 
+    // ---- cash in your hand ----
+    if (p.cash && (p.cash.tendered > 0.001 || p.changeInHand > 0.001)) {
+      heldCashMatrix(p, M.m, Math.sin(p.bobPhase) * 0.6);
+      rz.drawMesh(this.world.cashMesh, M.m, { shade: Math.min(1.1, lightAt(p.x, 1.2, p.z) * L * 1.15) });
+    }
+
     // ---- your hands ----
     if (p.held) {
       for (let i = 0; i < p.held.length; i++) {
@@ -1020,15 +1081,17 @@ export class Game {
   drawHeldByNpc(c, shade) {
     const hs = c.app.height.scale;
     const reach = (c.state === CS.TALKING && !c.gaveTape) ? 0.30 : 0;
-    const lx = (0.21 * c.app.build.w + 0.10) * hs;
-    const ly = (1.42 - 0.52) * hs;
-    const lz = (0.10 + reach) * hs;
+    const reading = !!c.reading;
+    // reading pose: up in front of the chest, tilted back toward the face
+    const lx = (reading ? 0.13 : 0.21 * c.app.build.w + 0.10) * hs;
+    const ly = (reading ? 1.22 : 0.90) * hs;
+    const lz = (reading ? 0.26 : 0.10 + reach) * hs;
     const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw);
     const x = c.x + lx * cy + lz * sy;
     const z = c.z - lx * sy + lz * cy;
     const M = this._mats;
-    setPosYaw(M.m, x, ly, z, c.yaw + 0.3);
-    const r = M.tmp; setRotX(r, 1.3); mul(M.m, M.m, r);
+    setPosYaw(M.m, x, ly, z, c.yaw + (reading ? 0.12 : 0.3));
+    const r = M.tmp; setRotX(r, reading ? 0.28 : 1.3); mul(M.m, M.m, r);
     this.raster.drawMesh(this.world.tapeMesh[c.tape.genre], M.m, { shade });
   }
 
@@ -1073,9 +1136,26 @@ export class Game {
         const s = g.sound.spatial(g.player.x, g.player.z, g.player.yaw, c.x, c.z);
         if (s.gain > 0.02) g.sound.pickup();
       },
+      putBack: (c) => {
+        const s = g.sound.spatial(g.player.x, g.player.z, g.player.yaw, c.x, c.z);
+        if (s.gain > 0.02) g.sound.shelve(true);
+      },
+      chose: (c) => {
+        const s = g.sound.spatial(g.player.x, g.player.z, g.player.yaw, c.x, c.z);
+        if (s.gain > 0.05) g.ui.toast(`${c.name} picked something out.`, '');
+      },
+      /** A recommendation ends the browsing then and there. */
+      nudgeChoice: (c) => {
+        if (c.browse) c.browse.visits = 0;
+      },
+      /** Being told you close soon makes them settle for whatever is in hand. */
+      hurry: (c) => {
+        if (c.browse) c.browse.visits = Math.min(c.browse.visits, c.browse.seen + 1);
+        c.speed *= 1.12;
+      },
 
       grumble: (c) => {
-        g.sound.blip(c.app.voice.pitch, c.app.voice.rough);
+        g.sound.blip(voicePitchOf(c.app), c.app.voice.rough);
         g.ui.toast(`${c.name}: "${pickGrumble(c, g.rng)}"`, '');
         c.observed.add('voice');
       },
@@ -1099,11 +1179,28 @@ export class Game {
       },
 
       /* --- money --- */
-      pay: (amt, why) => {
-        g.till += amt;
-        if (why === 'late fee') g.stats.feesCollected += amt;
+      takeCash: (owed, c, why, exact) => g.takeCashFrom(owed, c, why, exact),
+      cashInHand: () => g.player.cash.owed,
+      changeInHand: () => g.player.changeInHand,
+      giveChange: (c) => {
+        const due = c.changeDue || 0;
+        g.player.changeInHand = round2(g.player.changeInHand - due);
+        c.awaitingChange = false; c.changeDue = 0;
+        g.sound.paper();
+        g.ui.toast(`Gave $${due.toFixed(2)} change`, '');
+      },
+      keepChange: (c) => {
+        const due = c.changeDue || 0;
+        g.player.changeInHand = round2(g.player.changeInHand - due);
+        g.till = round2(g.till + due);
+        g.stats.tips += due;
+        c.awaitingChange = false; c.changeDue = 0;
         g.sound.kaching();
-        g.ui.toast(`+$${amt.toFixed(2)} ${why || ''}`.trim(), 'good');
+      },
+      needRegister: () => g.ui.toast(`Ring it up at the register first.`, 'bad'),
+      stiffed: (c) => {
+        g.stats.changeStiffed++;
+        g.ui.toast(`${c.name} left without their change.`, 'bad');
       },
       waive: (amt) => { g.stats.feesWaived += amt; g.ui.toast(`Waived $${amt.toFixed(2)}`, ''); },
       owed: (c, amt) => { g.owedTotal += amt; g.ui.toast(`$${amt.toFixed(2)} on ${c.name}'s account`, ''); },
@@ -1120,10 +1217,16 @@ export class Game {
       binTape: (tape, c) => { g.bin.push(tape); c.tape = null; g.sound.drop(); },
       checkout: (tape, c, unpaid) => {
         g.stats.rentalsRung++;
-        if (!unpaid) { g.till += tape.price; g.sound.kaching(); g.ui.toast(`+$${tape.price.toFixed(2)} rental`, 'good'); }
-        else g.sound.registerBeep();
+        if (unpaid) { g.sound.registerBeep(); return null; }
+        return g.takeCashFrom(tape.price, c, 'rental');
       },
       returnToShelf: (c) => { c.tape = null; g.ui.toast(`Tape goes back on the shelf.`, ''); },
+      /** You pick something out for someone who cannot pick for themselves. */
+      giveShelfPick: (c) => {
+        const t = makeTape(g.rng.pick(GENRES), g.rng, { rewound: true });
+        t.heldBy = c.id;
+        return t;
+      },
 
       /* --- suspect --- */
       killerIntel: (n) => addIntel(g.killer, n),
@@ -1212,7 +1315,20 @@ export class Game {
 }
 
 /* ---------------- helpers ---------------- */
+const round2 = (v) => Math.round(v * 100) / 100;
+
+/** What people actually hand over: the smallest bill that covers it. */
+function nextBill(owed) {
+  for (const b of [1, 2, 5, 10, 20]) if (b >= owed - 0.001) return b;
+  return Math.ceil(owed / 10) * 10;
+}
+
 function box(p) { return { x0: p.x0, x1: p.x1, y0: p.y0, y1: p.y1, z0: p.z0, z1: p.z1 }; }
+
+/** Grow an interaction volume past the thing it belongs to. */
+function pad(p, dx, dy, dz) {
+  return { x0: p.x0 - dx, x1: p.x1 + dx, y0: p.y0 - dy, y1: p.y1 + dy, z0: p.z0 - dz, z1: p.z1 + dz };
+}
 
 function pickGrumble(c, rng) {
   const G = [

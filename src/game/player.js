@@ -16,6 +16,8 @@ export function createPlayer() {
     eye: EYE,
     bob: 0, bobPhase: 0, roll: 0,
     held: [],                 // tapes in hand, newest last
+    cash: { tendered: 0, owed: 0 },   // taken across the counter, not yet rung up
+    changeInHand: 0,                  // counted out of the drawer, owed back
     lookTarget: null,
     stepTimer: 0,
     tension: 0,
@@ -141,6 +143,23 @@ export function canCarry(p) { return p.held.length < MAX_CARRY; }
 export function topTape(p) { return p.held.length ? p.held[p.held.length - 1] : null; }
 export function takeTape(p, tape) { if (!canCarry(p)) return false; p.held.push(tape); return true; }
 export function dropTop(p) { return p.held.pop() || null; }
+
+/** Cash rides in the lower-left, opposite the tapes. */
+export function heldCashMatrix(p, out, sway) {
+  const s = sway || 0;
+  setTranslate(_t, p.x, p.eye + p.bob, p.z);
+  setRotY(_r, p.yaw);
+  mul(out, _t, _r);
+  setRotX(_r, -p.pitch * 0.35);
+  mul(out, out, _r);
+  setTranslate(_t, -0.205 + s * 0.015, -0.205, 0.46);
+  mul(out, out, _t);
+  setRotY(_r, 0.55);
+  mul(out, out, _r);
+  setRotX(_r, 1.24);          // tipped up so you can see it is money
+  mul(out, out, _r);
+  return out;
+}
 
 /** Held tapes ride in the lower-right of the frame, stacked. */
 export function heldTapeMatrix(p, i, out, sway) {

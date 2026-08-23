@@ -6,6 +6,8 @@ import { Game } from './game/game.js';
 import * as appearance from './game/appearance.js';
 import * as mathx from './engine/mathx.js';
 import * as customer from './game/customer.js';
+import * as personality from './game/personality.js';
+import * as dialogue from './game/dialogue.js';
 
 const start = async () => {
   const game = new Game();
@@ -14,6 +16,8 @@ const start = async () => {
   window.__app = appearance;
   window.__mathx = mathx;
   window.__cust = customer;
+  window.__pers = personality;
+  window.__dlg = dialogue;
   try {
     await game.boot();
     game.applyOptions();

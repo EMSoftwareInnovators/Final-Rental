@@ -38,8 +38,17 @@ export class UI {
   }
   setTill(v) { this.el.till.textContent = v.toFixed(2); }
 
-  setHands(tapes, rewinder) {
+  setHands(tapes, rewinder, player) {
     const rows = [];
+    if (player) {
+      if (player.cash && player.cash.owed > 0.001) {
+        rows.push(`<span class="warn">CASH IN HAND $${player.cash.tendered.toFixed(2)}`
+          + ` — $${player.cash.owed.toFixed(2)} NOT RUNG UP</span>`);
+      }
+      if (player.changeInHand > 0.001) {
+        rows.push(`<span class="warn">CHANGE TO RETURN $${player.changeInHand.toFixed(2)}</span>`);
+      }
+    }
     if (rewinder && rewinder.tape) {
       const pct = Math.min(100, Math.round(rewinder.t / rewinder.dur * 100));
       rows.push(rewinder.done
@@ -149,8 +158,12 @@ export class UI {
       this.el.notesTargetHdr.textContent = 'PERSON IN VIEW';
       const rows = [];
       rows.push(`<li class="plain"><b>${escape(target.name)}</b> <span class="quiet">- ${escape(target.personality.tag)}</span></li>`);
-      for (const k of [...VISIBLE_KEYS, 'smell', 'voice']) {
-        if (!target.observed.has(k)) continue;
+      // Bulletin traits first: those are the ones you are actually comparing,
+      // and the pad has a bottom edge.
+      const keys = [...VISIBLE_KEYS, 'smell', 'voice']
+        .filter((k) => target.observed.has(k))
+        .sort((x, y) => (bulletin.known.has(y) ? 1 : 0) - (bulletin.known.has(x) ? 1 : 0));
+      for (const k of keys) {
         const inBulletin = bulletin.known.has(k);
         const match = inBulletin && sameTrait(target.app, bulletin.app, k);
         rows.push(`<li class="${match ? 'match' : ''}"><b>${KEY_LABEL[k]}:</b> ${escape(traitLabel(target.app, k))}</li>`);
@@ -269,6 +282,9 @@ export function reportHtml(night, stats, grade, next) {
       ${row('Customers angered', stats.angered, stats.angered ? 'k' : '')}
       ${row('Walked out furious', stats.stormedOut, stats.stormedOut ? 'k' : '')}
       ${row('Found the door locked', stats.turnedAway, stats.turnedAway ? 'k' : '')}
+      ${row('Left without their change', stats.changeStiffed, stats.changeStiffed ? 'k' : '')}
+      ${row('Cash never rung up', `$${stats.cashLoose.toFixed(2)}`, stats.cashLoose ? 'k' : '')}
+      ${row('Tips', `$${stats.tips.toFixed(2)}`)}
     </table>
     <div>
       <div class="grade"><span class="big">${grade.letter}</span>${grade.score} pts</div>

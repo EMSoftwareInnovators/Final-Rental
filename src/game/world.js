@@ -250,9 +250,21 @@ export function buildWorld(T) {
 
   const mesh = mb.build();
 
+  // a folded wad of bills, for the hand and the drawer
+  const cashB = new MeshBuilder();
+  cashB.light = () => 1;
+  for (let i = 0; i < 3; i++) {
+    cashB.box(-0.075, i * 0.004, -0.033, 0.075, i * 0.004 + 0.003, 0.033, {
+      all: { tex: T.cash, uv: [2, 2, 62, 30] },
+      py: { tex: T.cash, uv: [0, 0, 64, 32] },
+    });
+  }
+  const cashMesh = cashB.build();
+
   return {
     mesh,
     tvMesh, tvPos,
+    cashMesh,
     doorOpenMesh: doorLeaf(T.doorGlass),
     doorLockedMesh: doorLeaf(T.doorLocked),
     tapeTex: tape,

@@ -115,7 +115,13 @@ export function buildOfficerIntro(officer, bulletin, ctx) {
    CUSTOMERS
    ============================================================ */
 export function talkTo(c, ctx) {
+  if (c.awaitingChange) return changeRoot(c, ctx);
   if (c.mood <= 0 && !c.resolvedAnger) return angryRoot(c, ctx);
+  if (c.script === 'confused' && !c.confusionResolved) {
+    c.confusionResolved = true;
+    return confusedRoot(c, ctx);
+  }
+  if (c.script === 'confused' && c.tape && !c.checkedOut) return rentRoot(c, ctx);
   if (c.script === 'return') return returnRoot(c, ctx);
   if (c.script === 'rent') return rentRoot(c, ctx);
   return idleRoot(c, ctx);
@@ -204,9 +210,12 @@ function feeNode(c, ctx, then) {
 
   const paid = () => {
     c.feeSettled = true;
-    ctx.pay(fee, 'late fee');
+    const t = ctx.takeCash(fee, c, 'late fee');
     ctx.mood(c, +2);
-    return say(c, line(c, 'thanks', rng, `Thanks.`), [reply('...', () => then())]);
+    return say(c, t.change > 0
+      ? `${rng.pick(['Out of ' + money(t.tendered) + '.', 'Only got a ' + money(t.tendered) + ' on me.', 'Sorry, big bill.'])}`
+      : line(c, 'thanks', rng, `Thanks.`),
+      [reply(t.change > 0 ? `I'll get your change.` : `...`, () => then())]);
   };
   const waived = () => {
     c.feeSettled = true;
@@ -263,7 +272,7 @@ function feeNode(c, ctx, then) {
     }
     if (disputes) return demand();
     return say(c, line(c, 'feeAccept', rng, `Fair enough.`), [
-      reply(`Thank you. Out of the drawer.`, () => paid(), { good: money(fee) }),
+      reply(`Thank you. I'll take that.`, () => paid(), { good: money(fee) }),
       reply(`On second thought — forget it tonight.`, () => waived(), { cost: `-${money(fee)}` }),
     ]);
   };
@@ -300,7 +309,7 @@ function handOver(c, ctx) {
         ]), [
           reply(`There's a dollar rewind charge.`, () => {
             if (!c.hasMoney) { ctx.mood(c, -8); return say(c, line(c, 'noMoney', rng, `Can't tonight.`), [reply('...', () => handOver(c, ctx))]); }
-            ctx.pay(1, 'rewind charge'); ctx.mood(c, -6);
+            ctx.takeCash(1, c, 'rewind charge'); ctx.mood(c, -6);
             return say(c, rng.pick([`Yeah. That's fair.`, `A dollar. Sure.`]), [reply('...', () => handOver(c, ctx))]);
           }, { good: '$1.00' }),
           reply(`Don't worry about it, I'll do it.`, () => { ctx.mood(c, +14); return handOver(c, ctx); }),
@@ -329,8 +338,11 @@ function rentRoot(c, ctx) {
 
   const complete = () => {
     c.checkedOut = true;
-    ctx.checkout(tape, c);
-    return say(c, line(c, 'thanks', rng, `Thanks.`), [reply('Two nights. Be kind, rewind.', () => finish())]);
+    const t = ctx.checkout(tape, c);
+    return say(c, t && t.change > 0
+      ? `Out of ${money(t.tendered)}, sorry.`
+      : line(c, 'thanks', rng, `Thanks.`),
+      [reply('Two nights. Be kind, rewind.', () => finish())]);
   };
 
   const broke = () => say(c, line(c, 'noMoney', rng, `I'm short.`), [
@@ -352,7 +364,7 @@ function rentRoot(c, ctx) {
       const has = Math.round(price * rng.range(0.2, 0.75) * 100) / 100;
       return say(c, `${money(has)}. That's — that's everything.`, [
         reply(`Take it for ${money(has)}.`, () => {
-          ctx.pay(has, 'partial'); ctx.waive(price - has); ctx.mood(c, +24);
+          ctx.takeCash(has, c, 'partial', true); ctx.waive(price - has); ctx.mood(c, +24);
           c.checkedOut = true; ctx.checkout(tape, c, true); return finish();
         }, { good: money(has) }),
         reply(`Not enough. Sorry.`, () => { ctx.mood(c, -12); ctx.returnToShelf(c); return finish(); }),
@@ -394,6 +406,234 @@ function rentRoot(c, ctx) {
   return say(c, line(c, 'greetRent', rng, `Just this one.`), cs);
 }
 
+/* ============================================================
+   THE ONES WHO ARE NOT ALL THERE
+   Two flavours: people in the wrong building entirely, and people in
+   the right building with a completely wrong model of how it works.
+   ============================================================ */
+
+export const LOST_PREMISES = {
+  restaurant: {
+    open: `Yeah, hi — let me get the number three, no onions, and whatever the kid gets. Is the shake machine working?`,
+    push: `I can see the menu boards right there behind you. The little coloured ones.`,
+    relent: `...Those are movies.\n\nThose are movies, aren't they.`,
+    play: `Great, great. And can I get that to go? I'm parked in the fire lane.`,
+    exit: `Well now I have to drive all the way back around.`,
+  },
+  laundromat: {
+    open: `Do you have change for the machines? I've got a load of whites in the car and nobody's at the desk.`,
+    push: `The washers. Big silver ones. Usually along that wall.`,
+    relent: `That's... that's a shelf of tapes.\n\nOh, for crying out loud.`,
+    play: `Which machine's the good one? Last time I used four and it ate my quarters.`,
+    exit: `Then where do people wash things around here?`,
+  },
+  pharmacy: {
+    open: `Pickup for Halvorsen. Should be under H. It's the blue one, the little blue one.`,
+    push: `The doctor called it in Tuesday. He said it'd be ready Tuesday.`,
+    relent: `Wait. Wait, hold on. What kind of store is this?`,
+    play: `And is that the generic? Because my insurance only does the generic.`,
+    exit: `Then somebody has my prescription and it is NOT me.`,
+  },
+  dmv: {
+    open: `I've got B-forty-one. They called B-thirty-nine about ten minutes ago and then everybody just left.`,
+    push: `I'm here for the renewal. I brought both proofs of residence, look.`,
+    relent: `...Why is there a movie about a shark on the counter.`,
+    play: `Do I look at the little box or the wall chart? Nobody ever says.`,
+    exit: `I have been in this line since two o'clock.`,
+  },
+  hardware: {
+    open: `I need a five-sixteenths carriage bolt, about two inches, and one of those washers that isn't flat.`,
+    push: `You had them last spring. Aisle at the back, past the paint.`,
+    relent: `That's not paint. That's a display for a movie.`,
+    play: `Galvanised, if you've got it. It's going outside.`,
+    exit: `Then I'm going to Fenner's and Fenner's is closed.`,
+  },
+  bank: {
+    open: `I'd like to deposit this and get forty back. Sorry — do you need the little slip? I never fill out the little slip.`,
+    push: `You're a teller, aren't you? You're behind the counter.`,
+    relent: `Oh no. Oh, I have been standing in a video store.`,
+    play: `Put it in checking. No — savings. No, checking.`,
+    exit: `Do NOT tell my daughter about this.`,
+  },
+  arcade: {
+    open: `Two dollars in tokens. And is the pinball one still tilted? My son says it's tilted.`,
+    push: `The arcade. This is the arcade. There's a sign.`,
+    relent: `That sign says "SUNSET VIDEO." ...That's a different kind of video, isn't it.`,
+    play: `Give me quarters instead. The tokens jam.`,
+    exit: `Everything good closes.`,
+  },
+  post: {
+    open: `Book of stamps and I need to know what it costs to send this to Nevada.`,
+    push: `You've got a scale back there. I can see a scale.`,
+    relent: `That's a tape rewinder. Why does a post office have a tape rewinder.`,
+    play: `Do the pretty ones cost extra? They always cost extra.`,
+    exit: `Nobody in this town knows what their own job is.`,
+  },
+};
+
+export const DIM_PREMISES = {
+  theaters: {
+    open: `I want the one that's in the theatre right now. The big one. With the boat.`,
+    push: `I don't want to GO to the theatre. I want you to have it here. Tonight.`,
+    relent: `So I have to wait a whole year? For a movie that already exists?`,
+    play: `Front row seats if you've got them. Not too close.`,
+    exit: `A whole year. Unbelievable.`,
+  },
+  betamax: {
+    open: `Before I take this — does it work in a Betamax? Because everything you rent me is the wrong shape.`,
+    push: `They're the same. They're both a rectangle.`,
+    relent: `...You're telling me I bought the wrong machine. In 1983.`,
+    play: `I'll take two. One for each slot.`,
+    exit: `Thirteen years. Thirteen years I've had that thing.`,
+  },
+  librarycard: {
+    open: `Here's my card. It should have my whole history on it.`,
+    push: `It's a card. You swipe cards. That's what the machine is for.`,
+    relent: `This is a library card, isn't it.\n\nWhy do they make them all the same.`,
+    play: `Put it on the card and I'll settle up in three weeks like always.`,
+    exit: `Then what is a card even FOR.`,
+  },
+  otherchain: {
+    open: `Returning this. Yes, I know. I know it doesn't say your name on it. Hear me out.`,
+    push: `You're both video stores. Surely you people talk.`,
+    relent: `So I have to drive it back across the bridge myself.`,
+    play: `Great, I'll leave it with you. Tell them Krebs brought it back.`,
+    exit: `You are all in this together.`,
+  },
+  theguy: {
+    open: `I'm looking for the one with the guy in it. You know the guy. He's got the face.`,
+    push: `He was in the other one. With the car. He does the thing with his eyebrow.`,
+    relent: `Okay, I'll walk around until I see him. He's on the front of the box.`,
+    play: `Yeah! That's the guy! That's absolutely the guy.`,
+    exit: `Nobody ever knows the guy.`,
+  },
+  wedding: {
+    open: `Returning this. I'd like it noted the picture quality was terrible and there's a whole hour of somebody's shoes.`,
+    push: `It came out of my machine. Therefore it is yours.`,
+    relent: `..."CHRISTINE AND DALE, JUNE 8." \n\nThat's my niece's wedding. I taped over your movie.`,
+    play: `I'd give it two stars. The reception picked up at the end.`,
+    exit: `Well now I have to tell Christine.`,
+  },
+  broughtvcr: {
+    open: `I brought the whole machine in. It's in the cart. Can you rewind it here, with your equipment?`,
+    push: `Mine makes a noise. Yours doesn't make a noise. So yours is better.`,
+    relent: `You want me to take a VCR back out to a Buick in the dark.`,
+    play: `Careful, the cord's shot. Don't touch the bare part.`,
+    exit: `And they wonder why nobody fixes anything anymore.`,
+  },
+  keeping: {
+    open: `Just so we're square — this one's mine now, right? I rented it. That's like buying it slowly.`,
+    push: `I've had four of yours for three years. Nobody said a word.`,
+    relent: `...How much is it, in total. Approximately.\n\nDon't tell me. Don't say it out loud.`,
+    play: `Fantastic. I'll start a shelf.`,
+    exit: `I'm going to go sit in my car for a minute.`,
+  },
+};
+
+function confusedRoot(c, ctx) {
+  const rng = ctx.rng;
+  const lost = c.personality.confused === 'lost';
+  const table = lost ? LOST_PREMISES : DIM_PREMISES;
+  const P = table[c.premise] || table[Object.keys(table)[0]];
+  const done = () => farewell(c, ctx);
+
+  // If they wandered in holding something, they can still be sold it.
+  const sell = () => {
+    if (!c.tape) {
+      return say(c, rng.pick([
+        `...Fine. Fine! What have you got that's short.`,
+        `Alright. Pick one for me. Something with a dog.`,
+        `You know what? Yes. I'm owed something today.`,
+      ]), [
+        reply(`Two ninety-nine. Two nights.`, () => {
+          if (!c.hasMoney) { ctx.mood(c, -6); return say(c, `...Naturally I have no money.`, [reply('...', () => done())]); }
+          c.tape = ctx.giveShelfPick(c);
+          c.checkedOut = true;
+          const t = ctx.checkout(c.tape, c);
+          ctx.mood(c, +14);
+          return say(c, t && t.change > 0 ? `Out of ${money(t.tendered)}.` : `There. That was easy.`,
+            [reply(`Be kind, rewind.`, () => done())]);
+        }, { good: '$2.99' }),
+        reply(`We're closing soon, honestly.`, () => { ctx.mood(c, -8); return done(); }),
+      ]);
+    }
+    return rentRoot(c, ctx);
+  };
+
+  const relented = () => say(c, P.relent, [
+    reply(`Happens more than you'd think.`, () => { ctx.mood(c, +12); return sell(); }),
+    reply(`It's been a long night for both of us.`, () => { ctx.mood(c, +16); return sell(); }),
+    reply(`Yeah. Have a good one.`, () => { ctx.mood(c, -2); return done(); }),
+  ]);
+
+  const pushed = () => say(c, P.push, [
+    reply(`I promise you. Video rentals. That is the entire business.`, () => relented()),
+    reply(`(point at the eight hundred videotapes)`, () => { ctx.mood(c, +6); return relented(); }),
+    reply(`Sure. Whatever you say.`, () => {
+      ctx.mood(c, +8);
+      return say(c, P.play, [
+        reply(`...I can't keep this up. This is a video store.`, () => relented()),
+        reply(`Coming right up.`, () => {
+          ctx.mood(c, +20);
+          return say(c, rng.pick([
+            `You know what, you're the only one here who listens.`,
+            `Finally. Somebody who knows what they're doing.`,
+            `See, THIS is service.`,
+          ]), [reply(`...`, () => sell())]);
+        }, { risk: true }),
+      ]);
+    }),
+  ]);
+
+  return say(c, P.open, [
+    reply(lost ? `Sir, this is a video store.` : `I'm going to stop you there.`, () => pushed()),
+    reply(`...Go on.`, () => pushed()),
+    reply(lost ? `The place you want is two doors down.` : `That's not how any of this works.`, () => {
+      ctx.mood(c, -10);
+      return say(c, P.exit, [reply(`Mm-hm.`, () => done())]);
+    }, { risk: true }),
+  ]);
+}
+
+/* ---------------- CHANGE OWED ---------------- */
+function changeRoot(c, ctx) {
+  const rng = ctx.rng;
+  const due = c.changeDue || 0;
+  const ready = ctx.changeInHand() >= due - 0.001;
+  const loose = ctx.cashInHand();
+
+  if (ready) {
+    return say(c, rng.pick([
+      `My change?`, `You had my change.`, `Still owe me ${money(due)}, I think.`,
+      `...`, `Sorry — the change?`,
+    ]), [
+      reply(`${money(due)}. Sorry about that.`, () => {
+        ctx.giveChange(c);
+        return say(c, line(c, 'thanks', rng, `Thanks.`), [reply(`Goodnight.`, () => farewell(c, ctx))]);
+      }, { good: `-${money(due)}` }),
+      reply(`Keep it as store credit?`, () => {
+        if (rng() < c.personality.generosity) {
+          ctx.keepChange(c); ctx.mood(c, +4);
+          return say(c, `...Sure. Fine. Put it on the card thing.`, [reply(`Appreciated.`, () => farewell(c, ctx))]);
+        }
+        ctx.mood(c, -16);
+        return say(c, line(c, 'angry', rng, `No. My change. Now.`), [
+          reply(`Of course. ${money(due)}.`, () => { ctx.giveChange(c); return farewell(c, ctx); }),
+        ]);
+      }, { risk: true }),
+    ]);
+  }
+
+  return say(c, rng.pick([
+    `I'm waiting on change.`, `You've still got my money.`, `Any day now.`,
+  ]), [
+    reply(loose > 0
+      ? `One second — I have to ring it up first.`
+      : `Let me count it out of the drawer.`,
+      () => { ctx.needRegister(); return null; }),
+  ]);
+}
+
 /* ---------------- ANGER ---------------- */
 function angryRoot(c, ctx) {
   const rng = ctx.rng;
@@ -426,15 +666,29 @@ function angryRoot(c, ctx) {
 /* ---------------- IDLE / FAREWELL ---------------- */
 function idleRoot(c, ctx) {
   const rng = ctx.rng;
-  if (c.state === 'BROWSE') {
-    return say(c, rng.pick([
+  if (c.state === 'BROWSING') {
+    const holding = c.tape;
+    const lines = holding ? [
+      `Is this the one with the boat in it? The box makes it look like there's a boat.`,
+      `Have you seen this? Is it any good? Be honest with me.`,
+      `Two hours and six minutes. That's a lot of movie for a Tuesday.`,
+      `It says "unrated." Unrated by who?`,
+      `...I'm going to put this back. I'm sorry.`,
+    ] : [
       `Still looking. I'll come to you.`,
       `Do you have anything with a dog in it? Not a sad dog.`,
       `Where'd you move the ${GENRE_LABEL[rng.pick(['HORROR', 'COMEDY', 'ACTION', 'SCIFI'])]} section?`,
+      `I'll know it when I see it.`,
       `...`,
-    ]), [
+    ];
+    return say(c, rng.pick(lines), [
       reply(`Take your time.`, () => { ctx.mood(c, +4); return null; }),
-      reply(`We close at midnight.`, () => { ctx.mood(c, -6); return null; }),
+      ...(holding ? [reply(`That one's good. Genuinely.`, () => {
+        ctx.mood(c, +10); ctx.nudgeChoice(c);
+        return say(c, rng.pick([`Sold. That's all I needed to hear.`, `Alright then. You've never lied to me.`]),
+          [reply(`...`, () => null)]);
+      })] : []),
+      reply(`We close at midnight.`, () => { ctx.mood(c, -6); ctx.hurry(c); return null; }),
     ]);
   }
   return say(c, line(c, 'wait', rng, `...`), [reply(`Right with you.`, () => null)]);
@@ -442,6 +696,13 @@ function idleRoot(c, ctx) {
 
 function farewell(c, ctx) {
   const rng = ctx.rng;
+  if (c.awaitingChange) {
+    return say(c, rng.pick([
+      `I'm still waiting on my change.`,
+      `Hang on — my change.`,
+      `You've got ${money(c.changeDue || 0)} of mine.`,
+    ]), [reply(`Right. One second.`, () => null)]);
+  }
   return say(c, line(c, 'bye', rng, `Night.`), [
     reply(`Goodnight.`, () => { ctx.leave(c); return null; }),
     reply(`Get home safe. Seriously.`, () => {
