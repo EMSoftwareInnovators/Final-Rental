@@ -586,6 +586,17 @@ const room = await ev(async () => {
   return { hidden, locked: g.storage.locked, phase: k.phase };
 });
 check('the back room can be bolted from the inside', room.hidden && room.locked);
+// merely pulling the door to is not hiding: he opens doors
+const shutOnly = await ev(() => {
+  const g = window.__game;
+  g.storage.locked = false; g.storage.open = false; g.storage.broken = false;
+  return { hiding: g.hiding, killerCanPass: g.ctx.storagePassable(), playerCanPass: g.ctx.storagePassableForPlayer() };
+});
+check('pulling it to without bolting is not hiding',
+  !shutOnly.hiding && shutOnly.killerCanPass && !shutOnly.playerCanPass);
+await ev(() => { const g = window.__game; g.lockStorage(); });
+const bolted = await ev(() => ({ hiding: window.__game.hiding, killerCanPass: window.__game.ctx.storagePassable() }));
+check('and throwing the bolt is', bolted.hiding && !bolted.killerCanPass);
 await ev(() => { window.__game.timeScale = 6; });
 let siege = null;
 for (let i = 0; i < 80; i++) {

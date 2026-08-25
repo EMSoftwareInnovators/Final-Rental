@@ -69,6 +69,7 @@ export class Game {
     this.lights = 1; this.flickerAmt = 0; this.flickerT = 4;
     this.distress = 0; this.tension = 0;
     this.staticFrame = 0; this.staticT = 0;
+    this.shake = 0;
     this.till = 0;
     this._lastTyped = -1;
   }
@@ -438,6 +439,7 @@ export class Game {
     for (const c of this.customers) if (!c.hidden) updateCustomer(c, dt, this.ctx);
     this.customers = this.customers.filter((c) => c.state !== CS.GONE);
     updateKiller(this.killer, dt, this.ctx);
+    this.swingForKiller();
     this.checkKillerProximity();
     this.updateObservation(dt);
     this.updateAtmosphere(dt);
@@ -631,6 +633,18 @@ export class Game {
       else if (o.z < 1.0 && !o.exited) { o.exited = true; this.openDoorFor(); }
     }
     updateAnim(o.anim, dt, o.moveSpeed, o.app, { talking: this.speaking === o });
+  }
+
+  /** He does not open doors politely, but he does open them. */
+  swingForKiller() {
+    const k = this.killer;
+    if (!k || k.ent.hidden) return;
+    const st = this.storage;
+    if (st.open || st.broken || st.locked) return;
+    if (k.ent.z > D - 0.9 && k.ent.x > SDOOR_X0 - 0.7 && k.ent.x < SDOOR_X1 + 0.7) {
+      st.open = true;
+      this.sound.doorOpen(0);
+    }
   }
 
   /** Is the clerk actually behind his own counter? */
@@ -902,16 +916,22 @@ export class Game {
       }
       case 'storage': {
         const st = this.storage;
+        const inside = this.player.z > D;
         if (st.broken) {
-          prompt = `<span class="sub">BACK ROOM - the door will not close</span>`;
+          prompt = `<span class="sub">BACK ROOM - the frame is bent, it will not shut</span>`;
         } else if (st.locked) {
           prompt = `${K('E')}Unlock the back room`;
           act = () => this.toggleStorage();
+        } else if (st.open) {
+          prompt = `${K('E')}Pull the back room door to`;
+          act = () => this.toggleStorage();
+        } else if (inside) {
+          // shut and standing on the inside: the only thing worth doing
+          prompt = `${K('E')}Throw the bolt`
+            + `\n<span class="sub">${K('F')} does it from anywhere in here &middot; press again to open up</span>`;
+          act = () => this.lockStorage();
         } else {
-          const inside = this.player.z > D;
-          prompt = st.open
-            ? `${K('E')}Pull the back room door to${inside ? `\n<span class="sub">${K('F')}throw the bolt</span>` : ''}`
-            : `${K('E')}Open the back room`;
+          prompt = `${K('E')}Open the back room`;
           act = () => this.toggleStorage();
         }
         break;
@@ -1016,7 +1036,9 @@ export class Game {
   changeOwedOut() {
     let total = 0;
     const names = [];
-    for (const c of this.customers) {
+    // people() rather than customers: he pays cash like anyone else, and a
+    // register that forgets him is a register that pockets his change
+    for (const c of this.people()) {
       if (!c.awaitingChange || !(c.changeDue > 0.001)) continue;
       total = round2(total + c.changeDue);
       names.push(c.name);
@@ -1641,11 +1663,13 @@ export class Game {
          wander into the street turned the back half of the map into a place
          to stand and watch nothing happen. The doorway is a wall to him. */
       doorPassableForPlayer: () => false,
-      /* The back room's door is a slab for anyone who has not been told
-         otherwise, which is everyone: customers have no reason to go in
-         there and the killer only gets through once he has broken it. */
-      storagePassable: () => g.storage.broken || (g.storage.open && !g.storage.locked),
-      storagePassableForPlayer: () => g.storage.broken || (g.storage.open && !g.storage.locked),
+      /* Two different questions.
+         The clerk has to physically open the door before he can walk
+         through it. Anyone else just turns the handle -- which is the whole
+         point of the bolt: pulling the door to behind you buys nothing, and
+         a player who does only that has not actually hidden. */
+      storagePassable: () => g.storage.broken || !g.storage.locked,
+      storagePassableForPlayer: () => g.storage.broken || g.storage.open,
 
       /* --- sound / feedback --- */
       footstep: (c, heavy) => {
@@ -1819,8 +1843,11 @@ export class Game {
         g.ui.setObjective('THE DOOR IS HOLDING', true);
       },
       onKillerEnters: (broke) => {
-        if (broke) { g.sound.glassBreak(); g.flash = 0.7; }
-        else g.sound.doorChime(0);
+        if (broke) {
+          g.sound.glassBreak(); g.flash = 0.7;
+          // the deadbolt is academic once the glass is on the pavement
+          g.door.locked = false; g.door.forced = true;
+        } else g.sound.doorChime(0);
         g.door.holdOpen = 2.2;
         g.flickerAmt = 1.0;
         g.ui.setObjective('HE IS INSIDE', true);
