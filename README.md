@@ -36,18 +36,6 @@ npm start          # serves on http://localhost:8080
 
 Then open <http://localhost:8080> and click to grab the mouse.
 
-There is no build step and nothing to install. The server is plain CommonJS
-and starts on any Node from v8 onwards — if `npm start` complains about
-`import` or `Unexpected token {`, you are running an old Node against an old
-copy of this file; `git pull` and try again.
-
-No Node at all? Anything that serves a directory works:
-
-```bash
-python3 -m http.server 8080        # macOS and Linux already have this
-npx serve .                        # or this
-```
-
 It **must** be served over `http://`. Opening `index.html` straight off disk
 will show a blank screen, because browsers refuse to load ES modules from
 `file://`.
@@ -55,13 +43,6 @@ will show a blank screen, because browsers refuse to load ES modules from
 **Browser:** anything from about 2018 on — Safari 12+, Chrome 63+, Firefox 60+.
 The game needs ES modules and `<canvas>`, and nothing newer than that. Sound
 starts on your first click.
-
-To run the automated checks (renderer, simulation soak, scripted playthrough):
-
-```bash
-npm install --no-save playwright-core   # only needed for the checks
-npm run check
-```
 
 ---
 
@@ -158,6 +139,17 @@ call it in on the right one.
 
 ---
 
+### Difficulty
+
+Each night the store gets busier, tempers get shorter, the bulletin loses a
+detail, more customers are seeded to match most of the description, and he moves
+sooner and breaks in faster. Decoys are generated to share as much of the
+bulletin as the night allows but are always guaranteed to differ on at least one
+described trait — the description is always enough to clear an innocent person,
+if you actually check all of it.
+
+---
+
 ## What it is made of
 
 No engine, no libraries, no asset files. Every polygon, texture, animation and
@@ -166,7 +158,7 @@ sound is generated at runtime by about 6,000 lines of JavaScript.
 ### The renderer
 
 `src/engine/raster.js` is a software triangle rasterizer written to reproduce
-1996 hardware behaviour rather than imitate it with a filter:
+the hardware of a classic PlayStation rather than imitate it with a filter:
 
 - **Integer vertex snapping.** Projected vertices are rounded to whole pixels,
   exactly like the PlayStation's GTE, which had no subpixel precision. This is
@@ -184,39 +176,14 @@ sound is generated at runtime by about 6,000 lines of JavaScript.
 - **Per-vertex shading with black fog** folded into a single interpolated scalar,
   so the whole shading step is two multiplies per pixel. There are no lightmaps
   and no per-pixel lights; the store's nine fluorescents are baked into vertex
-  colours at build time.
+  colors at build time.
 - **Nearest-neighbour texels**, a 1/z depth buffer, near-plane clipping, and
   blend modes for the glass.
 
-`src/engine/postfx.js` is the tape deck on top: 15-bit colour quantisation with a
+`src/engine/postfx.js` is the tape deck on top: 15-bit color quantization with a
 4×4 Bayer dither (the PlayStation dithered in hardware; that is where the
 crosshatch in the gradients comes from), composite chroma bleed, phosphor
 ghosting, scanlines, a rolling head-switching band, dropout flecks, and the
 garbage line at the bottom of the frame that a real VHS never quite hides.
 
-Everything renders into a 320×240 buffer and is scaled up with nearest-neighbour.
-
-### Everything else
-
-| | |
-|---|---|
-| `engine/mesh.js` | mesh construction, subdivision, texture atlassing |
-| `engine/texture.js` | every texture in the store, drawn procedurally |
-| `engine/audio.js` | WebAudio synthesis — fluorescent hum, the rewinder motor, DTMF, dialogue blips pitched per character, a dread bed that tightens |
-| `game/world.js` | the store: floor plan, geometry, lighting bake, collision |
-| `game/appearance.js` | physical traits. Each one changes the model, gives the deputy a line, and gives you a line to tick off |
-| `game/personality.js` | fifteen archetypes with their own patience, honesty, wealth and voice |
-| `game/dialogue.js` | branching conversation built on demand against live state |
-| `game/customer.js` | arrival, browsing, queueing, patience, anger, leaving |
-| `game/killer.js` | the two acts |
-| `game/night.js` | the shift director: suspect, bulletin, decoys, schedule, difficulty |
-| `game/actor.js` | the low-poly humanoid — about 240 triangles a person |
-
-### Difficulty
-
-Each night the store gets busier, tempers get shorter, the bulletin loses a
-detail, more customers are seeded to match most of the description, and he moves
-sooner and breaks in faster. Decoys are generated to share as much of the
-bulletin as the night allows but are always guaranteed to differ on at least one
-described trait — the description is always enough to clear an innocent person,
-if you actually check all of it.
+Everything renders into a 320×240 buffer and is scaled up with nearest-neighbor.
