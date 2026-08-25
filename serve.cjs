@@ -54,7 +54,7 @@ http.createServer(function (req, res) {
 }).listen(PORT, function () {
   var major = Number(process.versions.node.split('.')[0]);
   console.log('');
-  console.log('  BE KIND, REWIND  ->  http://localhost:' + PORT);
+  console.log('  FINAL RENTAL  ->  http://localhost:' + PORT);
   console.log('  serving ' + ROOT);
   console.log('  node ' + process.versions.node);
   if (major < 14) {
