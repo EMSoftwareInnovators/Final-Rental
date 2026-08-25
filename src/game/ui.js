@@ -38,7 +38,7 @@ export class UI {
   }
   setTill(v) { this.el.till.textContent = v.toFixed(2); }
 
-  setHands(tapes, rewinder, player) {
+  setHands(tapes, rewinder, player, owedOut) {
     const rows = [];
     if (player) {
       if (player.cash && player.cash.owed > 0.001) {
@@ -46,7 +46,11 @@ export class UI {
           + ` — $${player.cash.owed.toFixed(2)} NOT RUNG UP</span>`);
       }
       if (player.changeInHand > 0.001) {
-        rows.push(`<span class="warn">CHANGE TO RETURN $${player.changeInHand.toFixed(2)}</span>`);
+        const to = owedOut && owedOut.who ? ` FOR ${owedOut.who.toUpperCase()}` : '';
+        rows.push(`<span class="warn">CHANGE IN HAND $${player.changeInHand.toFixed(2)}${to}</span>`);
+      } else if (owedOut && owedOut.total > 0.001) {
+        rows.push(`<span class="warn">${owedOut.who.toUpperCase()} IS OWED `
+          + `$${owedOut.total.toFixed(2)} — RING IT UP</span>`);
       }
     }
     if (rewinder && rewinder.tape) {
@@ -223,32 +227,46 @@ function escape(s) {
 /* ============================================================
    Panel content
    ============================================================ */
+/* The whole thing has to fit one screen without scrolling: it is a pause
+   menu on a 4:3 CRT, not a web page. Three tight columns of key bindings
+   over two short columns of prose does it. */
 export function howToHtml() {
-  return `<h2>WORKING THE COUNTER</h2>
-  <div class="cols">
+  const key = (k, what) => `<li class="plain"><b>${k}</b> ${what}</li>`;
+  return `<div class="howto">
+  <h2>WORKING THE COUNTER</h2>
+  <div class="keys">
     <ul>
-      <li class="plain"><b>WASD</b> walk &nbsp; <b>SHIFT</b> hurry</li>
-      <li class="plain"><b>MOUSE</b> look &nbsp; <b>E</b> interact / talk</li>
-      <li class="plain"><b>1-4</b> or <b>UP/DOWN + E</b> pick a reply</li>
-      <li class="plain"><b>TAB</b> notepad (suspect vs. person in view)</li>
-      <li class="plain"><b>G</b> put down the tape in hand</li>
-      <li class="plain"><b>ESC</b> pause</li>
+      ${key('WASD', 'walk')}
+      ${key('SHIFT', 'hurry')}
+      ${key('MOUSE', 'look')}
+      ${key('ESC', 'pause')}
     </ul>
     <ul>
-      <li class="plain"><b>Returns.</b> Take the tape, collect any late fee at $1 a day.</li>
-      <li class="plain"><b>Rewind.</b> A tape that comes back unwound goes in the rewinder before it goes on a shelf.</li>
-      <li class="plain"><b>Shelve.</b> Every tape belongs on its own genre run. Wrong shelf, wrong night.</li>
-      <li class="plain"><b>Rentals.</b> People pull their own tapes. Ring them up and take the money.</li>
+      ${key('E', 'interact / talk')}
+      ${key('1-4', 'pick a reply')}
+      ${key('&uarr;&darr;', 'move the cursor')}
+      ${key('TAB', 'the notepad')}
+    </ul>
+    <ul>
+      ${key('G', 'put the tape down')}
+      ${key('F', 'bolt the back room')}
     </ul>
   </div>
-  <h2>THE OTHER THING</h2>
-  <ul>
-    <li>A deputy reads you a description at the start of every shift. It is the only thing you get.</li>
-    <li>He may come in first as a customer. Polite. Pays cash. Asks what time you lock up.</li>
-    <li>If you are sure: <b>lock the front door</b>, then <b>pick up the phone</b>. The deadbolt only buys minutes.</li>
-    <li class="plain"><span class="k">Call it in on the wrong person and you are finished here.</span></li>
-  </ul>
-  <p class="pad-foot">[E] back</p>`;
+  <div class="cols">
+    <ul>
+      <li><b>Returns.</b> Take the tape. Late fees are $1 a day.</li>
+      <li><b>Rewind.</b> An unwound tape goes in the rewinder before it goes on a shelf.</li>
+      <li><b>Shelve.</b> Every tape belongs on its own genre run.</li>
+      <li><b>Rentals.</b> People pull their own tapes. Ring them up, take the money.</li>
+    </ul>
+    <ul>
+      <li><b>Change.</b> Cash sits in your hand until you ring it up. The drawer pays the change; the customer waits for it.</li>
+      <li><b>The bulletin.</b> A deputy reads you a description. TAB holds it against whoever is in front of you.</li>
+      <li><b>If you are sure.</b> Lock the front door, then the phone. Call it in on the wrong person and you are finished here.</li>
+      <li><b>The back room.</b> The one door in the building with a bolt. It does not hold forever.</li>
+    </ul>
+  </div>
+  <p class="pad-foot">[E] back</p></div>`;
 }
 
 export function optionsHtml(o) {
@@ -296,14 +314,24 @@ export function reportHtml(night, stats, grade, next) {
 
 export function endingHtml(kind, data) {
   switch (kind) {
-    case 'CAUGHT':
+    case 'CAUGHT': {
+      const where = data.broke
+        ? `<p>They came through the front while he was still working on the stock room door. You heard the hinge go and then you heard shouting that was not his.</p>`
+        : data.hid
+          ? `<p>You heard the doors, and the shouting, and a long minute of nothing. Then somebody knocked on the stock room door and said a name and a badge number, twice, before you would open it.</p>`
+          : `<p>Two cruisers took the alley behind the laundromat and boxed him in before he made the corner. They found the duffel. They will not tell you what was in it, and one day you will stop asking.</p>`;
+      const more = data.caseFile && data.caseFile.caughtLast
+        ? `<p class="quiet">The deputy said the same thing he said last night: that they had got him. You have started counting how many times a week somebody has got him.</p>`
+        : '';
       return `<h2>UNITS RESPONDING</h2>
-        <p>You gave dispatch the jacket, the walk, the mark on his face. Everything the deputy read you, back the other way.</p>
-        <p>Two cruisers took the alley behind the laundromat and boxed him in before he made the corner. They found the duffel. They will not tell you what was in it, and one day you will stop asking.</p>
-        <p><b>${data.name || 'He'}</b> did not resist.</p>
+        <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>
+        ${where}
+        <p><b>${escape(data.name || 'He')}</b> did not resist.</p>
+        ${more}
         <p class="quiet">You survived ${data.nights} night${data.nights > 1 ? 's' : ''} on the counter at Sunset Video, and on the last one you got it right.</p>
         <p class="big">GOOD ENDING &mdash; CASE CLOSED</p>
         <p class="pad-foot">[E] new tape</p>`;
+    }
     case 'ATTACKED':
       return `<h2>PLEASE REWIND BEFORE RETURNING</h2>
         <p>The chime over the door goes off the way it always does. Two notes, cheerful, made in 1981.</p>

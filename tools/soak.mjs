@@ -22,18 +22,98 @@ const check = (label, ok, extra = '') => {
   console.log(`${ok ? ' ok ' : 'FAIL'}  ${label}${extra ? '  ' + extra : ''}`);
 };
 
+/* ---------- 0. the shape of the run ---------- */
+const shape = await ev(() => {
+  const g = window.__game;
+  const M = window.__night;
+  const out = { horror: [], casual: [] };
+  for (let n = 1; n <= 7; n++) {
+    out.horror.push({ n, deputy: M.deputyComes(n, 'HORROR'), chance: +M.killerChance(n, false).toFixed(2) });
+  }
+  for (let n = 1; n <= 3; n++) {
+    out.casual.push({ n, deputy: M.deputyComes(n, 'CASUAL'), chance: +M.killerChance(n, true).toFixed(2) });
+  }
+  out.first = M.KILLER_FIRST_NIGHT;
+  void g;
+  return out;
+});
+check('the killer cannot appear on the first nights',
+  shape.horror.slice(0, shape.first - 1).every((r) => r.chance === 0),
+  `zero through night ${shape.first - 1}`);
+check('the deputy stays away while the odds are zero',
+  shape.horror.every((r) => (r.chance === 0 && r.n < shape.first - 1) === (!r.deputy && r.n < shape.first - 1))
+  && !shape.horror[0].deputy && !shape.horror[1].deputy,
+  `first deputy on night ${(shape.horror.find((r) => r.deputy) || {}).n}`);
+check('casual mode has neither', shape.casual.every((r) => !r.deputy && r.chance === 0));
+
+const KILLER_NIGHT = shape.first + 2;   // by here the odds are comfortably non-zero
+
 /* ---------- 1. boot to a shift ---------- */
 await ev(() => { window.__game.sound.muted = true; });
 await page.keyboard.press('Enter');
 await wait(600);
 await ev(() => { window.__game.estT = 99; });
-await wait(400);
+await wait(700);
 check('shift started', await ev(() => window.__game.state) === 'PLAY');
+check('night one has nobody in it but customers',
+  await ev(() => !window.__game.officer && !window.__game.night.plan.appears));
+check('and its clock is running from the off',
+  await ev(() => window.__game.officerDone === true));
 
-/* ---------- 2. the deputy briefs you ---------- */
-await ev(() => { window.__game.timeScale = 4; });
+/* ---------- 2. the deputy briefs you, but only at the counter ---------- */
+const DEPUTY_NIGHT = shape.first - 1;
+await ev((n) => {
+  const g = window.__game;
+  g.ui.hidePanel(); g.ui.cinema(false);
+  g.startNight(n);
+}, DEPUTY_NIGHT);
+await wait(400);
+await ev(() => { const g = window.__game; g.estT = 99; g.timeScale = 6; });
+await wait(500);
+
+// stand well away from the counter and let him come all the way in
+await ev(() => {
+  const g = window.__game;
+  g.player.x = 3.0; g.player.z = 5.0;
+  g.night.deputyAt = 1;
+});
+let waited = null;
+for (let i = 0; i < 90; i++) {
+  waited = await ev(() => {
+    const g = window.__game;
+    return { st: g.officer && g.officer.state, dlg: !!g.dlg.node, done: g.officerDone,
+      elapsed: +g.elapsed.toFixed(1), sim: +g.sim.toFixed(1) };
+  });
+  if (waited.st === 'WAIT' && waited.sim > 12) break;
+  await wait(150);
+}
+check('the deputy walks in and waits without saying a word',
+  waited.st === 'WAIT' && !waited.dlg, `state ${waited.st}`);
+check('and the clock over the door has not moved',
+  waited.elapsed < 0.5, `shift clock ${waited.elapsed}s of ${waited.sim}s on the floor`);
+
+// walk to the counter; now he talks
+await ev(() => { const g = window.__game; g.player.x = 10.8; g.player.z = 2.6; });
+let opened = false;
+for (let i = 0; i < 40; i++) {
+  if (await ev(() => !!window.__game.dlg.node)) { opened = true; break; }
+  await wait(150);
+}
+check('coming to the counter is what starts him talking', opened);
+
+// pausing used to leave him frozen forever
+await ev(() => { window.__game.pause(); });
+await wait(300);
+const pausedOk = await ev(() => ({ st: window.__game.state, held: window.__game._heldTalk, node: !!window.__game.dlg.node }));
+await ev(() => { window.__game.resume(); });
+await wait(300);
+const afterPause = await ev(() => ({ st: window.__game.state, node: !!window.__game.dlg.node }));
+check('pausing mid-briefing keeps the conversation',
+  pausedOk.st === 'PAUSE' && pausedOk.held === 'dlg' && pausedOk.node
+  && afterPause.st === 'PLAY' && afterPause.node);
+
 let briefed = false;
-for (let i = 0; i < 60; i++) {
+for (let i = 0; i < 90; i++) {
   const st = await ev(() => ({ dlg: !!window.__game.dlg.node, done: window.__game.officerDone }));
   if (st.done) { briefed = true; break; }
   if (st.dlg) await page.keyboard.press('Enter');
@@ -43,8 +123,8 @@ if (!briefed) {
   const dbg = await ev(() => {
     const g = window.__game;
     const o = g.officer;
-    return { state: o.state, x: +o.x.toFixed(2), z: +o.z.toFixed(2), pathI: o.pathI,
-      pathLen: o.path && o.path.length, briefingStarted: g.briefingStarted,
+    return { state: o && o.state, x: o && +o.x.toFixed(2), z: o && +o.z.toFixed(2), pathI: o && o.pathI,
+      pathLen: o && o.path && o.path.length, briefingStarted: g.briefingStarted,
       dlgNode: g.dlg.node ? g.dlg.node.text.slice(0, 60) : null,
       choices: g.dlg.node && (g.dlg.node.choices || []).map((c) => c.label.slice(0, 30)),
       typing: g.ui.typing };
@@ -52,6 +132,13 @@ if (!briefed) {
   console.log('      officer debug:', JSON.stringify(dbg));
 }
 check('deputy delivered the bulletin and left', briefed);
+const ranOn = await ev(async () => {
+  const g = window.__game;
+  const a = g.elapsed;
+  await new Promise((r) => setTimeout(r, 400));
+  return { a: +a.toFixed(2), b: +g.elapsed.toFixed(2) };
+});
+check('and the clock starts once he has', ranOn.b > ranOn.a, `${ranOn.a}s -> ${ranOn.b}s`);
 const bull = await ev(() => {
   const b = window.__game.night.bulletin;
   return { keys: [...b.known], text: b.description.slice(0, 90), suspect: b.app.jacket.label };
@@ -292,16 +379,27 @@ const arc = await ev(async () => {
   K.plan.stalkAt = 0;
   return { phase: K.phase };
 });
+/* Sampled inside the page, once a frame. The beats are short enough now
+   that polling from here walked straight past TRY_DOOR. */
+await ev(() => {
+  const g = window.__game;
+  window.__phases = [];
+  const tick = () => {
+    const p = g.killer && g.killer.phase;
+    const seen = window.__phases;
+    if (p && seen[seen.length - 1] !== p) seen.push(p);
+    if (p === 'TRY_DOOR') g.door.locked = true;
+    if (window.__sampling) requestAnimationFrame(tick);
+  };
+  window.__sampling = true;
+  tick();
+});
 await ev(() => { window.__game.timeScale = 8; });
-const phases = [];
 for (let i = 0; i < 200; i++) {
-  const p = await ev(() => window.__game.killer && window.__game.killer.phase);
-  if (p && phases[phases.length - 1] !== p) phases.push(p);
-  if (p === 'TRY_DOOR') await ev(() => { window.__game.door.locked = true; });
-  const st = await ev(() => window.__game.state);
-  if (st === 'ENDING') break;
+  if ((await ev(() => window.__game.state)) === 'ENDING') break;
   await wait(200);
 }
+const phases = await ev(() => { window.__sampling = false; return window.__phases; });
 console.log('      killer phases:', phases.join(' -> '));
 check('killer stalks, tries the door and breaks in', phases.includes('STALK') && phases.includes('TRY_DOOR'));
 const endKind = await ev(() => window.__game.endKind);
@@ -316,13 +414,13 @@ if (endKind !== 'ATTACKED') {
 check('reaching the player ends the night', (await ev(() => window.__game.state)) === 'ENDING' && endKind === 'ATTACKED', endKind || '');
 
 /* ---------- 6. calling the police on the right person ---------- */
-await ev(() => {
+await ev((n) => {
   const g = window.__game;
   g.ui.hidePanel(); g.ui.cinema(false);
-  g.startNight(1);
-});
+  g.startNight(n);
+}, KILLER_NIGHT);
 await wait(400);
-await ev(() => { const g = window.__game; g.estT = 99; g.timeScale = 4; });
+await ev(() => { const g = window.__game; g.estT = 99; g.timeScale = 4; g.officerDone = true; if (g.officer) g.officer.state = 'DONE'; });
 await wait(500);
 const win = await ev(async () => {
   const g = window.__game;
@@ -333,16 +431,34 @@ const win = await ev(async () => {
   const k = targets.find((t) => t.isKiller);
   if (!k) return { found: false };
   g.accuse(k);
-  return { found: true, label: k.phoneLabel };
+  return { found: true, label: k.phoneLabel, eta: Math.round(g.police.eta), name: k.name };
 });
-await wait(2200);
+await wait(600);
 check('dispatch can be pointed at the man outside', win.found, win.label || '');
-check('correct call ends the game as a win', (await ev(() => window.__game.endKind)) === 'CAUGHT');
+check('the killer has a name like everyone else',
+  !!win.name && !/^THE /.test(win.name), win.name || '');
+check('the call rolls a unit rather than ending the night',
+  (await ev(() => window.__game.state)) === 'PLAY' && win.eta > 0, `ETA ${win.eta}s`);
+// take him off the board and let the cruiser arrive on its own
+await ev(() => {
+  const g = window.__game;
+  g.killer.phase = 'ABSENT'; g.killer.ent.hidden = true;
+  g.timeScale = 20;
+});
+let arrested = null;
+for (let i = 0; i < 70; i++) {
+  arrested = await ev(() => ({ end: window.__game.endKind, eta: +window.__game.police.eta.toFixed(1) }));
+  if (arrested.end === 'CAUGHT') break;
+  await wait(200);
+}
+check('and the unit arriving is what ends it as a win', arrested.end === 'CAUGHT',
+  `ETA ran ${win.eta}s -> ${arrested.eta}s`);
+await ev(() => { window.__game.timeScale = 1; });
 
 /* ---------- 7. calling the police on an innocent ---------- */
-await ev(() => { const g = window.__game; g.ui.hidePanel(); g.startNight(2); });
+await ev((n) => { const g = window.__game; g.ui.hidePanel(); g.startNight(n); }, KILLER_NIGHT);
 await wait(400);
-await ev(() => { const g = window.__game; g.estT = 99; g.timeScale = 8; g.officerDone = true; g.officer.state = 'DONE'; });
+await ev(() => { const g = window.__game; g.estT = 99; g.timeScale = 8; g.officerDone = true; if (g.officer) g.officer.state = 'DONE'; });
 for (let i = 0; i < 60; i++) {
   if (await ev(() => window.__game.customers.length > 0)) break;
   await ev(() => { const g = window.__game; if (g.dlg.node) g.dlg.cancel(); });
@@ -359,12 +475,209 @@ await wait(2200);
 check('calling it in on a regular customer gets you fired',
   (await ev(() => window.__game.endKind)) === 'FIRED', fired.name || '(no customer available)');
 
+/* ---------- 7b. talking to people who have no tape in their hands ---------- */
+await ev((n) => { const g = window.__game; g.ui.hidePanel(); g.ui.cinema(false); g.startNight(n); }, 1);
+await wait(400);
+await ev(() => {
+  const g = window.__game;
+  g.estT = 99; g.timeScale = 3;
+  g.customers.length = 0;
+  if (g.killer) { g.killer.phase = 'ABSENT'; g.killer.ent.hidden = true; }
+});
+await wait(500);
+const midBrowse = await ev(async () => {
+  const g = window.__game;
+  const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+  c.x = 4.8; c.z = 5.4; c.state = 'BROWSING';
+  g.customers.push(c);
+  // let them get as far as standing at a shelf with nothing in hand
+  await new Promise((r) => setTimeout(r, 900));
+  const before = { state: c.state, tape: !!c.tape };
+  g.talkToPerson(c);
+  return { before, opened: !!g.dlg.node, text: g.dlg.node && g.dlg.node.text.slice(0, 60) };
+});
+check('talking to somebody still choosing does not blow up',
+  midBrowse.opened, `holding a tape: ${midBrowse.before.tape}`);
+if (midBrowse.text) console.log('      them: "' + midBrowse.text + '"');
+await ev(() => { const g = window.__game; if (g.dlg.node) g.dlg.cancel(); });
+
+const afterServe = await ev(() => {
+  const g = window.__game;
+  const c = g.customers[0];
+  if (!c) return { none: true };
+  // the state you are in the moment after handing a tape over
+  c.tape = null; c.gaveTape = true; c.served = true; c.state = 'WAITING';
+  g.talkToPerson(c);
+  return { opened: !!g.dlg.node, text: g.dlg.node && g.dlg.node.text.slice(0, 50) };
+});
+check('and neither does talking to somebody you already served', !!afterServe.opened);
+await ev(() => { const g = window.__game; if (g.dlg.node) g.dlg.cancel(); g.customers.length = 0; });
+
+/* ---------- 7c. change owed to somebody standing right there ---------- */
+const chg = await ev(() => {
+  const g = window.__game;
+  g.customers.length = 0;
+  const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+  c.x = 10.7; c.z = 0.8; c.state = 'WAITING'; c.hasMoney = true;
+  g.customers.push(c);
+  g.till = 0; g.player.cash = { tendered: 0, owed: 0 }; g.player.changeInHand = 0;
+  /* Roughly half of people pay to the cent, which is realistic and useless
+     for a test. Keep serving fresh ones until somebody breaks a note. */
+  let t = null;
+  for (let i = 0; i < 40 && !(c.changeDue > 0.001); i++) {
+    g.player.cash = { tendered: 0, owed: 0 };
+    t = g.takeCashFrom(2.99, c, 'rental');
+  }
+  const held = { tendered: g.player.cash.tendered, owed: g.player.cash.owed, due: c.changeDue };
+  g.ringUp();
+  const after = { till: g.till, inHand: g.player.changeInHand, owedOut: g.changeOwedOut().total };
+  // the register must refuse to swallow it while they are waiting
+  g.player.x = 12.5; g.player.z = 2.2; g.player.yaw = Math.PI; g.player.pitch = -0.5;
+  return { t, held, after };
+});
+check('a big bill leaves change owed', chg.held.due > 0.001,
+  `tendered $${chg.held.tendered.toFixed(2)} for $${chg.held.owed.toFixed(2)}`);
+check('ringing up moves the sale to the drawer and the change to your hand',
+  Math.abs(chg.after.till - 2.99) < 0.001 && Math.abs(chg.after.inHand - chg.held.due) < 0.001,
+  `till $${chg.after.till.toFixed(2)} / hand $${chg.after.inHand.toFixed(2)}`);
+check('and the game knows who is waiting on it',
+  Math.abs(chg.after.owedOut - chg.held.due) < 0.001);
+const sweep = await ev(() => {
+  const g = window.__game;
+  // aim at the register and try every interaction it offers
+  const tgt = g.buildTargets().find((t) => t.kind === 'register');
+  const a = tgt.aabb;
+  g.player.x = (a.x0 + a.x1) / 2 - 1.1; g.player.z = 3.0;
+  g.player.yaw = Math.atan2((a.x0 + a.x1) / 2 - g.player.x, (a.z0 + a.z1) / 2 - g.player.z);
+  g.player.pitch = Math.atan2(1.2 - g.player.eye, 1.6);
+  const before = g.player.changeInHand;
+  for (let i = 0; i < 6; i++) { g.input.keys = g.input.keys || {}; g.updateInteraction(); }
+  return { before, after: g.player.changeInHand, prompt: document.getElementById('prompt').textContent.replace(/\s+/g, ' ').trim() };
+});
+check('the drawer will not swallow change somebody is waiting for',
+  Math.abs(sweep.after - sweep.before) < 0.001, sweep.prompt.slice(0, 70));
+const paid = await ev(() => {
+  const g = window.__game;
+  const c = g.customers[0];
+  g.ctx.giveChange(c);
+  return { inHand: g.player.changeInHand, awaiting: c.awaitingChange, owedOut: g.changeOwedOut().total };
+});
+check('and paying them clears it', Math.abs(paid.inHand) < 0.001 && !paid.awaiting && paid.owedOut < 0.001);
+await ev(() => { const g = window.__game; g.customers.length = 0; g.player.changeInHand = 0; });
+
+/* ---------- 7d. the back room ---------- */
+const room = await ev(async () => {
+  const g = window.__game;
+  const W = window.__world;
+  g.customers.length = 0;
+  g.officerDone = true; if (g.officer) g.officer.state = 'DONE';
+  // stand in the back room and throw the bolt
+  g.player.x = W.SPOTS.storageHide.x; g.player.z = W.SPOTS.storageHide.z;
+  g.lockStorage();
+  const hidden = g.hiding;
+  // put him in the shop, hunting
+  const k = g.killer;
+  k.plan.appears = true;
+  k.plan.breakStorage = 2.2;
+  k.phase = 'HUNT'; k.ent.hidden = false;
+  k.ent.x = 6.0; k.ent.z = 2.0;
+  await new Promise((r) => setTimeout(r, 300));
+  return { hidden, locked: g.storage.locked, phase: k.phase };
+});
+check('the back room can be bolted from the inside', room.hidden && room.locked);
+await ev(() => { window.__game.timeScale = 6; });
+let siege = null;
+for (let i = 0; i < 80; i++) {
+  siege = await ev(() => {
+    const g = window.__game;
+    return { phase: g.killer.phase, dmg: +g.storage.damage.toFixed(2), broken: g.storage.broken,
+      state: g.state, end: g.endKind };
+  });
+  if (siege.phase === 'SIEGE' && siege.dmg > 0.05) break;
+  if (siege.state === 'ENDING') break;
+  await wait(150);
+}
+check('and he comes and works on the door instead of giving up',
+  siege.phase === 'SIEGE', `phase ${siege.phase}, damage ${siege.dmg}`);
+let broke = null;
+for (let i = 0; i < 90; i++) {
+  broke = await ev(() => ({ broken: window.__game.storage.broken, state: window.__game.state,
+    end: window.__game.endKind, phase: window.__game.killer.phase }));
+  if (broke.broken || broke.state === 'ENDING') break;
+  await wait(150);
+}
+check('given long enough the door goes', broke.broken || broke.state === 'ENDING',
+  `broken ${broke.broken}, phase ${broke.phase}`);
+await ev(() => { window.__game.timeScale = 1; });
+
+/* ---------- 7e. the death shot actually plays ---------- */
+await ev((n) => {
+  const g = window.__game;
+  g.ui.hidePanel(); g.ui.cinema(false);
+  g.startNight(n);
+}, KILLER_NIGHT);
+await wait(400);
+await ev(() => {
+  const g = window.__game;
+  g.estT = 99; g.timeScale = 1;
+  g.officerDone = true; if (g.officer) g.officer.state = 'DONE';
+});
+await wait(500);
+const struck = await ev(() => {
+  const g = window.__game;
+  const k = g.killer;
+  k.phase = 'HUNT'; k.ent.hidden = false;
+  k.ent.x = g.player.x + 0.7; k.ent.z = g.player.z + 0.3;
+  g.ctx.onKillerAttacks();
+  return { state: g.state, end: g.endKind, t: g.death && g.death.t, shake: g.shake };
+});
+check('reaching you starts the death sequence, not a fade',
+  struck.state === 'ENDING' && struck.end === 'ATTACKED' && struck.t === 0);
+await wait(1400);
+const mid = await ev(() => {
+  const g = window.__game;
+  const fx = g.deathFx() || {};
+  return { t: g.death && +g.death.t.toFixed(2), shake: +(g.shake || 0).toFixed(2),
+    roll: fx.roll, tear: fx.tear, invert: fx.invert, grain: fx.grain,
+    pitch: +g.player.pitch.toFixed(2) };
+});
+check('it shakes the camera and tears the picture apart',
+  mid.t > 0.9 && mid.tear > 0 && typeof mid.roll === 'number' && mid.grain > 20,
+  `t=${mid.t}s shake=${mid.shake} tear=${mid.tear} grain=${Math.round(mid.grain)}`);
+await wait(3200);
+const settled = await ev(() => {
+  const g = window.__game;
+  const fx = g.deathFx() || {};
+  return { t: g.death && +g.death.t.toFixed(2), dark: fx.dark, panel: !document.getElementById('panel').classList.contains('hidden') };
+});
+check('and it plays all the way out to black and a panel',
+  settled.t > 4 && settled.dark === 0 && settled.panel, `t=${settled.t}s`);
+
+/* ---------- 7f. a casual shift has nothing in it ---------- */
+await ev(() => {
+  const g = window.__game;
+  g.ui.hidePanel(); g.ui.cinema(false); g.death = null; g.shake = 0;
+  g.beginRun('CASUAL');
+});
+await wait(500);
+await ev(() => { window.__game.estT = 99; });
+await wait(600);
+const casual = await ev(() => {
+  const g = window.__game;
+  return { mode: g.mode, deputy: !!g.officer, appears: g.night.plan.appears,
+    phase: g.killer && g.killer.phase, state: g.state };
+});
+check('casual mode runs the store and nothing else',
+  casual.mode === 'CASUAL' && !casual.deputy && !casual.appears && casual.phase === 'ABSENT',
+  `state ${casual.state}`);
+
 /* ---------- 8. a whole night to the closing bell ---------- */
 await ev(() => { const g = window.__game; g.ui.hidePanel(); g.startNight(1); });
 await wait(400);
 await ev(() => {
   const g = window.__game;
   g.estT = 99; g.timeScale = 25;
+  g.officerDone = true; if (g.officer) g.officer.state = 'DONE';
   g.killer.plan.appears = false; g.killer.phase = 'ABSENT';
 });
 let reached = false;

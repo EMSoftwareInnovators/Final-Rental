@@ -58,16 +58,41 @@ const reply = (label, fn, opts = {}) => ({ label, fn, ...opts });
 /* ============================================================
    THE OPENING BRIEFING -- a sheriff's deputy, every night.
    ============================================================ */
-export function buildOfficerIntro(officer, bulletin, ctx) {
+export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
   const rng = ctx.rng;
   let asked = 0;
   const extras = bulletin.extra.slice();
+  const C = caseFile || {};
+  const A = C.angle || {};
 
   const outro = () => say(officer,
     bulletin.certain
       ? `Keep that door where you can see it. If someone matching that comes in — you don't confront them, you don't be clever. You lock the door and you get on that phone.\n\nAnd clerk? Be sure. We had a fella call it in last week on his own mailman.`
       : `Might be nothing tonight. Might be. Either way — you see it, you lock up and you call. Be sure before you do.`,
     [reply('Understood.', () => { ctx.finishIntro(); return null; })]);
+
+  /* Why it is a different man tonight.
+     A player who is paying attention will notice that the person they put
+     in a cruiser on Tuesday is not the person at the glass on Wednesday,
+     and the deputy is the only one in the building who can account for it.
+     He has a different account every few nights, and none of them are
+     especially reassuring. */
+  const theOtherOne = () => say(officer,
+    `${A.prior || `We took somebody off the street last night.`}\n\n${A.lead || ''}`, [
+    reply(`So it isn't the same person.`, () => say(officer,
+      `${A.why || `No. It is not.`}`, [
+      reply(`How many of them are there?`, () => say(officer,
+        rng.pick([
+          `I have asked that question in three meetings and nobody will put a number on it.`,
+          `More than we have said publicly. That is as far as I will go.`,
+          `Enough that we stopped numbering them and started dating them.`,
+        ]), [reply(`...Right.`, () => detail())])),
+      reply(`Then the description's no good to me.`, () => say(officer,
+        `The description is what we have got tonight. Tomorrow it will be a different one and I will read you that as well.`,
+        [reply(`Go on, then.`, () => detail())])),
+    ])),
+    reply(`Just give me tonight's.`, () => detail()),
+  ]);
 
   const askNode = () => {
     const cs = [];
@@ -103,10 +128,16 @@ export function buildOfficerIntro(officer, bulletin, ctx) {
     `Don't get up. This'll take two minutes.`,
   ]);
 
-  return say(officer, `${greet}\n\nWe've got a description out on somebody working this side of the river. I'm hitting every business still lit up.`, [
+  const alias = C.alias ? ` The papers are calling it ${C.alias}.` : '';
+  const opener = C.caughtLast
+    ? `${greet}\n\nWe've got a new description out on somebody working this side of the river. New one. Not the one from last night.`
+    : `${greet}\n\nWe've got a description out on somebody working this side of the river. I'm hitting every business still lit up.${alias}`;
+
+  return say(officer, opener, [
+    ...(C.caughtLast ? [reply(`Hold on. You caught somebody last night.`, () => theOtherOne())] : []),
     reply(`Go ahead.`, () => detail()),
     reply(`Is this about the ones on the news?`, () => say(officer,
-      `The news has about a third of it. Here's what matters to you tonight.`,
+      `The news has about a third of it.${alias} Here's what matters to you tonight.`,
       [reply('Okay.', () => detail())])),
   ]);
 }
@@ -121,10 +152,15 @@ export function talkTo(c, ctx) {
     c.confusionResolved = true;
     return confusedRoot(c, ctx);
   }
-  if (c.script === 'confused' && c.tape && !c.checkedOut) return rentRoot(c, ctx);
+  /* Everything below here reads c.tape and its price or its due date.
+     Two people never have one: a shopper still working down the shelves,
+     and somebody you already served, whose tape is in your hands. Talking
+     to either of them used to dereference null and take the whole frame
+     loop down with it. */
+  if (c.checkedOut || c.gaveTape || c.served) return farewell(c, ctx);
+  if (!c.tape) return idleRoot(c, ctx);
   if (c.script === 'return') return returnRoot(c, ctx);
-  if (c.script === 'rent') return rentRoot(c, ctx);
-  return idleRoot(c, ctx);
+  return rentRoot(c, ctx);
 }
 
 /* ---------------- small talk (shared) ---------------- */
@@ -183,6 +219,7 @@ function maybeSmallTalk(c, ctx, then) {
 function returnRoot(c, ctx) {
   const rng = ctx.rng;
   const tape = c.tape;
+  if (!tape) return farewell(c, ctx);
   const fee = lateFee(tape.daysLate);
 
   const finish = () => {
@@ -205,6 +242,7 @@ function returnRoot(c, ctx) {
 function feeNode(c, ctx, then) {
   const rng = ctx.rng;
   const tape = c.tape;
+  if (!tape) return then();
   const fee = lateFee(tape.daysLate);
   const disputes = !c.isKiller && rng() > c.personality.honesty;
 
@@ -282,6 +320,7 @@ function feeNode(c, ctx, then) {
 function handOver(c, ctx) {
   const rng = ctx.rng;
   const tape = c.tape;
+  if (!tape) return farewell(c, ctx);
   const cs = [];
   cs.push(reply(`I'll take it.`, () => {
     if (!ctx.canTakeTape()) {
@@ -333,6 +372,7 @@ function handOver(c, ctx) {
 function rentRoot(c, ctx) {
   const rng = ctx.rng;
   const tape = c.tape;
+  if (!tape) return idleRoot(c, ctx);
   const price = tape.price;
   const finish = () => farewell(c, ctx);
 
@@ -630,7 +670,7 @@ function changeRoot(c, ctx) {
     reply(loose > 0
       ? `One second — I have to ring it up first.`
       : `Let me count it out of the drawer.`,
-      () => { ctx.needRegister(); return null; }),
+      () => { ctx.needRegister(loose > 0, due); return null; }),
   ]);
 }
 
@@ -666,7 +706,10 @@ function angryRoot(c, ctx) {
 /* ---------------- IDLE / FAREWELL ---------------- */
 function idleRoot(c, ctx) {
   const rng = ctx.rng;
-  if (c.state === 'BROWSING') {
+  // The caller sets state to TALKING before building the node, so the
+  // browsing lines are keyed off what they were doing a moment ago.
+  const was = c._prevState || c.state;
+  if (was === 'BROWSING' || was === 'PICKING') {
     const holding = c.tape;
     const lines = holding ? [
       `Is this the one with the boat in it? The box makes it look like there's a boat.`,

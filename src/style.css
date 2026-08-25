@@ -140,7 +140,7 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 /* ---------------- PADS (notes/phone/panel) ---------------- */
 .pad{
   position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  width:78cqw;max-height:80cqh;overflow:hidden;
+  width:78cqw;max-height:88cqh;overflow-y:auto;overflow-x:hidden;
   background:var(--paper);color:var(--ink);
   border:0.6cqw solid #2a2418;
   box-shadow:0 1.2cqw 0 rgba(0,0,0,.6);
@@ -151,6 +151,7 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
   font-size:2.9cqw;letter-spacing:.2cqw;border-bottom:0.3cqw solid var(--ink);
   margin:0 0 .8cqw;padding-bottom:.3cqw;
 }
+.pad:has(.howto){padding:1.4cqw 2.2cqw}
 .pad h2+h2,.pad ul+h2{margin-top:1.4cqw}
 .pad ul{list-style:none}
 .pad li{padding-left:1.6cqw;text-indent:-1.6cqw}
@@ -188,6 +189,24 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 #panel-body .big{font-size:4cqw;font-weight:bold;letter-spacing:.2cqw}
 #panel-body .cols{display:grid;grid-template-columns:1fr 1fr;gap:0 2cqw}
 
+/* The controls page has to fit a 4:3 screen with nothing clipped off the
+   bottom: four short key columns over two columns of prose, all a size
+   down from the rest of the pads. */
+#panel-body .howto{width:100%}
+#panel-body .howto h2{font-size:2.4cqw;margin:0 0 .45cqw;padding-bottom:.2cqw}
+#panel-body .howto .keys{
+  display:grid;grid-template-columns:0.85fr 1.1fr 1.1fr;gap:0 1.4cqw;
+  margin-bottom:.7cqw;padding-bottom:.6cqw;border-bottom:0.2cqw solid #b3a983;
+}
+#panel-body .howto .keys li{font-size:1.95cqw;line-height:1.24;white-space:nowrap}
+#panel-body .howto .keys b{display:inline-block;min-width:6.4cqw;color:#8c1d0e}
+#panel-body .howto .cols{gap:0 1.8cqw}
+#panel-body .howto .cols li{
+  font-size:1.95cqw;line-height:1.26;margin-bottom:.4cqw;
+  padding-left:1.3cqw;text-indent:-1.3cqw;
+}
+#panel-body .howto .pad-foot{margin-top:.5cqw;font-size:1.9cqw}
+
 /* ---------------- TITLE ---------------- */
 #title{
   background:radial-gradient(ellipse at 50% 45%,rgba(0,0,0,.72) 0%,rgba(0,0,0,.9) 55%,#000 100%);
@@ -202,6 +221,11 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 #title-menu{list-style:none;font-size:3.4cqw}
 #title-menu li{color:var(--amber-dim);padding:.2cqw}
 #title-menu li.sel{color:var(--amber)}
+#title-menu .sub{
+  display:block;font-size:1.9cqw;color:#4b3a1c;letter-spacing:0;
+  margin:-.2cqw 0 .5cqw;text-transform:none;
+}
+#title-menu li.sel .sub{color:var(--amber-dim)}
 #title-menu li.sel::before{content:"\25B8 "}
 #title-menu li:not(.sel)::before{content:"  ";white-space:pre}
 .hint{margin-top:2.4cqw;font-size:2.1cqw;color:#4b3a1c}

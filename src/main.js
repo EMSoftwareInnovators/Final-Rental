@@ -8,6 +8,8 @@ import * as mathx from './engine/mathx.js';
 import * as customer from './game/customer.js';
 import * as personality from './game/personality.js';
 import * as dialogue from './game/dialogue.js';
+import * as night from './game/night.js';
+import * as world from './game/world.js';
 
 const start = async () => {
   const game = new Game();
@@ -18,6 +20,8 @@ const start = async () => {
   window.__cust = customer;
   window.__pers = personality;
   window.__dlg = dialogue;
+  window.__night = night;
+  window.__world = world;
   try {
     await game.boot();
     game.applyOptions();

@@ -148,12 +148,21 @@ export class Sound {
     if (!this.ready) return;
     this.tension += (this._tensionTarget - this.tension) * Math.min(1, dt * 1.2);
     const g = this.tension * this.tension * 0.16;
-    this.dreadGain.gain.setTargetAtTime(this.muted ? 0 : g, this.t, 0.2);
+    if (!this._ducked) this.dreadGain.gain.setTargetAtTime(this.muted ? 0 : g, this.t, 0.2);
     this.dreadFilter.frequency.setTargetAtTime(180 + this.tension * 700, this.t, 0.4);
     for (let i = 0; i < this.dreadOscs.length; i++) {
       this.dreadOscs[i].detune.setTargetAtTime((i - 1) * (6 + this.tension * 34), this.t, 0.5);
     }
+    if (this._ducked) return;
     if (this.humGain) this.humGain.gain.setTargetAtTime(this.muted ? 0 : 0.035 * this.lightLevel(), this.t, 0.1);
+  }
+
+  /** Put the room back after duckRoom(), at the top of the next shift. */
+  restoreRoom() {
+    if (!this.ready || !this._ducked) return;
+    this._ducked = false;
+    if (this.humGain) this.humGain.gain.setTargetAtTime(this.muted ? 0 : 0.035, this.t, 0.3);
+    if (this.roomGain) this.roomGain.gain.setTargetAtTime(this.muted ? 0 : 0.05, this.t, 0.3);
   }
 
   lightLevel() { return this._lights === undefined ? 1 : this._lights; }
@@ -263,6 +272,63 @@ export class Sound {
     }
     this.tone({ freq: 120, to: 50, type: 'sine', gain: 0.22, a: 0.002, d: 0.7 });
   }
+  /* ---------------- the death of you ----------------
+     One `attack()` thump was a sound effect. This is a sequence: the room
+     is yanked out from under the mix, a dry inhale of silence, and then
+     everything at once -- a sub hit you feel more than hear, three
+     detuned screams, and the tape itself starting to chew.               */
+
+  /** Yank the ambience out. Nothing but the sequence from here on. */
+  duckRoom(dur = 0.06) {
+    if (!this.ready) return;
+    this._ducked = true;
+    if (this.humGain) this.humGain.gain.setTargetAtTime(0, this.t, dur);
+    if (this.roomGain) this.roomGain.gain.setTargetAtTime(0, this.t, dur);
+    if (this.dreadGain) this.dreadGain.gain.setTargetAtTime(0, this.t, dur);
+    this._tensionTarget = 0; this.tension = 0;
+  }
+
+  /** The hit. Everything lands on the same frame on purpose. */
+  jumpscare() {
+    if (!this.ready || this.muted) return;
+    // the floor dropping out
+    this.tone({ freq: 92, to: 24, type: 'sine', gain: 0.85, a: 0.001, d: 1.5, slide: 1.2 });
+    this.tone({ freq: 61, to: 18, type: 'square', gain: 0.4, a: 0.001, d: 1.1, filter: 'lowpass', cutoff: 220 });
+    // three detuned shrieks a hair apart, which is what makes it a scream
+    for (const [f, when, det] of [[1720, 0, 0], [1690, 0.012, -30], [2310, 0.026, 40]]) {
+      this.tone({ freq: f, to: f * 0.42, type: 'sawtooth', gain: 0.30, a: 0.001, d: 0.85,
+        filter: 'bandpass', cutoff: f, q: 2.5, detune: det, when });
+    }
+    // the transient: a slab of broadband noise with no attack at all
+    this.noise({ filter: 'highpass', freq: 900, gain: 0.55, a: 0.0005, d: 0.5, rate: 1.4 });
+    this.noise({ filter: 'bandpass', freq: 3400, to: 260, q: 0.7, gain: 0.34, a: 0.001, d: 0.9 });
+  }
+
+  /** Tape being eaten by the transport, under the whole death shot. */
+  tapeChew(intensity = 1) {
+    if (!this.ready || this.muted) return;
+    this.noise({ filter: 'bandpass', freq: 220 + Math.random() * 900, q: 6,
+      gain: 0.13 * intensity, a: 0.004, d: 0.16, rate: 0.5 + Math.random() * 1.6 });
+    this.tone({ freq: 70 + Math.random() * 90, type: 'sawtooth', gain: 0.07 * intensity,
+      a: 0.003, d: 0.2, filter: 'lowpass', cutoff: 400 });
+  }
+
+  /** The deck giving up: a solenoid clunk and the capstan winding down. */
+  tapeStop() {
+    if (!this.ready || this.muted) return;
+    this.noise({ filter: 'lowpass', freq: 400, gain: 0.4, a: 0.001, d: 0.22 });
+    this.tone({ freq: 150, to: 30, type: 'square', gain: 0.22, a: 0.001, d: 0.6,
+      filter: 'lowpass', cutoff: 500 });
+    this.tone({ freq: 44, type: 'sine', gain: 0.3, a: 0.002, d: 1.1, when: 0.05 });
+  }
+
+  /** A single wet impact, for the blows that land after the first. */
+  impact(k = 1) {
+    if (!this.ready || this.muted) return;
+    this.noise({ filter: 'lowpass', freq: 260 + Math.random() * 200, gain: 0.34 * k, a: 0.001, d: 0.24 });
+    this.tone({ freq: 58 + Math.random() * 24, to: 26, type: 'sine', gain: 0.35 * k, a: 0.001, d: 0.4 });
+  }
+
   attack() {
     this.noise({ filter: 'bandpass', freq: 3000, to: 300, q: 1.2, gain: 0.34, a: 0.001, d: 0.5 });
     this.tone({ freq: 200, to: 30, type: 'sawtooth', gain: 0.3, a: 0.002, d: 1.6, filter: 'lowpass', cutoff: 600 });

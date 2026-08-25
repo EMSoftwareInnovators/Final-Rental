@@ -9,13 +9,29 @@ import {
   randomAppearance, randomName, pronounOf, ALL_KEYS, VISIBLE_KEYS,
   traitBulletin, sameTrait, HATS, GLASSES, HEIGHTS, BUILDS, MARKS, GAITS, CARRY, GENDERS,
 } from './appearance.js';
-import { planKiller } from './killer.js';
+import { planKiller, KILLER_FIRST_NIGHT, killerChance } from './killer.js';
 import { GENRES } from './tapes.js';
+
+export { KILLER_FIRST_NIGHT, killerChance };
 
 export const SHIFT_START_HOUR = 21;   // 9:00 PM
 export const SHIFT_HOURS = 3;         // to midnight
 
+export const MODE = { HORROR: 'HORROR', CASUAL: 'CASUAL' };
+
+/* The deputy turns up the night before the threat can. He is the reason
+   there is never a night where someone could walk in and you would have
+   nothing to hold them against -- and he stays away entirely while the odds
+   of anyone coming for you are still flat zero. */
+export const DEPUTY_FIRST_NIGHT = KILLER_FIRST_NIGHT - 1;
+
 export function nightLength(n) { return Math.min(470, 300 + (n - 1) * 22); }
+
+/** Does a deputy come tonight? Never while the killer's odds are still zero. */
+export function deputyComes(n, mode) {
+  if (mode === MODE.CASUAL) return false;
+  return n >= DEPUTY_FIRST_NIGHT;
+}
 
 /* Which traits the deputy actually got out of the witness. */
 function bulletinKeyCount(n) {
@@ -28,9 +44,10 @@ function decoyOverlap(n, keyCount) { return Math.min(keyCount - 1, 1 + Math.floo
 /* Traits that make good bulletin material -- things a witness would notice. */
 const PRIORITY = ['jacket', 'height', 'build', 'hair', 'mark', 'hat', 'facial', 'glasses', 'gait', 'carry', 'pants', 'smell', 'voice'];
 
-export function makeNight(seed, n) {
+export function makeNight(seed, n, mode = MODE.HORROR) {
   const rng = makeRng(seed ^ (n * 0x9e3779b1));
   const length = nightLength(n);
+  const deputy = deputyComes(n, mode);
 
   /* ---- the suspect ---- */
   const suspect = randomAppearance(rng);
@@ -59,7 +76,13 @@ export function makeNight(seed, n) {
     extras.push({ key: k, officerLine: officerExtraLine(k, suspect, rng) });
   }
 
-  const plan = planKiller(rng, n, length);
+  const plan = planKiller(rng, n, length, mode);
+  const caseFile = makeCaseFile(rng, n, suspect);
+
+  /* The deputy is not the first person through the door any more. He comes
+     when he comes, somewhere in the first third of the shift, and there may
+     well be two people at the counter when he does. */
+  const deputyAt = deputy ? rng.range(22, Math.min(150, length * 0.26)) : Infinity;
 
   const bulletin = {
     app: suspect,
@@ -92,10 +115,81 @@ export function makeNight(seed, n) {
   schedule.sort((a, b) => a.t - b.t);
 
   return {
-    n, seed, rng, length, bulletin, suspect, plan, schedule,
+    n, seed, rng, mode, length, bulletin, suspect, plan, schedule, caseFile,
+    deputy, deputyAt,
     officerApp: makeOfficerApp(rng),
     officerName: `Deputy ${randomName(rng).split(' ')[1]}`,
     overlap,
+  };
+}
+
+/* ============================================================
+   THE CASE FILE
+   A different person every night, which the deputy has to account for,
+   because a player who is paying attention will notice that the man
+   they helped arrest on Tuesday is not the man outside on Wednesday.
+   ============================================================ */
+
+/* How the county is explaining it to itself this week. */
+const ANGLES = [
+  {
+    id: 'copycat',
+    lead: `The one we took Tuesday is in a cell in Elkhart and he is not going anywhere. This is somebody else.`,
+    prior: `We charged a man last night. He confessed to two of them and he could not tell us a thing about the third.`,
+    why: `Somebody's reading the same papers you are and liking what they read.`,
+    press: 'copycat',
+  },
+  {
+    id: 'release',
+    lead: `Marion let forty-one men out in August on a paperwork ruling. We have been picking them back up one at a time ever since.`,
+    prior: `Last night's is back inside. That is one of forty-one.`,
+    why: `Half of them came straight back to the county they were sentenced in. This is a county with a lot of late-night counters in it.`,
+    press: 'the Marion list',
+  },
+  {
+    id: 'ring',
+    lead: `We do not think this is one man. We have never thought it was one man.`,
+    prior: `The one you helped us with is talking, and what he is saying is that he was not working alone.`,
+    why: `Different height, different jacket, same hour of the night, same kind of store. Draw your own conclusions.`,
+    press: 'the crew',
+  },
+  {
+    id: 'road',
+    lead: `Everything about this says somebody passing through. Different face each time, same road.`,
+    prior: `The one from last night gave a Missouri address that turned out to be a laundromat.`,
+    why: `They come off the interstate, they find a place still lit, and they are two states away by breakfast.`,
+    press: 'the interstate thing',
+  },
+  {
+    id: 'inside',
+    lead: `I am going to say something the sheriff would not want me saying. We think somebody local is pointing them at the stores.`,
+    prior: `We arrested a man last night who had never been to this town before and knew exactly which door was unlocked.`,
+    why: `Somebody is doing the picking. Whoever comes through your door tonight is the one holding the address.`,
+    press: 'the list',
+  },
+  {
+    id: 'imitator',
+    lead: `The first four were one man and he is dead. Since then it has been whoever wants the name.`,
+    prior: `We closed the original file in September. Everything since has been somebody borrowing it.`,
+    why: `That is worse, not better. The original had a pattern. These do not.`,
+    press: 'the name',
+  },
+];
+
+const PRESS_NAMES = [
+  'the Delaney Prowler', 'the Late Show', 'the Graveyard Man',
+  'the Nine-to-Midnight', 'the Counter Killer', 'the Closing Hour',
+];
+
+export function makeCaseFile(rng, n, suspect) {
+  const angle = ANGLES[(n - 1) % ANGLES.length];
+  return {
+    name: randomName(rng, suspect.gender),
+    alias: rng.pick(PRESS_NAMES),
+    angle,
+    // Nights one and two of the manhunt have no yesterday to account for.
+    first: n <= KILLER_FIRST_NIGHT,
+    caughtLast: n > KILLER_FIRST_NIGHT,
   };
 }
 

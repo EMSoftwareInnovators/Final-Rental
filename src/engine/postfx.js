@@ -33,7 +33,13 @@ export class PostFX {
   /**
    * @param src Uint32Array framebuffer (0xAABBGGRR)
    * @param p   { dt, dither, bleed, scan, ghost, grain, warp, fade, flash,
-   *              tintR,tintG,tintB, dark, distress }
+   *              tintR,tintG,tintB, dark, distress, roll, tear, invert }
+   *
+   * roll   -- vertical frame slip, in pixels, wrapping: the picture losing
+   *           vertical hold and rolling through itself.
+   * tear   -- 0..1, how often a scanline is displaced far enough to rip the
+   *           image sideways rather than merely wobble it.
+   * invert -- 0..1 mix toward a photographic negative.
    */
   render(src, p) {
     const w = this.w, h = this.h, out = this.out, prev = this.prev;
@@ -63,6 +69,10 @@ export class PostFX {
     const tg = p.tintG === undefined ? 1 : p.tintG;
     const tb = p.tintB === undefined ? 1 : p.tintB;
     const distress = p.distress || 0;
+    const roll = (p.roll || 0) | 0;
+    const tear = p.tear || 0;
+    const invert = p.invert || 0;
+    const invK = (invert * 256) | 0, invKeep = 256 - invK;
 
     const gain = dark * (1 - fade);
     const gR = gain * tr * 256 | 0, gG = gain * tg * 256 | 0, gB = gain * tb * 256 | 0;
@@ -79,17 +89,23 @@ export class PostFX {
       if (warp) shift += Math.sin(y * 0.21 + t * 4.7) * warp;
       const inBand = this.trackY > -20 && y >= this.trackY && y < this.trackY + this.trackH;
       if (inBand) shift += (Math.random() - 0.5) * this.trackAmp * 2;
+      // a torn line: the head losing the track completely for one scanline
+      if (tear && Math.random() < tear * 0.20) shift += (Math.random() - 0.5) * w * 0.7;
       // head-switching garbage in the last few lines, like a real VHS
       const hsw = y >= h - 4;
       if (hsw) shift += (Math.random() - 0.5) * 10;
       const sh = shift | 0;
 
-      const row = y * w;
+      // vertical hold: the frame slipping, wrapping round on itself
+      let sy = y;
+      if (roll) { sy = (y + roll) % h; if (sy < 0) sy += h; }
+      const row = sy * w;
+      const outRow = y * w;
       const scanK = ((y & 1) ? scan : 1) * 256 | 0;
       const bandBoost = inBand ? 40 : 0;
 
       for (let x = 0; x < w; x++) {
-        const i = row + x;
+        const i = outRow + x;
         // chroma bleed: red lags, blue leads (composite video, roughly)
         let xr = x + sh - bleed, xg = x + sh, xb = x + sh + bleed;
         xr = xr < 0 ? 0 : xr >= w ? w - 1 : xr;
@@ -120,6 +136,11 @@ export class PostFX {
         } else if (bandBoost) { R += bandBoost; G += bandBoost; B += bandBoost; }
 
         if (hsw) { const n = (Math.random() * 190) | 0; R = n; G = n; B = n + 10; }
+        if (invK) {
+          R = (R * invKeep + (255 - R) * invK) >> 8;
+          G = (G * invKeep + (255 - G) * invK) >> 8;
+          B = (B * invKeep + (255 - B) * invK) >> 8;
+        }
         if (flashAdd) { R += flashAdd; G += flashAdd; B += flashAdd; }
 
         // 15-bit quantisation with ordered dither -- the PS1 signature
