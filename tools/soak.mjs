@@ -633,17 +633,29 @@ const struck = await ev(() => {
 });
 check('reaching you starts the death sequence, not a fade',
   struck.state === 'ENDING' && struck.end === 'ATTACKED' && struck.t === 0);
-await wait(1400);
-const mid = await ev(() => {
+/* The damage comes in bursts, not on every frame -- a picture you can
+   never read is not frightening -- so this samples a window of it. */
+const mid = await ev(async () => {
   const g = window.__game;
-  const fx = g.deathFx() || {};
-  return { t: g.death && +g.death.t.toFixed(2), shake: +(g.shake || 0).toFixed(2),
-    roll: fx.roll, tear: fx.tear, invert: fx.invert, grain: fx.grain,
-    pitch: +g.player.pitch.toFixed(2) };
+  let tear = 0, roll = 0, invert = 0, grain = 0, shake = 0, n = 0;
+  const t0 = performance.now();
+  while (performance.now() - t0 < 1300) {
+    const fx = g.deathFx();
+    if (fx) {
+      tear = Math.max(tear, fx.tear || 0);
+      roll = Math.max(roll, Math.abs(fx.roll || 0));
+      invert = Math.max(invert, fx.invert || 0);
+      grain = Math.max(grain, fx.grain || 0);
+      shake = Math.max(shake, g.shake || 0);
+      n++;
+    }
+    await new Promise((r) => requestAnimationFrame(r));
+  }
+  return { t: g.death && +g.death.t.toFixed(2), n, tear: +tear.toFixed(2), roll, invert, grain: Math.round(grain), shake: +shake.toFixed(2) };
 });
 check('it shakes the camera and tears the picture apart',
-  mid.t > 0.9 && mid.tear > 0 && typeof mid.roll === 'number' && mid.grain > 20,
-  `t=${mid.t}s shake=${mid.shake} tear=${mid.tear} grain=${Math.round(mid.grain)}`);
+  mid.t > 0.9 && mid.tear > 0.1 && mid.roll > 0 && mid.invert > 0 && mid.grain > 25 && mid.shake > 0.2,
+  `over ${mid.n} frames: tear ${mid.tear}, roll ${mid.roll}px, invert ${mid.invert}, grain ${mid.grain}, shake ${mid.shake}`);
 await wait(3200);
 const settled = await ev(() => {
   const g = window.__game;

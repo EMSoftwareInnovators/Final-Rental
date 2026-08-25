@@ -328,7 +328,8 @@ function stepTo(e, tx, tz, dt, speed, ctx, canEnter, thresh) {
   if (d < (thresh || 0.12)) { e.moveSpeed = 0; return true; }
   const nx = e.x + (dx / d) * speed * dt;
   const nz = e.z + (dz / d) * speed * dt;
-  const [px, pz] = collide(nx, nz, e.r, ctx.solids, canEnter ? true : ctx.doorPassable(e));
+  const [px, pz] = collide(nx, nz, e.r, ctx.solids,
+    canEnter ? true : ctx.doorPassable(e), ctx.storagePassable());
   const moved = Math.hypot(px - e.x, pz - e.z);
   e.x = px; e.z = pz;
   e.moveSpeed = moved / Math.max(dt, 0.0001);

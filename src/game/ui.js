@@ -32,9 +32,12 @@ export class UI {
   }
 
   /* ---------------- HUD ---------------- */
-  setClock(time, night) {
+  setClock(time, night, held) {
     this.el.clockTime.textContent = time;
-    this.el.clockNight.textContent = `NIGHT ${night}`;
+    // The shift clock stops while the deputy still has something to say.
+    // Without a mark on it, a clock that will not move looks like a bug.
+    this.el.clockNight.textContent = held ? `NIGHT ${night} - STOPPED` : `NIGHT ${night}`;
+    this.el.clockTime.parentElement.classList.toggle('held', !!held);
   }
   setTill(v) { this.el.till.textContent = v.toFixed(2); }
 

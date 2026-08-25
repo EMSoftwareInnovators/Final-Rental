@@ -447,7 +447,7 @@ export class Game {
     else this.ui.setPrompt('');
 
     // ---- HUD ----
-    this.ui.setClock(clockString(this.elapsed, this.night.length), this.nightNo);
+    this.ui.setClock(clockString(this.elapsed, this.night.length), this.nightNo, holdClock);
     this.ui.setTill(this.till);
     this.ui.setHands(this.player.held, this.rewinder, this.player, this.changeOwedOut());
     if (this.notesOpen) this.ui.showNotes(this.night.bulletin, this.player.lookTarget);
@@ -603,6 +603,7 @@ export class Game {
       if (this.atCounter() && !this.dlg.active && !this.phone.active) {
         o.state = 'BRIEF';
       } else {
+        this.ui.setObjective('THE DEPUTY IS AT THE COUNTER', false);
         o.nagTimer -= dt;
         if (o.nagTimer <= 0) {
           o.nagTimer = 11 + this.rng.range(0, 7);
@@ -618,6 +619,7 @@ export class Game {
       }
     } else if (o.state === 'BRIEF') {
       o.moveSpeed = 0;
+      this.ui.setObjective('', false);
       o.yaw += (SPOTS.officerStand.yaw - o.yaw) * Math.min(1, dt * 4);
       if (!this.briefingStarted) {
         this.briefingStarted = true;
@@ -641,6 +643,7 @@ export class Game {
   finishBriefing() {
     const o = this.officer;
     if (o && o.state !== 'DONE') { o.state = 'LEAVE'; o.path = null; o.pathI = 0; }
+    this.ui.setObjective('', false);
     if (this.officerDone) return;
     this.officerDone = true;
     this.ui.toast(`Press TAB to read your notes.`, '');
@@ -1232,12 +1235,12 @@ export class Game {
     };
     if (e) {
       const h = ACTOR_HEIGHT * e.app.height.scale;
-      this.death.headY = h * 0.90;
+      this.death.headY = h * 0.93;
       // pull him the rest of the way in, so he fills the frame
       const dx = this.player.x - e.x, dz = this.player.z - e.z;
       const d = Math.hypot(dx, dz) || 1;
-      e.x = this.player.x - (dx / d) * 0.62;
-      e.z = this.player.z - (dz / d) * 0.62;
+      e.x = this.player.x - (dx / d) * 0.52;
+      e.z = this.player.z - (dz / d) * 0.52;
       e.yaw = Math.atan2(this.player.x - e.x, this.player.z - e.z);
       e.moveSpeed = 0;
     }
@@ -1302,60 +1305,86 @@ export class Game {
     const D2 = this.death;
     if (!D2) return null;
     const t = D2.t;
-    // 0.00-0.10  the room drops out and the frame goes black
-    if (t < 0.10) return { fade: 1, grain: 4, ghost: 0, dark: 0.1 };
-    const a = t - 0.10;
-    // 0.10-0.55  the hit: strobing negative, the frame rolling through itself
-    if (a < 0.45) {
-      const strobe = Math.sin(a * 62) > 0 ? 1 : 0;
+
+    /* Glitching in bursts rather than continuously.
+       A first pass tore and rolled every single frame, which is a very
+       loud way of showing the player nothing at all: the face never
+       resolved and the whole thing read as coloured noise. The picture
+       has to stay legible enough to be looked at. The damage comes in
+       short bursts with clean, over-bright frames between them, and only
+       takes the image over completely at the very end. */
+    const burst = (period, width, seed) => {
+      const ph = ((t * period) + seed) % 1;
+      return ph < width ? 1 - ph / width : 0;
+    };
+
+    // 0.00-0.08  the room drops out and the frame goes black
+    if (t < 0.08) return { fade: 1, grain: 4, ghost: 0, dark: 0.1 };
+
+    const a = t - 0.08;
+
+    // 0.08-0.55  the hit. His face, lit far too hard, held still enough
+    //            to register, with the tape kicking twice underneath it.
+    if (a < 0.47) {
+      const g1 = Math.max(burst(4.5, 0.11, 0), burst(2.7, 0.07, 0.55));
       return {
-        invert: strobe * 0.92,
-        roll: ((Math.random() - 0.5) * 150) | 0,
-        tear: 0.9,
-        warp: 9,
-        grain: 60,
-        ghost: 0.02,
-        bleed: 5,
-        distress: 1,
-        dark: 1.5,
-        tintR: 1.55, tintG: 0.68, tintB: 0.66,
-        scan: 0.55,
+        // one real negative strobe on the impact and almost none after it:
+        // a frame you cannot read is a frame that is not frightening anybody
+        invert: a < 0.055 ? 0.9 : 0,
+        roll: g1 > 0.6 ? ((Math.random() - 0.5) * 70 * g1) | 0 : 0,
+        tear: g1 * 0.4,
+        warp: 1.0 + g1 * 4,
+        grain: 20 + g1 * 34,
+        ghost: 0.10,
+        bleed: 2 + g1 * 3,
+        distress: 0.4 + g1 * 0.5,
+        // Enough push to be lurid, not so much that his face clips to white.
+        // At 1.5 gain with a 1.5 red tint the whole shot was a flat orange
+        // rectangle and you could not see what you were being shown.
+        dark: 1.16 - g1 * 0.08,
+        tintR: 1.38, tintG: 0.74, tintB: 0.70,
+        scan: 0.62,
       };
     }
-    // 0.55-2.4   held on him while the picture comes apart
-    if (a < 2.3) {
-      const f = (a - 0.45) / 1.85;
+
+    // 0.55-2.2   held on him while the blows land. Still a picture, but a
+    //            picture that keeps losing its footing.
+    if (a < 2.1) {
+      const f = (a - 0.47) / 1.63;
+      const g2 = Math.max(burst(2.4, 0.18, 0.1), burst(5.1, 0.08, 0.6)) * (0.45 + f * 0.55);
       return {
-        invert: Math.random() < 0.10 ? 0.85 : 0,
-        roll: ((Math.random() - 0.5) * (26 + f * 190)) | 0,
-        tear: 0.30 + f * 0.6,
-        warp: 3.5 + f * 9,
-        grain: 30 + f * 55,
-        ghost: 0.42,
-        bleed: 3,
-        distress: 1,
-        dark: 1.25 - f * 0.35,
-        tintR: 1.45, tintG: 0.6 - f * 0.2, tintB: 0.58 - f * 0.2,
-        scan: 0.6,
+        invert: g2 > 0.92 ? 0.85 : 0,
+        roll: g2 > 0.35 ? ((Math.random() - 0.5) * (40 + f * 150) * g2) | 0 : 0,
+        tear: g2 * (0.35 + f * 0.5),
+        warp: 1.6 + g2 * 9,
+        grain: 24 + f * 26 + g2 * 40,
+        ghost: 0.22 + f * 0.2,
+        bleed: 2 + g2 * 3,
+        distress: 0.5 + g2 * 0.5,
+        dark: 1.12 - f * 0.24,
+        tintR: 1.34, tintG: 0.7 - f * 0.16, tintB: 0.66 - f * 0.16,
+        scan: 0.64,
       };
     }
-    // 2.4-3.4    the head loses the track entirely
+
+    // 2.2-3.4    now it goes. The head loses the track for good.
     if (a < 3.3) {
-      const f = (a - 2.3) / 1.0;
+      const f = (a - 2.1) / 1.2;
       return {
-        invert: Math.random() < 0.2 ? 1 : 0,
-        roll: ((Math.random() - 0.5) * (220 + f * 400)) | 0,
-        tear: 1,
-        warp: 14 + f * 22,
-        grain: 90 + f * 110,
-        ghost: 0.6,
-        bleed: 6,
+        invert: Math.random() < 0.18 * f ? 1 : 0,
+        roll: ((Math.random() - 0.5) * (60 + f * 420)) | 0,
+        tear: 0.25 + f * 0.75,
+        warp: 6 + f * 26,
+        grain: 55 + f * 130,
+        ghost: 0.5,
+        bleed: 4 + f * 3,
         distress: 1,
-        dark: Math.max(0, 0.95 - f * 0.85),
-        tintR: 1.2, tintG: 0.4, tintB: 0.4,
-        scan: 0.5,
+        dark: Math.max(0, 0.95 - f * 0.95),
+        tintR: 1.2, tintG: 0.46, tintB: 0.46,
+        scan: 0.52,
       };
     }
+
     // and stop
     return { fade: 1, grain: 2, ghost: 0, dark: 0, distress: 0 };
   }
@@ -1612,6 +1641,10 @@ export class Game {
          wander into the street turned the back half of the map into a place
          to stand and watch nothing happen. The doorway is a wall to him. */
       doorPassableForPlayer: () => false,
+      /* The back room's door is a slab for anyone who has not been told
+         otherwise, which is everyone: customers have no reason to go in
+         there and the killer only gets through once he has broken it. */
+      storagePassable: () => g.storage.broken || (g.storage.open && !g.storage.locked),
       storagePassableForPlayer: () => g.storage.broken || (g.storage.open && !g.storage.locked),
 
       /* --- sound / feedback --- */
