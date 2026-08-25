@@ -11,7 +11,7 @@ import { buildTextures } from '../engine/texture.js';
 import { mat, mul, setPosYaw, setRotX, setRotY, setTranslate, invertRigid, clamp } from '../engine/mathx.js';
 import {
   buildWorld, collide, SHELVES, SPOTS, COUNTER, COUNTER_SLOTS, PROPS, lightAt, outdoorLightAt,
-  DOOR_X0, DOOR_X1, D,
+  DOOR_X0, DOOR_X1, D, W, STORAGE, SDOOR_X0, SDOOR_X1,
 } from './world.js';
 import { buildActorMeshes, drawActor, ACTOR_HEIGHT, makeAnim, updateAnim } from './actor.js';
 import { createPlayer, updatePlayer, buildCamera, castInteract, canCarry, takeTape, topTape, heldTapeMatrix, heldCashMatrix, forwardOf } from './player.js';
@@ -62,6 +62,7 @@ export class Game {
     this.bin = [];
     this.rewinder = { tape: null, t: 0, dur: 6.5, done: false, running: false };
     this.door = { locked: false, swing: 0, target: 0, holdOpen: 0 };
+    this.storage = freshStorageDoor();
     this.officer = null;
     this.killer = null;
     this.lights = 1; this.flickerAmt = 0; this.flickerT = 4;
@@ -135,6 +136,7 @@ export class Game {
     };
 
     this.door = { locked: false, swing: 0, target: 0, holdOpen: 0 };
+    this.storage = freshStorageDoor();
     this.lights = 1; this.flickerT = 0; this.flickerAmt = 0;
     this.distress = 0; this.tension = 0;
     this.speaking = null;
@@ -338,6 +340,11 @@ export class Game {
       this.sound.paper();
       if (!this.notesOpen) this.ui.hideNotes();
     }
+    // Throwing the bolt is the one thing you may need to do without lining
+    // up a crosshair first, so it gets its own key anywhere in the room.
+    if (i.hit('KeyF') && this.player.z > D + 0.05 && !this.storage.broken) {
+      if (this.storage.locked) this.toggleStorage(); else this.lockStorage();
+    }
 
     const talking = this.dlg.active || this.phone.active;
     this.player.frozen = talking;
@@ -405,10 +412,50 @@ export class Game {
 
   /* ---------------- doors ---------------- */
   updateDoor(dt) {
-    this.door.holdOpen = Math.max(0, this.door.holdOpen - dt);
-    this.door.target = this.door.holdOpen > 0 ? 1.25 : 0;
-    const k = this.door.target > this.door.swing ? 7 : 3.2;
-    this.door.swing += (this.door.target - this.door.swing) * Math.min(1, dt * k);
+    const d = this.door;
+    d.holdOpen = Math.max(0, d.holdOpen - dt);
+    // A thrown deadbolt is a thrown deadbolt: the leaves stay shut even if
+    // something was mid-swing when you turned it.
+    d.target = (d.holdOpen > 0 && !d.locked) ? 1.25 : 0;
+    const k = d.target > d.swing ? 7 : 3.2;
+    d.swing += (d.target - d.swing) * Math.min(1, dt * k);
+
+    const s = this.storage;
+    s.hitFlash = Math.max(0, s.hitFlash - dt * 2.4);
+    s.target = (s.open && !s.broken) ? 1.35 : (s.broken ? 1.55 : 0);
+    s.swing += (s.target - s.swing) * Math.min(1, dt * (s.broken ? 9 : 5));
+  }
+
+  /** True while the player is shut inside the back room. */
+  get hiding() {
+    const s = this.storage;
+    return this.player.z > D + 0.05 && s.locked && !s.broken;
+  }
+
+  toggleStorage() {
+    const s = this.storage;
+    if (s.broken) { this.sound.error(); return; }
+    if (s.locked) {
+      s.locked = false; s.open = true;
+      this.sound.lockClick(false);
+      this.ui.toast('Back room unlocked', '');
+      return;
+    }
+    if (s.open) {
+      s.open = false;
+      this.sound.doorOpen(0);
+      return;
+    }
+    s.open = true;
+    this.sound.doorOpen(0);
+  }
+
+  lockStorage() {
+    const s = this.storage;
+    if (s.broken) { this.sound.error(); return; }
+    s.open = false; s.locked = true;
+    this.sound.lockClick(true);
+    this.ui.toast('BACK ROOM LOCKED', 'good');
   }
 
   /* ---------------- rewinder ---------------- */
@@ -604,6 +651,7 @@ export class Game {
     t.push({ kind: 'register', aabb: box(PROPS.register) });
     t.push({ kind: 'phone', aabb: pad(PROPS.phone, 0.14, 0.22, 0.16) });
     t.push({ kind: 'door', aabb: { x0: DOOR_X0 - 0.2, x1: DOOR_X1 + 0.2, y0: 0.2, y1: 2.1, z0: -0.35, z1: 0.35 } });
+    t.push({ kind: 'storage', aabb: { x0: SDOOR_X0 - 0.25, x1: SDOOR_X1 + 0.25, y0: 0.2, y1: 2.0, z0: D - 0.45, z1: D + 0.45 } });
     for (const c of this.people()) {
       if (c.hidden) continue;
       const h = ACTOR_HEIGHT * c.app.height.scale;
@@ -690,6 +738,22 @@ export class Game {
       case 'door': {
         prompt = this.door.locked ? `${K('E')}Unlock the front door` : `${K('E')}Lock the front door`;
         act = () => this.toggleLock();
+        break;
+      }
+      case 'storage': {
+        const st = this.storage;
+        if (st.broken) {
+          prompt = `<span class="sub">BACK ROOM - the door will not close</span>`;
+        } else if (st.locked) {
+          prompt = `${K('E')}Unlock the back room`;
+          act = () => this.toggleStorage();
+        } else {
+          const inside = this.player.z > D;
+          prompt = st.open
+            ? `${K('E')}Pull the back room door to${inside ? `\n<span class="sub">${K('F')}throw the bolt</span>` : ''}`
+            : `${K('E')}Open the back room`;
+          act = () => this.toggleStorage();
+        }
         break;
       }
       case 'person': {
@@ -998,10 +1062,9 @@ export class Game {
     // ---- TV playing static ----
     const tv = this.world.tvPos;
     setPosYaw(M.m, tv.x, tv.y, tv.z, tv.yaw);
-    rz.drawMesh(this.world.tvMesh, M.m, {
-      shade: L,
-      textures: [this.world.tvMesh.textures[0], this.T.staticFrames[this.staticFrame]],
-    });
+    const tvTex = this.world.tvTextures;
+    tvTex[this.world.tvMesh.screenSlot] = this.T.staticFrames[this.staticFrame];
+    rz.drawMesh(this.world.tvMesh, M.m, { shade: L, textures: tvTex });
 
     // ---- doors ----
     const swing = this.door ? this.door.swing : 0;
@@ -1010,6 +1073,14 @@ export class Game {
     rz.drawMesh(dm, M.m, { shade: L * 0.95 });
     setPosYaw(M.m, DOOR_X1, 0, 0, Math.PI - swing);
     rz.drawMesh(dm, M.m, { shade: L * 0.95 });
+
+    // ---- back room ----
+    if (this.storage) {
+      const st = this.storage;
+      const sm = st.damage > 0 ? this.world.storageDoorHitMesh : this.world.storageDoorMesh;
+      setPosYaw(M.m, SDOOR_X0, 0, D, -st.swing);
+      rz.drawMesh(sm, M.m, { shade: Math.min(1.2, L * (0.9 + st.hitFlash * 0.9)) });
+    }
 
     // ---- tapes sitting around ----
     for (let i = 0; this.counterSlots && i < this.counterSlots.length; i++) {
@@ -1111,7 +1182,12 @@ export class Game {
       // A thumb latch lets anyone already inside leave. The deadbolt is only
       // ever a problem for whoever is on the pavement.
       doorPassable: (who) => !g.door.locked || (!!who && who.z > 0.15),
-      doorPassableForPlayer: () => !g.door.locked || g.player.z > 0.15,
+      /* The clerk does not leave. There is a shift on, the till is open and
+         the tapes are his problem until midnight -- and letting the player
+         wander into the street turned the back half of the map into a place
+         to stand and watch nothing happen. The doorway is a wall to him. */
+      doorPassableForPlayer: () => false,
+      storagePassableForPlayer: () => g.storage.broken || (g.storage.open && !g.storage.locked),
 
       /* --- sound / feedback --- */
       footstep: (c, heavy) => {
@@ -1119,6 +1195,13 @@ export class Game {
         if (s.gain > 0.02) g.sound.footstep(s.pan, heavy);
       },
       playerStep: (run) => g.sound.footstep(0, run),
+      pushedExit: () => {
+        if (g.time - (g._exitNagT || -99) < 6) return;
+        g._exitNagT = g.time;
+        g.ui.toast(g.door.locked
+          ? `The bolt's thrown. You threw it.`
+          : `Not until midnight. The store's yours till then.`, '');
+      },
       openDoor: () => g.openDoorFor(),
       knock: (c) => { g.sound.knock(3); g.ui.toast(`Someone is knocking.`, ''); },
       lockedOut: (c) => {
@@ -1316,6 +1399,15 @@ export class Game {
 
 /* ---------------- helpers ---------------- */
 const round2 = (v) => Math.round(v * 100) / 100;
+
+/** Fresh state for the back-room door at the top of a shift. */
+function freshStorageDoor() {
+  return {
+    open: false, locked: false, broken: false,
+    swing: 0, target: 0,
+    damage: 0, hitFlash: 0, hitTimer: 0,
+  };
+}
 
 /** What people actually hand over: the smallest bill that covers it. */
 function nextBill(owed) {

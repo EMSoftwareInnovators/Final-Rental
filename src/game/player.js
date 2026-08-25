@@ -3,7 +3,7 @@
    hands, and the interaction ray.
    ============================================================ */
 import { mat, mul, setRotX, setRotY, setTranslate, clamp } from '../engine/mathx.js';
-import { collide, EYE, SPOTS } from './world.js';
+import { collide, EYE, SPOTS, DOOR_X0, DOOR_X1 } from './world.js';
 
 export const MAX_CARRY = 3;
 export const REACH = 2.25;
@@ -72,7 +72,11 @@ export function updatePlayer(p, dt, input, ctx) {
   p.vz += (az - p.vz) * Math.min(1, dt * accel);
 
   const nx = p.x + p.vx * dt, nz = p.z + p.vz * dt;
-  const [cx, cz] = collide(nx, nz, p.r, ctx.solids, ctx.doorPassableForPlayer());
+  const [cx, cz] = collide(nx, nz, p.r, ctx.solids,
+    ctx.doorPassableForPlayer(), ctx.storagePassableForPlayer());
+  // pushing at the front door is a thing the player will try; say something
+  if (nz < p.z && p.z < 1.2 && Math.abs(cz - nz) > 1e-4
+      && nx > DOOR_X0 - 0.4 && nx < DOOR_X1 + 0.4) ctx.pushedExit();
   // kill velocity into the surface we just slid along
   if (Math.abs(cx - nx) > 1e-6) p.vx *= 0.2;
   if (Math.abs(cz - nz) > 1e-6) p.vz *= 0.2;

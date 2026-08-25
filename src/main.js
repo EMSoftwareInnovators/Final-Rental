@@ -25,7 +25,7 @@ const start = async () => {
     console.error(err);
     document.body.innerHTML =
       `<pre style="color:#ffb641;font:14px monospace;padding:2rem;white-space:pre-wrap">`
-      + `BE KIND, REWIND failed to start.\n\n${err && err.stack ? err.stack : err}\n\n`
+      + `FINAL RENTAL failed to start.\n\n${err && err.stack ? err.stack : err}\n\n`
       + `Serve the folder over http:// (npm start) -- ES modules will not load from file://.</pre>`;
   }
 };

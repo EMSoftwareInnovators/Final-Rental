@@ -28,6 +28,10 @@ export const NODES = [
 
 const EDGES = [
   [0, 1], [1, 2], [2, 3], [3, 4], [3, 5], [3, 6], [5, 4], [6, 5],
+  // Straight down the right-hand aisle into the back of the queue. Without
+  // it, anyone coming off the SCI-FI run doglegged back through the lobby
+  // and scraped past whatever was parked beside the counter.
+  [11, 6],
   [3, 11], [11, 10], [10, 9], [9, 8], [8, 7],
   [7, 12], [8, 13], [9, 14], [10, 15], [11, 16],
   [12, 13], [13, 14], [14, 15], [15, 16], [16, 17],

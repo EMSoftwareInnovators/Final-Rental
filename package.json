@@ -1,8 +1,8 @@
 {
-  "name": "vhs-horror",
+  "name": "final-rental",
   "version": "1.0.0",
   "private": true,
-  "description": "BE KIND, REWIND - a first-person PS1-era horror game set in a 1996 video rental store",
+  "description": "FINAL RENTAL - a first-person PS1-era horror game set in a 1996 video rental store",
   "scripts": {
     "start": "node serve.cjs",
     "dev": "node serve.cjs",
