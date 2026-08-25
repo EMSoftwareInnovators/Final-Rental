@@ -613,7 +613,7 @@ export class Game {
         // He is not going to stand here all night waiting for you to notice.
         if (o.waitTimer > 190) {
           this.ui.toast(`${o.name} leaves the bulletin on the counter and goes.`, 'bad');
-          this.night.bulletin.known = new Set(this.night.bulletin.keys);
+          for (const k of this.night.bulletin.keys) this.night.bulletin.known.add(k);
           this.finishBriefing();
         }
       }
@@ -1775,6 +1775,11 @@ export class Game {
 
       /* --- suspect --- */
       killerIntel: (n) => addIntel(g.killer, n),
+      learnBulletin: () => {
+        const b = g.night.bulletin;
+        for (const k of b.keys) b.known.add(k);
+        g.sound.paper();
+      },
       addBulletinDetail: (e) => {
         g.night.bulletin.known.add(e.key);
         g.ui.toast(`Added to your notes: ${e.key}`, '');
@@ -1863,6 +1868,10 @@ export class Game {
   }
 
   phoneTargets() {
+    // Nobody is coming in a casual shift, so nobody can be called in either
+    // -- and getting fired for accusing a customer is not a thing that
+    // belongs in the mode you picked to avoid all of that.
+    if (this.mode === MODE.CASUAL) return [];
     const out = [];
     for (const c of this.customers) if (c.z > -0.5 && c.z < D) out.push(c);
     const k = this.killer;

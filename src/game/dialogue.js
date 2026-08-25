@@ -116,11 +116,15 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
     return say(officer, `Anything you want to ask me, ask it now. I'm not coming back tonight.`, cs);
   };
 
-  const detail = () => say(officer, bulletin.description, [
+  const detail = () => {
+    // this is the moment the description actually reaches your notepad
+    ctx.learnBulletin();
+    return say(officer, bulletin.description, [
     reply('Let me write that down.', () => askNode()),
     reply(`That's half the men in this county.`, () => say(officer,
       `Yeah. It is. That's the problem.`, [reply('...', () => askNode())])),
-  ]);
+    ]);
+  };
 
   const greet = rng.pick([
     `Evening. Sorry — I know you're closing soon. County sheriff's office.`,

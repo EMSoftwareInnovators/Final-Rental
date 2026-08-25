@@ -88,7 +88,11 @@ export function makeNight(seed, n, mode = MODE.HORROR) {
     app: suspect,
     keys,
     extra: extras,
-    known: new Set(keys),
+    /* Empty until somebody actually tells you. The notepad used to open on
+       night one already listing a jacket and a limp that no one had said a
+       word about -- and in casual mode, where nobody ever will, it listed
+       them anyway. */
+    known: new Set(),
     certain: plan.appears || rng.chance(0.5),
     description: composeBulletin(suspect, keys, rng, n),
   };

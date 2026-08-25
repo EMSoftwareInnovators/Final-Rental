@@ -143,6 +143,7 @@ const bull = await ev(() => {
   const b = window.__game.night.bulletin;
   return { keys: [...b.known], text: b.description.slice(0, 90), suspect: b.app.jacket.label };
 });
+check('and reading it out is what puts it in your notes', bull.keys.length > 0);
 console.log('      bulletin keys:', bull.keys.join(', '));
 console.log('      "' + bull.text.replace(/\n/g, ' ') + '..."');
 
@@ -664,6 +665,19 @@ const settled = await ev(() => {
 });
 check('and it plays all the way out to black and a panel',
   settled.t > 4 && settled.dark === 0 && settled.panel, `t=${settled.t}s`);
+
+/* ---------- 7f0. the notepad only knows what you were told ---------- */
+const notes = await ev(async () => {
+  const g = window.__game;
+  g.ui.hidePanel(); g.ui.cinema(false); g.death = null; g.shake = 0;
+  g.startNight(1);                                   // no deputy on night one
+  await new Promise((r) => setTimeout(r, 400));
+  g.estT = 99;
+  await new Promise((r) => setTimeout(r, 500));
+  return { known: [...g.night.bulletin.known].length, keys: g.night.bulletin.keys.length };
+});
+check('a night with no deputy leaves the notepad empty',
+  notes.known === 0 && notes.keys > 0, `${notes.known} of ${notes.keys} traits on file`);
 
 /* ---------- 7f. a casual shift has nothing in it ---------- */
 await ev(() => {
