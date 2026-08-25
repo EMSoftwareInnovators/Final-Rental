@@ -1,3 +1,14 @@
+# Alpha 1
+# Development Note
+
+This repo originally started as an experiment to see how far Claude Code could take a game concept when regularly supplied with prompts from a locally hosted LLM, with minimal human intervention.
+
+The project began as a straightforward first-person horror game set in a video rental store. Over the last few days, the automated prompting began introducing increasingly bizarre, off-scope mechanics and overemphasizing crude humor in ways that did not fit the initial concept.
+
+I've reverted the repository to the last stable version containing the core horror and simulation features.
+
+I’m now developing the concept further with the goal of turning it into a complete game for eventual release.
+
 # BE KIND, REWIND
 
 A first-person horror game set on the graveyard shift at **Sunset Video**,
