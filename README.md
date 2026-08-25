@@ -9,7 +9,7 @@ I've reverted the repository to the last stable version containing the core horr
 
 I’m now developing the concept further with the goal of turning it into a complete game for eventual release.
 
-# BE KIND, REWIND
+# FINAL RENTAL
 
 A first-person horror game set on the graveyard shift at **Sunset Video**,
 4412 Delaney Ave, October 1996.
