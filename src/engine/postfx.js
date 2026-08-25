@@ -40,13 +40,21 @@ export class PostFX {
    * tear   -- 0..1, how often a scanline is displaced far enough to rip the
    *           image sideways rather than merely wobble it.
    * invert -- 0..1 mix toward a photographic negative.
+   * vhs    -- false to switch off everything that belongs to the tape
+   *           rather than to the console: the rolling head-switching band,
+   *           the garbage line along the bottom of the frame, and the
+   *           dropout flecks. The dither, the vignette and the scanlines
+   *           are the PlayStation on a CRT and stay.
    */
   render(src, p) {
     const w = this.w, h = this.h, out = this.out, prev = this.prev;
     this.t += p.dt || 0.016;
     const t = this.t;
 
+    const vhs = p.vhs !== false;
+
     // --- rolling head-switching band -------------------------------------
+    if (!vhs) { this.trackY = -100; this.trackTimer = 99; }
     this.trackTimer -= p.dt || 0.016;
     if (this.trackTimer <= 0) {
       this.trackTimer = (2.5 + Math.random() * 6) / (1 + (p.distress || 0) * 3);
@@ -92,7 +100,7 @@ export class PostFX {
       // a torn line: the head losing the track completely for one scanline
       if (tear && Math.random() < tear * 0.20) shift += (Math.random() - 0.5) * w * 0.7;
       // head-switching garbage in the last few lines, like a real VHS
-      const hsw = y >= h - 4;
+      const hsw = vhs && y >= h - 4;
       if (hsw) shift += (Math.random() - 0.5) * 10;
       const sh = shift | 0;
 
@@ -160,7 +168,7 @@ export class PostFX {
     }
 
     // dropout flecks -- brief white/black specks like a worn tape
-    if (distress > 0.01) {
+    if (vhs && distress > 0.01) {
       const n = (distress * 120) | 0;
       for (let k = 0; k < n; k++) {
         const x = (Math.random() * w) | 0, y = (Math.random() * h) | 0;

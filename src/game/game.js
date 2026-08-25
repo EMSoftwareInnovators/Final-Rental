@@ -40,6 +40,7 @@ export class Game {
     this.state = ST.BOOT;
     this.opts = {
       sens: 0.5, invert: false, vol: 0.8, res: 1, snap: true, grain: 0.5,
+      vhs: true,
     };
     this.menuSel = 0;
     this.optSel = 0;
@@ -291,6 +292,7 @@ export class Game {
     return {
       sens: this.opts.sens, invert: this.opts.invert, vol: this.opts.vol,
       resLabel: RES[this.opts.res][2], snap: this.opts.snap, grain: this.opts.grain,
+      vhs: this.opts.vhs,
     };
   }
 
@@ -302,7 +304,9 @@ export class Game {
       }
       return;
     }
-    const N = 7;
+    const N = 8;
+    const BACK = N - 1;
+    const TOGGLES = { 1: 'invert', 4: 'snap', 5: 'vhs' };
     if (i.hit('ArrowUp', 'KeyW')) { this.optSel = (this.optSel + N - 1) % N; this.sound.uiMove(); }
     if (i.hit('ArrowDown', 'KeyS')) { this.optSel = (this.optSel + 1) % N; this.sound.uiMove(); }
     const d = (i.hit('ArrowRight', 'KeyD') ? 1 : 0) - (i.hit('ArrowLeft', 'KeyA') ? 1 : 0);
@@ -310,24 +314,24 @@ export class Game {
       this.sound.uiMove();
       switch (this.optSel) {
         case 0: this.opts.sens = clamp(this.opts.sens + d * 0.1, 0.1, 1.0); break;
-        case 1: this.opts.invert = !this.opts.invert; break;
         case 2: this.opts.vol = clamp(this.opts.vol + d * 0.1, 0, 1); break;
         case 3: this.opts.res = clamp(this.opts.res + d, 0, RES.length - 1); this.layout(); break;
-        case 4: this.opts.snap = !this.opts.snap; break;
-        case 5: this.opts.grain = clamp(this.opts.grain + d * 0.1, 0, 1); break;
-        default: break;
+        case 6: this.opts.grain = clamp(this.opts.grain + d * 0.1, 0, 1); break;
+        default:
+          if (TOGGLES[this.optSel]) this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
+          break;
       }
       this.applyOptions();
       this.ui.showPanel(optionsHtml(this.optView()));
     }
     this.ui.panelSelect(this.optSel);
     if (i.hit('Enter', 'KeyE', 'Escape') || i.mousePressed[0]) {
-      if (this.optSel === 6 || i.hit('Escape')) {
+      if (this.optSel === BACK || i.hit('Escape')) {
         this.sound.uiBack();
         if (this._fromPause) { this._fromPause = false; this.pause(); }
         else { this.ui.hidePanel(); this.state = ST.TITLE; }
-      } else if (this.optSel === 1 || this.optSel === 4) {
-        if (this.optSel === 1) this.opts.invert = !this.opts.invert; else this.opts.snap = !this.opts.snap;
+      } else if (TOGGLES[this.optSel]) {
+        this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
         this.applyOptions(); this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel);
       }
     }
@@ -381,18 +385,22 @@ export class Game {
 
     if (t > HOLD + WALK || this.input.hit('KeyE', 'Enter', 'Space')) {
       this._estSound = false; this._estChime = false; this._estStep = 0;
-      const s = SPOTS.playerStart;
+      /* Hand over standing exactly where the camera stopped, just inside
+         the door. Cutting to behind the counter made the shot look like it
+         had teleported you across the shop; the walk to the till is now
+         yours, and it is the first thing you do on shift. */
+      const at = { x: p.x, z: Math.max(p.z, 0.62), yaw: p.yaw, pitch: p.pitch };
       this.player = createPlayer();
-      this.player.x = s.x; this.player.z = s.z; this.player.yaw = s.yaw;
-      this.player.pitch = s.pitch || 0;
+      this.player.x = at.x; this.player.z = at.z;
+      this.player.yaw = at.yaw; this.player.pitch = at.pitch;
       this.door.holdOpen = 0.9;
       this.beginPlay();
       this.sound.restoreRoom();
       this.ui.toast(`NIGHT ${this.nightNo} — SUNSET VIDEO`, '');
+      this.ui.toast(`Get behind the counter.`, '');
       // What the clock is doing, and why, said plainly the first time.
       if (this.night.deputy) {
         this.ui.toast(`The clock over the door has stopped again.`, '');
-        this.ui.toast(`Open the store. Somebody from the county is due.`, '');
       } else {
         this.ui.toast(`Shift ends at midnight.`, '');
       }
@@ -1597,22 +1605,30 @@ export class Game {
     const k = this.killer;
     const nearPanic = k && (k.phase === KP.HUNT || k.phase === KP.BREACH || k.phase === KP.SIEGE)
       ? k.proximity : 0;
+    /* With the tape switched off you get the console and the CRT it was
+       plugged into -- dither, vignette, scanlines, vertex wobble -- and
+       none of the things that belong to a worn VHS: no chroma bleed, no
+       phosphor trail, no tracking damage. */
+    const tape = this.opts.vhs;
     const base = {
       dt,
       dither: true,
-      bleed: 1 + (this.distress > 0.5 ? 1 : 0),
-      scan: 0.80,
-      ghost: 0.18 + this.distress * 0.12,
-      grain: 8 + this.opts.grain * 14 + this.distress * 18,
-      warp: this.distress * 1.5 + nearPanic * 2.2,
+      vhs: tape,
+      bleed: tape ? 1 + (this.distress > 0.5 ? 1 : 0) : 0,
+      scan: tape ? 0.80 : 0.90,
+      ghost: tape ? 0.18 + this.distress * 0.12 : 0,
+      grain: tape ? 8 + this.opts.grain * 14 + this.distress * 18 : 3,
+      warp: tape ? this.distress * 1.5 + nearPanic * 2.2 : 0,
       fade: this.fade,
       flash: this.flash,
       dark: (1.06 + (L - 1) * 0.55) * (1 - nearPanic * 0.15),
       tintR: 1 + nearPanic * 0.25, tintG: 1 - nearPanic * 0.08, tintB: 1 - nearPanic * 0.05,
-      distress: Math.min(1, this.distress + nearPanic * 0.5) * this.opts.grain * 1.4,
+      distress: tape ? Math.min(1, this.distress + nearPanic * 0.5) * this.opts.grain * 1.4 : 0,
     };
     const death = this.state === ST.ENDING && this.endKind === 'ATTACKED' ? this.deathFx() : null;
-    this.post.render(rz.color, death ? Object.assign(base, death, { dt }) : base);
+    // the death shot still gets to wreck the picture; without the tape it
+    // wrecks it the way a console losing sync would, not the way a tape does
+    this.post.render(rz.color, death ? Object.assign(base, death, { dt, vhs: tape }) : base);
   }
 
   drawTape(t, x, y, z, yaw, pitch) {

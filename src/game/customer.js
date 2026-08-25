@@ -11,6 +11,11 @@ import { pickPersonality, line } from './personality.js';
 import { GENRES, makeTape, tapeLabel } from './tapes.js';
 import { LOST_PREMISES, DIM_PREMISES } from './dialogue.js';
 
+/** How far along the pavement somebody has to get before they stop existing.
+    The storefront glass ends at x = 0 and x = 13, so this is comfortably
+    past the frame from anywhere inside the shop. */
+const DESPAWN_X = 11.5;
+
 export const CS = {
   ARRIVING: 'ARRIVING', ENTERING: 'ENTERING', BROWSING: 'BROWSING', PICKING: 'PICKING',
   TO_COUNTER: 'TO_COUNTER', WAITING: 'WAITING', TALKING: 'TALKING',
@@ -296,12 +301,29 @@ export function updateCustomer(c, dt, ctx) {
     }
 
     case CS.LEAVING: {
+      /* They used to stop a couple of paces past the kerb and blink out of
+         existence in full view of the window. They now walk off down the
+         pavement, left or right, and are only removed once they are past
+         the edge of the storefront and well behind the glass. */
       if (!c.path) {
         ctx.releaseCounterSpot(c);
-        setDest(c, SPOTS.street.x + (c.id % 5 - 2) * 1.1, SPOTS.street.z - 1.2, ctx);
+        if (!c.exitSide) c.exitSide = (c.id % 2) ? 1 : -1;
+        setDest(c, SPOTS.street.x + c.exitSide * (2.0 + (c.id % 3) * 0.6), SPOTS.street.z - 0.7, ctx);
+        c.leg = 1;
       }
-      if (step(c, dt, ctx)) { c.state = CS.GONE; ctx.despawn(c); }
-      else if (c.z < 0.2 && !c.exited) { c.exited = true; ctx.openDoor(c); }
+      if (step(c, dt, ctx)) {
+        if (c.leg === 1) {
+          // turn along the pavement and keep going until they are gone
+          c.leg = 2;
+          setDest(c, SPOTS.street.x + c.exitSide * DESPAWN_X, SPOTS.street.z - 0.9, ctx);
+        } else {
+          c.state = CS.GONE; ctx.despawn(c);
+        }
+      } else if (c.z < 0.2 && !c.exited) { c.exited = true; ctx.openDoor(c); }
+      // a hard backstop, in case a path ever fails to reach its end
+      if (Math.abs(c.x - SPOTS.street.x) > DESPAWN_X + 1.5 || c.z < -6) {
+        c.state = CS.GONE; ctx.despawn(c);
+      }
       break;
     }
     default: break;

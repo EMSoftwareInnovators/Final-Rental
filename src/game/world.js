@@ -134,11 +134,16 @@ export function buildWorld(T) {
 
   const tape = makeTapeTextures();
 
-  /* ---------------- floor + ceiling ---------------- */
-  mb.quad([0, 0, D], [W, 0, D], [W, 0, 0], [0, 0, 0], T.carpet, [0, 0, 64, 64], 0, [13, 10, true]);
-  // worn path from the door to the counter
-  mb.quad([4.9, 0.005, 2.6], [12.9, 0.005, 2.6], [12.9, 0.005, 0.1], [4.9, 0.005, 0.1],
-    T.carpetWorn, [0, 0, 64, 64], 0, [8, 3, true]);
+  /* ---------------- floor + ceiling ----------------
+     The worn path used to be a second quad laid five millimetres over the
+     carpet, and the welcome mat a third over that. At a metre and a half of
+     eye height and a near plane of eight centimetres, five millimetres is
+     well inside the 1/z depth buffer's resolution out across the room, so
+     the two surfaces traded pixels as you walked -- the glitching in front
+     of the door and along the walk-up to the counter. There is one floor
+     now, tiled a square at a time, and each tile picks the texture that
+     belongs to where it is. */
+  carpetFloor(mb, T);
   ceilingGrid(mb, T, 0, 0, W, D, H, 0);
 
   // fluorescent panels, recessed and emissive
@@ -230,9 +235,6 @@ export function buildWorld(T) {
   // exit sign over the door
   mb.quad([5.72, 2.28, 0.10], [6.28, 2.28, 0.10], [6.28, 2.50, 0.10], [5.72, 2.50, 0.10],
     T.exitSign, [0, 0, 32, 16], F_EMIT);
-  // welcome mat
-  mb.quad([6.95, 0.006, 0.12], [5.05, 0.006, 0.12], [5.05, 0.006, 1.35], [6.95, 0.006, 1.35],
-    T.mat, [0, 0, 64, 64], 0, [2, 1, true]);
   // posters on the walls
   const posterAt = (x, y, z, yaw, i) => mb.plate(x, y, z, 0.58, 1.1, yaw, T.posters[i % T.posters.length], [0, 0, 32, 64], 0);
   posterAt(0.06, 1.25, 1.5, Math.PI / 2, 0);
@@ -296,6 +298,46 @@ export function buildWorld(T) {
     solids: buildSolids(),
     T,
   };
+}
+
+/* ---------------- the floor ----------------
+   One coplanar sheet of tiles. Which texture a tile gets depends on where
+   it is: the mat inside the door, the worn track from the door to the
+   counter, plain carpet everywhere else. Nothing overlaps anything, so
+   there is nothing for the depth buffer to be uncertain about. */
+function carpetFloor(mb, T) {
+  /* The grid is chosen so the mat's rectangle falls on exact tile edges:
+     the mat is then those tiles, with the texture sliced across them,
+     rather than a second surface laid on top of them. */
+  const NX = 26, NZ = 20;
+  const dx = W / NX, dz = D / NZ;
+  const MAT = { i0: 10, i1: 14, j0: 0, j1: 3 };          // 5.0..7.0 x 0.0..1.44
+  const PATH = [4.90, 0.05, 12.95, 2.60];
+  const inMat = (i, j) => i >= MAT.i0 && i < MAT.i1 && j >= MAT.j0 && j < MAT.j1;
+
+  for (let i = 0; i < NX; i++) {
+    for (let j = 0; j < NZ; j++) {
+      const x0 = i * dx, x1 = x0 + dx;
+      const z0 = j * dz, z1 = z0 + dz;
+      const p = [[x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0]];
+
+      if (inMat(i, j)) {
+        // one slice of the mat: u runs with -x, v runs with -z, so the
+        // lettering reads the right way up to somebody walking in
+        const cu = (i - MAT.i0) / (MAT.i1 - MAT.i0), cu1 = (i + 1 - MAT.i0) / (MAT.i1 - MAT.i0);
+        const cv = (j - MAT.j0) / (MAT.j1 - MAT.j0), cv1 = (j + 1 - MAT.j0) / (MAT.j1 - MAT.j0);
+        mb.quad(p[0], p[1], p[2], p[3], T.mat,
+          [cu1 * 64, cv1 * 64, cu * 64, cv * 64], 0);
+        continue;
+      }
+      const cx = x0 + dx / 2, cz = z0 + dz / 2;
+      const worn = cx > PATH[0] && cx < PATH[2] && cz > PATH[1] && cz < PATH[3];
+      const k = hash2(i * 13.1 + j * 2.7, i);
+      const fu = (k >> 4) & 1, fv = (k >> 5) & 1;
+      const uv = [fu ? 64 : 0, fv ? 64 : 0, fu ? 0 : 64, fv ? 0 : 64];
+      mb.quad(p[0], p[1], p[2], p[3], worn ? T.carpetWorn : T.carpet, uv, 0);
+    }
+  }
 }
 
 /* ---------------- one run of perimeter wall ----------------
@@ -448,40 +490,68 @@ function storageLeaf(T, damaged) {
 /* ============================================================
    COUNTER PROPS -- modelled, not printed on cubes
    ============================================================ */
+/* An electronic cash register, in the parts one is actually made of.
+   The customer is at low z and the clerk at high z, so: drawer face and
+   display toward -Z, keyboard tilted up toward +Z.
+
+   The last version put the display head on a thin post in the middle of
+   the keyboard, and the keyboard was a single unbacked quad -- so the head
+   hung in the air over nothing. The keydeck is three solid tiers now and
+   the display grows out of the machine's front edge. */
 function buildRegister(mb, T, P) {
   const x0 = P.x0, x1 = P.x1, z0 = P.z0, z1 = P.z1, y = P.y0;
-  const midZ = (z0 + z1) / 2;
-  // drawer housing
-  mb.box(x0, y, z0, x1, y + 0.13, z1, {
-    all: { tex: T.regBody, uv: [0, 0, 64, 24] },
+  const cx = (x0 + x1) / 2;
+
+  // ---- cash drawer ----
+  mb.box(x0, y, z0, x1, y + 0.115, z1, {
+    all: { tex: T.regBody, uv: [0, 0, 64, 22] },
     nz: { tex: T.regDrawer, uv: [0, 0, 64, 30] },
     ny: null,
   });
-  // body, set back from the drawer face
-  mb.box(x0 + 0.015, y + 0.13, z0 + 0.03, x1 - 0.015, y + 0.20, z1, {
+  // ---- body shell, set back off the drawer face ----
+  mb.box(x0 + 0.012, y + 0.115, z0 + 0.022, x1 - 0.012, y + 0.195, z1, {
     all: { tex: T.regBody, uv: [0, 0, 64, 16] }, ny: null,
   });
-  // canted keydeck: a wedge, low at the clerk's side
-  const kx0 = x0 + 0.03, kx1 = x1 - 0.03;
-  mb.quad([kx0, y + 0.20, z1 - 0.06], [kx1, y + 0.20, z1 - 0.06],
-    [kx1, y + 0.27, z0 + 0.08], [kx0, y + 0.27, z0 + 0.08], T.regKeys, [0, 0, 64, 64], 0, [2, 2, false]);
-  mb.box(kx0, y + 0.19, z0 + 0.06, kx1, y + 0.27, z0 + 0.10, { all: { tex: T.regBody, uv: [0, 0, 64, 10] } });
-  // display head on a short neck, facing the customer
-  mb.box((x0 + x1) / 2 - 0.05, y + 0.27, midZ - 0.02, (x0 + x1) / 2 + 0.05, y + 0.40, midZ + 0.04,
-    { all: { tex: T.regBody, uv: [0, 0, 20, 26] } });
+
+  /* ---- keydeck: three solid tiers stepping up away from the clerk ----
+     The key texture is sliced across them so the rows line up: v is small
+     at low z, which is the far edge of the keyboard. */
+  const kx0 = x0 + 0.028, kx1 = x1 - 0.028;
+  const TIERS = [
+    { z0: z1 - 0.175, z1: z1 - 0.020, top: y + 0.232, uv: [0, 42, 64, 64] },
+    { z0: z1 - 0.330, z1: z1 - 0.175, top: y + 0.262, uv: [0, 21, 64, 42] },
+    { z0: z0 + 0.030, z1: z1 - 0.330, top: y + 0.292, uv: [0, 0, 64, 21] },
+  ];
+  for (const t of TIERS) {
+    mb.box(kx0, y + 0.195, t.z0, kx1, t.top, t.z1, {
+      all: { tex: T.regBody, uv: [0, 0, 64, 12] },
+      py: { tex: T.regKeys, uv: t.uv, sub: [3, 2, false] },
+      ny: null,
+    });
+  }
+
+  // ---- the neck the display sits on, rising out of the front edge ----
+  mb.box(cx - 0.062, y + 0.195, z0 + 0.014, cx + 0.062, y + 0.335, z0 + 0.070, {
+    all: { tex: T.regBody, uv: [0, 0, 26, 30] }, ny: null,
+  });
+  // ---- customer display head ----
   const dim = mb.light;
-  mb.light = (px, py, pz) => Math.min(0.92, lightAt(px, py, pz));
-  mb.box(x0 + 0.04, y + 0.40, midZ - 0.055, x1 - 0.04, y + 0.55, midZ + 0.055, {
+  mb.light = (px, py, pz) => Math.min(0.9, lightAt(px, py, pz));
+  mb.box(x0 + 0.030, y + 0.335, z0 - 0.012, x1 - 0.030, y + 0.475, z0 + 0.078, {
     all: { tex: T.regBody, uv: [0, 0, 64, 20] },
-    nz: { tex: T.regDisplay, uv: [0, 0, 64, 32], flags: F_EMIT },
+    nz: { tex: T.regDisplay, uv: [0, 0, 64, 32], flags: F_EMIT, sub: [3, 2, false] },
     py: { tex: T.regTop, uv: [0, 0, 64, 18] },
   });
   mb.light = dim;
+
+  // ---- receipt printer, tucked on the clerk's right ----
+  mb.box(x1 - 0.135, y + 0.195, z0 + 0.030, x1 - 0.020, y + 0.300, z0 + 0.150, {
+    all: { tex: T.regBody, uv: [0, 0, 30, 24] },
+    py: { tex: T.regTop, uv: [0, 0, 64, 24] },
+    ny: null,
+  });
 }
 
-/* The wall is at x = W and the room is at smaller x, so everything on this
-   set has to grow toward -X. Built the other way round the handset and the
-   cord were buried in the brickwork and only the keypad ever showed. */
 function buildWallPhone(mb, T, P) {
   const back = W - 0.02, front = back - 0.11;
   const z0 = P.z0, z1 = P.z1, y0 = P.y0 - 0.05, y1 = P.y1 + 0.22;

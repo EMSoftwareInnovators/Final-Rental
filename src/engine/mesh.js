@@ -169,13 +169,22 @@ export class MeshBuilder {
     put(side('ny'), [x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]);
   }
 
-  /** Flat billboard-ish plate standing on the XY plane at z, double sided. */
-  plate(cx, y0, cz, w, h, yaw, tex, uv, flags) {
+  /**
+   * Flat billboard-ish plate standing on the XY plane at z, double sided.
+   *
+   * Subdivided by default. Affine mapping interpolates u,v linearly across
+   * each of a quad's two triangles, so anything printed on a single large
+   * quad shears along the diagonal and swims as you walk past it -- which
+   * is exactly what the movie posters were doing. `sub` overrides the grid
+   * for callers that want a coarser or finer one.
+   */
+  plate(cx, y0, cz, w, h, yaw, tex, uv, flags, sub) {
     const c = Math.cos(yaw), s = Math.sin(yaw), hw = w / 2;
     const ax = cx - c * hw, az = cz + s * hw;
     const bx = cx + c * hw, bz = cz - s * hw;
+    const grid = sub || [Math.max(2, Math.round(w * 5)), Math.max(2, Math.round(h * 5)), false];
     this.quad([ax, y0, az], [bx, y0, bz], [bx, y0 + h, bz], [ax, y0 + h, az],
-      tex, uv, (flags | 0) | F_DOUBLE);
+      tex, uv, (flags | 0) | F_DOUBLE, grid);
   }
 
   merge(other, dx = 0, dy = 0, dz = 0) {

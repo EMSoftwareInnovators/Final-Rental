@@ -281,7 +281,8 @@ export function optionsHtml(o) {
     <li class="opt">Master volume &nbsp; ${bar(o.vol)}</li>
     <li class="opt">Internal resolution &nbsp; ${o.resLabel}</li>
     <li class="opt">Polygon jitter &nbsp; ${o.snap ? 'PS1 (ON)' : 'SMOOTH'}</li>
-    <li class="opt">Tape damage &nbsp; ${bar(o.grain)}</li>
+    <li class="opt">VHS tape &nbsp; ${o.vhs ? 'ON' : 'OFF &mdash; clean PS1'}</li>
+    <li class="opt">Tape damage &nbsp; ${bar(o.grain)}${o.vhs ? '' : ' <span class="quiet">(tape off)</span>'}</li>
     <li class="opt">Back</li>
   </ul>
   <p class="pad-foot">LEFT / RIGHT adjust &nbsp;&middot;&nbsp; [E] select</p>`;

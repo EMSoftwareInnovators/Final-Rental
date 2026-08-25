@@ -326,32 +326,49 @@ export function buildTextures() {
     g.fillStyle = '#6f6a5c'; g.fillRect(6, 12, 4, 4);           // lock barrel
     noise(g, w, h, 7); grime(g, w, h, 0.2);
   });
-  T.regKeys = makeTex(64, 64, (g, w, h) => {          // the keydeck, seen from above
-    fill(g, '#4a463e', w, h);
-    g.fillStyle = '#2f2c27'; g.fillRect(2, 2, w - 4, h - 4);
-    // four rows of round keys; the right-hand column is the loud one
-    for (let r = 0; r < 5; r++) {
-      for (let c = 0; c < 6; c++) {
-        const x = 6 + c * 9.5, y = 7 + r * 10;
-        const hot = c === 5 && r > 2;
-        g.fillStyle = hot ? '#8e2a1c' : '#d6cfbc';
-        g.beginPath(); g.arc(x + 3, y + 3, 3.4, 0, 7); g.fill();
-        g.fillStyle = 'rgba(0,0,0,.35)';
-        g.beginPath(); g.arc(x + 3, y + 4.6, 3.4, 0.2, 2.9); g.fill();
-      }
+  /* The keydeck, seen from above and sliced across three tiers of the
+     model. Square keys in a grid, a numeric block, a column of department
+     keys down one side and a fat red TOTAL at the bottom -- the layout of
+     an electronic register rather than a chessboard. */
+  T.regKeys = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#39362f', w, h);
+    g.fillStyle = '#26241f'; g.fillRect(2, 2, w - 4, h - 4);
+    const key = (x, y, kw, kh, top, face) => {
+      g.fillStyle = '#14130f'; g.fillRect(x - 0.5, y - 0.5, kw + 1, kh + 1);
+      g.fillStyle = face; g.fillRect(x, y, kw, kh);
+      g.fillStyle = top; g.fillRect(x, y, kw, 1);
+      g.fillStyle = 'rgba(0,0,0,.30)'; g.fillRect(x, y + kh - 1.5, kw, 1.5);
+    };
+    // department keys down the far edge
+    for (let c = 0; c < 6; c++) key(4 + c * 9.4, 5, 8, 6, '#f0e8d2', '#cfc7b0');
+    // numeric block
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 4; c++) key(4 + c * 9.4, 14 + r * 8, 8, 6.5, '#eee6cf', '#c6bea8');
     }
-    g.fillStyle = '#c9c2ac'; g.font = '5px "Courier New",monospace';
-    g.textAlign = 'left'; g.fillText('NO SALE', 4, h - 3);
-    noise(g, w, h, 6);
+    // the loud column: void, no-sale, subtotal
+    for (let r = 0; r < 3; r++) key(42, 14 + r * 8, 18, 6.5, '#c8705c', '#9c3a26');
+    // bottom row, and TOTAL across the corner
+    for (let c = 0; c < 4; c++) key(4 + c * 9.4, 40, 8, 6.5, '#eee6cf', '#c6bea8');
+    key(42, 40, 18, 15, '#d4826c', '#8e2a1c');
+    g.fillStyle = '#f2e8d6'; g.font = 'bold 5px "Courier New",monospace';
+    g.textAlign = 'center'; g.fillText('TOTAL', 51, 49);
+    g.fillStyle = '#8a8474'; g.font = '4px "Courier New",monospace';
+    g.textAlign = 'left'; g.fillText('SUNSET VIDEO 4412', 4, 60);
+    noise(g, w, h, 5);
   });
   T.regDisplay = makeTex(64, 32, (g, w, h) => {       // the customer-facing VFD
-    fill(g, '#15130f', w, h);
-    g.fillStyle = '#0a1c0d'; g.fillRect(5, 6, w - 10, h - 13);
-    g.fillStyle = '#78f0a4'; g.font = 'bold 11px "Courier New",monospace';
+    fill(g, '#26241f', w, h);
+    g.fillStyle = '#0d0d0d'; g.fillRect(3, 4, w - 6, h - 11);       // smoked bezel
+    g.fillStyle = '#07160a'; g.fillRect(5, 6, w - 10, h - 15);      // the tube
+    // dim segment ghosts behind the lit digits, like a real VFD
+    g.fillStyle = 'rgba(120,240,164,.10)'; g.font = 'bold 11px "Courier New",monospace';
     g.textAlign = 'right'; g.textBaseline = 'middle';
-    g.fillText('0.00', w - 9, h / 2 - 1);
-    g.fillStyle = 'rgba(120,240,164,.18)'; g.fillRect(5, 6, w - 10, 2);
-    g.fillStyle = '#3c3830'; g.fillRect(0, h - 5, w, 5);
+    g.fillText('88.88', w - 8, h / 2 - 2);
+    g.fillStyle = '#8effc0';
+    g.fillText('0.00', w - 8, h / 2 - 2);
+    g.fillStyle = 'rgba(140,255,190,.14)'; g.fillRect(5, 6, w - 10, 2);
+    g.fillStyle = '#6f6a5c'; g.font = '4px "Courier New",monospace';
+    g.textAlign = 'left'; g.fillText('THANK YOU', 5, h - 3);
   });
   T.regTop = makeTex(64, 64, (g, w, h) => {           // top deck with a receipt slot
     fill(g, '#cfc7b0', w, h);

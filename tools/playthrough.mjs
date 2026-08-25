@@ -35,20 +35,29 @@ for (let i = 0; i < 40; i++) {
 }
 check('briefing done', await ev(() => window.__game.officerDone));
 
-// force a returning customer with a late, unrewound HORROR tape
-await ev(() => {
+/* Force a returning customer with a late, unrewound HORROR tape, and hold
+   the door on everybody else -- customers are scheduled against the shop
+   floor clock, so one could otherwise wander in and take index zero. */
+const SUBJECT = await ev(() => {
   const g = window.__game;
+  g.night.schedule.length = 0;
   g.customers.length = 0;
   const c = window.__cust.createCustomer(g.rng, { intent: 'RETURN' });
   c.tape = { id: 5150, title: 'BLOOD ORCHARD', genre: 'HORROR', rewound: false, price: 3.5, daysLate: 3, heldBy: c.id };
   c.script = 'return'; c.hasMoney = true; c.personality = { ...c.personality, honesty: 1, chattiness: 0 };
   g.customers.push(c);
+  return c.id;
 });
+const subject = () => ev((id) => {
+  const c = window.__game.customers.find((x) => x.id === id);
+  return c ? { state: c.state, name: c.name } : null;
+}, SUBJECT);
 for (let i = 0; i < 80; i++) {
-  if (await ev(() => window.__game.customers[0] && window.__game.customers[0].state === 'WAITING')) break;
+  const st = await subject();
+  if (st && st.state === 'WAITING') break;
   await wait(200);
 }
-check('customer walked in and queued', await ev(() => window.__game.customers[0].state) === 'WAITING');
+check('customer walked in and queued', ((await subject()) || {}).state === 'WAITING');
 
 await ev(() => { window.__game.timeScale = 1; });
 await look(10.75, 3.05, Math.PI, 0.0);
@@ -121,10 +130,10 @@ check('ringing up moves it into the drawer', after.till >= 3 && after.cash === 0
   `till $${after.till.toFixed(2)}`);
 
 // if they overpaid, they are still standing there waiting
-const owedChange = await ev(() => {
-  const c = window.__game.customers[0];
+const owedChange = await ev((id) => {
+  const c = window.__game.customers.find((x) => x.id === id);
   return c ? { waiting: !!c.awaitingChange, due: c.changeDue || 0, inHand: window.__game.player.changeInHand } : null;
-});
+}, SUBJECT);
 if (owedChange && owedChange.waiting) {
   check('change was counted out of the drawer', owedChange.inHand >= owedChange.due - 0.001,
     `$${owedChange.inHand.toFixed(2)} for $${owedChange.due.toFixed(2)} owed`);

@@ -23,12 +23,22 @@ export class Sound {
     const ctx = this.ctx = new AC();
     this.master = ctx.createGain();
     this.master.gain.value = this.masterVol;
-    // a gentle limiter keeps stacked stingers from clipping
-    const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -12; comp.ratio.value = 6; comp.attack.value = 0.004;
-    this.master.connect(comp).connect(ctx.destination);
+    this.master.connect(ctx.destination);
 
-    this.sfxBus = ctx.createGain(); this.sfxBus.gain.value = 1; this.sfxBus.connect(this.master);
+    /* The limiter sits on the effects path only.
+       It used to sit across the whole mix, which meant every footstep
+       transient ducked the fluorescent hum and the room tone with it. At a
+       walk that is a wobble; at a sprint the steps land every four tenths
+       of a second and the entire background pumps in and out of the mix,
+       which is what "the audio skips while moving" was. The beds now run
+       straight to the master and nothing gates them. */
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -10; comp.ratio.value = 4;
+    comp.attack.value = 0.006; comp.release.value = 0.14;
+    if (comp.knee) comp.knee.value = 14;
+    comp.connect(this.master);
+
+    this.sfxBus = ctx.createGain(); this.sfxBus.gain.value = 1; this.sfxBus.connect(comp);
     this.ambBus = ctx.createGain(); this.ambBus.gain.value = 1; this.ambBus.connect(this.master);
 
     // shared noise buffer (2s of white noise)
@@ -62,7 +72,7 @@ export class Sound {
   }
 
   tone(o = {}) {
-    if (!this.ready || this.muted) return;
+    if (!this.ready || this.muted || this._busy()) return;
     const ctx = this.ctx, t0 = (o.when || 0) + this.t;
     const osc = ctx.createOscillator();
     osc.type = o.type || 'sine';
@@ -84,8 +94,17 @@ export class Sound {
     osc.start(t0); osc.stop(t0 + (o.a || 0.005) + (o.d || 0.2) + (o.sT || 0) + (o.r || 0.02) + 0.05);
   }
 
+  /** True if we are already running as many one-shots as the graph wants. */
+  _busy() {
+    const now = this.ctx.currentTime;
+    if (now - (this._voiceWindow || 0) > 0.1) { this._voiceWindow = now; this._voices = 0; }
+    if (this._voices >= 14) return true;
+    this._voices = (this._voices || 0) + 1;
+    return false;
+  }
+
   noise(o = {}) {
-    if (!this.ready || this.muted) return;
+    if (!this.ready || this.muted || this._busy()) return;
     const ctx = this.ctx, t0 = (o.when || 0) + this.t;
     const src = ctx.createBufferSource();
     src.buffer = this.noiseBuf; src.loop = true;
@@ -144,24 +163,46 @@ export class Sound {
 
   setTension(x) { this._tensionTarget = Math.max(0, Math.min(1, x)); }
 
+  /**
+   * Ambience upkeep.
+   *
+   * Every one of these is a scheduled automation event, and pushing five of
+   * them per frame at sixty frames a second gives the audio thread a queue
+   * it has to walk on every render quantum. They are only sent when the
+   * value has actually moved enough to hear.
+   */
   update(dt) {
     if (!this.ready) return;
     this.tension += (this._tensionTarget - this.tension) * Math.min(1, dt * 1.2);
-    const g = this.tension * this.tension * 0.16;
-    if (!this._ducked) this.dreadGain.gain.setTargetAtTime(this.muted ? 0 : g, this.t, 0.2);
-    this.dreadFilter.frequency.setTargetAtTime(180 + this.tension * 700, this.t, 0.4);
-    for (let i = 0; i < this.dreadOscs.length; i++) {
-      this.dreadOscs[i].detune.setTargetAtTime((i - 1) * (6 + this.tension * 34), this.t, 0.5);
+    const t = this.t;
+
+    const dread = this.muted ? 0 : this.tension * this.tension * 0.16;
+    if (!this._ducked && Math.abs(dread - (this._dreadSent || 0)) > 0.002) {
+      this._dreadSent = dread;
+      this.dreadGain.gain.setTargetAtTime(dread, t, 0.2);
+    }
+    const cut = 180 + this.tension * 700;
+    if (Math.abs(cut - (this._cutSent || 0)) > 8) {
+      this._cutSent = cut;
+      this.dreadFilter.frequency.setTargetAtTime(cut, t, 0.4);
+      for (let i = 0; i < this.dreadOscs.length; i++) {
+        this.dreadOscs[i].detune.setTargetAtTime((i - 1) * (6 + this.tension * 34), t, 0.5);
+      }
     }
     if (this._ducked) return;
-    if (this.humGain) this.humGain.gain.setTargetAtTime(this.muted ? 0 : 0.035 * this.lightLevel(), this.t, 0.1);
+    const hum = this.muted ? 0 : 0.035 * this.lightLevel();
+    if (this.humGain && Math.abs(hum - (this._humSent || 0)) > 0.0006) {
+      this._humSent = hum;
+      this.humGain.gain.setTargetAtTime(hum, t, 0.1);
+    }
   }
 
   /** Put the room back after duckRoom(), at the top of the next shift. */
   restoreRoom() {
     if (!this.ready || !this._ducked) return;
     this._ducked = false;
-    if (this.humGain) this.humGain.gain.setTargetAtTime(this.muted ? 0 : 0.035, this.t, 0.3);
+    this._humSent = this.muted ? 0 : 0.035;
+    if (this.humGain) this.humGain.gain.setTargetAtTime(this._humSent, this.t, 0.3);
     if (this.roomGain) this.roomGain.gain.setTargetAtTime(this.muted ? 0 : 0.05, this.t, 0.3);
   }
 
@@ -282,6 +323,7 @@ export class Sound {
   duckRoom(dur = 0.06) {
     if (!this.ready) return;
     this._ducked = true;
+    this._humSent = 0; this._dreadSent = 0;
     if (this.humGain) this.humGain.gain.setTargetAtTime(0, this.t, dur);
     if (this.roomGain) this.roomGain.gain.setTargetAtTime(0, this.t, dur);
     if (this.dreadGain) this.dreadGain.gain.setTargetAtTime(0, this.t, dur);
