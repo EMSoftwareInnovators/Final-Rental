@@ -9,6 +9,52 @@ import { GENRE_LABEL } from './tapes.js';
 
 const $ = (id) => document.getElementById(id);
 
+/* ============================================================
+   BUTTON GLYPHS
+   Every prompt in the game names a control, and which control it is
+   depends on what is plugged in. One table, three columns: a keyboard
+   cap, an Xbox face button, a PlayStation shape.
+   ============================================================ */
+const GLYPHS = {
+  //           keyboard      xbox                     playstation
+  interact:  ['E',          ['A', 'x-a'],            ['\u2715', 'p-x']],
+  confirm:   ['E',          ['A', 'x-a'],            ['\u2715', 'p-x']],
+  back:      ['ESC',        ['B', 'x-b'],            ['\u25CB', 'p-o']],
+  pause:     ['ESC',        ['\u2630', 'x-m'],       ['\u2630', 'p-m']],
+  notes:     ['TAB',        ['Y', 'x-y'],            ['\u25B3', 'p-t']],
+  drop:      ['G',          ['X', 'x-x'],            ['\u25A1', 'p-s']],
+  bolt:      ['F',          ['RB', 'x-b'],           ['R1', 'p-o']],
+  run:       ['SHIFT',      ['LB', 'x-b'],           ['L1', 'p-o']],
+  up:        ['\u2191',     ['\u2191', 'x-d'],       ['\u2191', 'p-d']],
+  down:      ['\u2193',     ['\u2193', 'x-d'],       ['\u2193', 'p-d']],
+  move:      ['WASD',       ['\u25CE L', 'x-d'],     ['\u25CE L', 'p-d']],
+  look:      ['MOUSE',      ['\u25CE R', 'x-d'],     ['\u25CE R', 'p-d']],
+};
+
+let SCHEME = 'kbm';
+/** Told by the game whenever the active input device changes. */
+export function setScheme(s) { SCHEME = s || 'kbm'; }
+export function currentScheme() { return SCHEME; }
+
+/** The markup for one control, in whatever language the player's hands speak. */
+export function glyph(action) {
+  const row = GLYPHS[action];
+  if (!row) return `<span class="key">${escape(String(action).toUpperCase())}</span>`;
+  if (SCHEME === 'kbm') return `<span class="key">${row[0]}</span>`;
+  const [label, cls] = SCHEME === 'playstation' ? row[2] : row[1];
+  // NB: not "pad" -- that is the paper-panel class, and a glyph wearing it
+  // inherited the panel's absolute positioning and 78cqw width.
+  return `<span class="key btn ${cls}">${label}</span>`;
+}
+
+/** Bare text form, for places that cannot take markup. */
+export function glyphText(action) {
+  const row = GLYPHS[action];
+  if (!row) return String(action).toUpperCase();
+  if (SCHEME === 'kbm') return row[0];
+  return (SCHEME === 'playstation' ? row[2] : row[1])[0];
+}
+
 export class UI {
   constructor() {
     this.el = {
@@ -65,8 +111,10 @@ export class UI {
     if (!tapes.length) rows.push('<span class="tape-line">HANDS EMPTY</span>');
     for (let i = tapes.length - 1; i >= 0; i--) {
       const t = tapes[i];
+      // a cartridge has no reel, so it is never rewound or otherwise
+      const state = t.game ? 'CARTRIDGE' : (t.rewound ? 'REWOUND' : 'NOT REWOUND');
       rows.push(`<span class="tape-line">${i === tapes.length - 1 ? '>' : ' '} ${t.title}</span> `
-        + `<span class="${t.rewound ? 'ok' : 'warn'}">${GENRE_LABEL[t.genre]} / ${t.rewound ? 'REWOUND' : 'NOT REWOUND'}</span>`);
+        + `<span class="${t.game || t.rewound ? 'ok' : 'warn'}">${GENRE_LABEL[t.genre]} / ${state}</span>`);
     }
     this.el.hands.innerHTML = rows.join('\n');
   }
@@ -75,6 +123,16 @@ export class UI {
     if (this.el.prompt.innerHTML !== (html || '')) this.el.prompt.innerHTML = html || '';
   }
   setReticle(hot) { this.el.reticle.classList.toggle('hot', !!hot); }
+
+  /** Ring round the reticle that fills while a held action runs. 0 clears it. */
+  setHold(f) {
+    const on = f > 0.001;
+    if (on !== this._holdOn) {
+      this._holdOn = on;
+      this.el.reticle.classList.toggle('holding', on);
+    }
+    if (on) this.el.reticle.style.setProperty('--hold', String(Math.min(1, f)));
+  }
   setObjective(text, pulse) {
     this.el.objective.textContent = text || '';
     this.el.objective.classList.toggle('pulse', !!pulse);
@@ -214,6 +272,8 @@ export class UI {
     return items.length;
   }
 
+  keyHint(action) { return glyph(action); }
+
   setHudVisible(v) { this.el.hud.classList.toggle('hidden', !v); }
   /** DOM-level blackout, used for hard cuts between scenes. 0 = clear. */
   fade(to, flash) {
@@ -234,25 +294,26 @@ function escape(s) {
    menu on a 4:3 CRT, not a web page. Three tight columns of key bindings
    over two short columns of prose does it. */
 export function howToHtml() {
-  const key = (k, what) => `<li class="plain"><b>${k}</b> ${what}</li>`;
+  const key = (g, what) => `<li class="plain">${glyph(g)} ${what}</li>`;
+  const onPad = SCHEME !== 'kbm';
   return `<div class="howto">
-  <h2>WORKING THE COUNTER</h2>
+  <h2>WORKING THE COUNTER${onPad ? ` <span class="quiet">&mdash; ${SCHEME === 'playstation' ? 'PLAYSTATION' : 'XBOX'} PAD</span>` : ''}</h2>
   <div class="keys">
     <ul>
-      ${key('WASD', 'walk')}
-      ${key('SHIFT', 'hurry')}
-      ${key('MOUSE', 'look')}
-      ${key('ESC', 'pause')}
+      ${key('move', 'walk')}
+      ${key('run', 'hurry')}
+      ${key('look', 'look')}
+      ${key('pause', 'pause')}
     </ul>
     <ul>
-      ${key('E', 'interact / talk')}
-      ${key('1-4', 'pick a reply')}
-      ${key('&uarr;&darr;', 'move the cursor')}
-      ${key('TAB', 'the notepad')}
+      ${key('interact', 'interact / talk')}
+      ${onPad ? key('up', 'pick a reply') : `<li class="plain"><span class="key">1-4</span> pick a reply</li>`}
+      ${key('down', 'move the cursor')}
+      ${key('notes', 'the notepad')}
     </ul>
     <ul>
-      ${key('G', 'put the tape down')}
-      ${key('F', 'bolt the back room')}
+      ${key('drop', 'put the tape down')}
+      ${key('bolt', 'bolt the back room')}
     </ul>
   </div>
   <div class="cols">
@@ -264,12 +325,12 @@ export function howToHtml() {
     </ul>
     <ul>
       <li><b>Change.</b> Cash sits in your hand until you ring it up. The drawer pays the change; the customer waits for it.</li>
-      <li><b>The bulletin.</b> A deputy reads you a description. TAB holds it against whoever is in front of you.</li>
+      <li><b>The bulletin.</b> A deputy reads you a description. ${glyphText('notes')} holds it against whoever is in front of you.</li>
       <li><b>If you are sure.</b> Lock the front door, then the phone. Call it in on the wrong person and you are finished here.</li>
       <li><b>The back room.</b> The one door in the building with a bolt. It does not hold forever.</li>
     </ul>
   </div>
-  <p class="pad-foot">[E] back</p></div>`;
+  <p class="pad-foot">${glyph('back')} back</p></div>`;
 }
 
 export function optionsHtml(o) {

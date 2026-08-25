@@ -88,7 +88,12 @@ export const SHELVES = [
   { genre: 'ACTION', axis: 'z', x0: 5.30, x1: 5.92, z0: 3.2, z1: 7.2, top: 1.95, browse: [{ x: 4.84, z: 5.4, yaw: Math.PI / 2 }, { x: 6.42, z: 4.4, yaw: -Math.PI / 2 }] },
   { genre: 'SCIFI', axis: 'z', x0: 7.30, x1: 7.92, z0: 3.2, z1: 7.2, top: 1.95, browse: [{ x: 6.84, z: 6.2, yaw: Math.PI / 2 }, { x: 8.44, z: 5.0, yaw: -Math.PI / 2 }] },
   { genre: 'DRAMA', axis: 'x', x0: 0.60, x1: 5.20, z0: 9.15, z1: 9.60, top: 2.20, browse: [{ x: 2.0, z: 8.62, yaw: 0 }, { x: 4.1, z: 8.62, yaw: 0 }] },
-  { genre: 'FAMILY', axis: 'x', x0: 6.40, x1: 12.40, z0: 9.15, z1: 9.60, top: 2.20, browse: [{ x: 7.8, z: 8.62, yaw: 0 }, { x: 10.6, z: 8.62, yaw: 0 }] },
+  // pulled clear of the back-room doorway, which it used to overlap
+  { genre: 'FAMILY', axis: 'x', x0: 6.70, x1: 12.40, z0: 9.15, z1: 9.60, top: 2.20, browse: [{ x: 8.1, z: 8.62, yaw: 0 }, { x: 10.6, z: 8.62, yaw: 0 }] },
+  /* The left wall was a second ACTION run: decorative, unbrowsable, and
+     confusing next to the real one. It is the games section now -- 1996 is
+     exactly when a video shop started renting cartridges alongside tapes. */
+  { genre: 'GAMES', axis: 'z', wall: true, x0: 0.02, x1: 0.56, z0: 2.40, z1: 8.40, top: 2.05, browse: [{ x: 1.06, z: 3.9, yaw: -Math.PI / 2 }, { x: 1.06, z: 6.8, yaw: -Math.PI / 2 }] },
 ];
 
 /* Fixed spots the simulation steers people to. */
@@ -176,16 +181,6 @@ export function buildWorld(T) {
   /* ---------------- shelving ---------------- */
   for (const s of SHELVES) buildShelf(mb, T, s);
 
-  // decorative NEW RELEASES run on the left wall
-  mb.box(0.02, 0.10, 2.4, 0.48, 2.05, 8.4, {
-    all: { tex: T.shelfWood, uv: [0, 0, 64, 64] },
-    px: { tex: T.spines.ACTION, uv: [0, 0, 64, 64], sub: [6, 2, true] },
-    nx: null,
-  });
-  for (let i = 0; i < 4; i++) {
-    mb.box(0.02, 0.42 + i * 0.42, 2.4, 0.52, 0.47 + i * 0.42, 8.4, { all: { tex: T.shelfWood, uv: [0, 0, 32, 12] } });
-  }
-  signPlate(mb, 0.30, 2.10, 5.4, 1.3, 0.28, Math.PI / 2, T.signs.ACTION, F_EMIT);
 
   /* ---------------- service counter ---------------- */
   const C = COUNTER;
@@ -734,7 +729,8 @@ function buildShelf(mb, T, s) {
   const faces = { all: { tex: T.shelfWood, uv: [0, 0, 64, 64] } };
   if (s.axis === 'z') {
     faces.px = { tex: spine, uv: [0, 0, 64, 64], sub: [reps, 3, true] };
-    faces.nx = { tex: spine, uv: [0, 0, 64, 64], sub: [reps, 3, true] };
+    // a run against a wall has no back to browse
+    faces.nx = s.wall ? null : { tex: spine, uv: [0, 0, 64, 64], sub: [reps, 3, true] };
   } else {
     faces.nz = { tex: spine, uv: [0, 0, 64, 64], sub: [reps, 3, true] };
     faces.pz = null;
@@ -766,9 +762,11 @@ function buildShelf(mb, T, s) {
   const sign = T.signs[s.genre];
   const SIGN_SUB = [8, 1, false];
   if (s.axis === 'z') {
-    mb.quad([s.x0 - 0.045, s.top, cz - 0.7], [s.x0 - 0.045, s.top, cz + 0.7],
-      [s.x0 - 0.045, s.top + 0.30, cz + 0.7], [s.x0 - 0.045, s.top + 0.30, cz - 0.7],
-      sign, [0, 0, 64, 16], F_EMIT, SIGN_SUB);
+    if (!s.wall) {
+      mb.quad([s.x0 - 0.045, s.top, cz - 0.7], [s.x0 - 0.045, s.top, cz + 0.7],
+        [s.x0 - 0.045, s.top + 0.30, cz + 0.7], [s.x0 - 0.045, s.top + 0.30, cz - 0.7],
+        sign, [0, 0, 64, 16], F_EMIT, SIGN_SUB);
+    }
     mb.quad([s.x1 + 0.045, s.top, cz + 0.7], [s.x1 + 0.045, s.top, cz - 0.7],
       [s.x1 + 0.045, s.top + 0.30, cz - 0.7], [s.x1 + 0.045, s.top + 0.30, cz + 0.7],
       sign, [0, 0, 64, 16], F_EMIT, SIGN_SUB);
@@ -790,9 +788,41 @@ function makeTapeTextures() {
     HORROR: ['#3a0a0a', '#ff4b3a'], COMEDY: ['#3a2c05', '#ffd447'],
     ACTION: ['#08203a', '#4fa8ff'], SCIFI: ['#0a2a33', '#5cf0ff'],
     DRAMA: ['#2a2418', '#e8d9ae'], FAMILY: ['#0a2e18', '#7cf09a'],
+    GAMES: ['#1a0a2e', '#c9a4ff'],
   };
   for (const g of GENRES) {
     const [bg, fg] = COL[g];
+    if (g === 'GAMES') {
+      out[g] = makeTex(64, 64, (c) => {
+        c.fillStyle = '#0f0f16'; c.fillRect(0, 0, 64, 64);
+        c.fillStyle = bg; c.fillRect(3, 3, 58, 58);
+        const gr = c.createLinearGradient(0, 8, 0, 46);
+        gr.addColorStop(0, fg + '55'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+        c.fillStyle = gr; c.fillRect(3, 3, 58, 58);
+        // chunky logotype band across the top, the way a cart box shouts
+        c.fillStyle = fg; c.fillRect(6, 8, 52, 9);
+        c.fillStyle = bg;
+        c.font = 'bold 7px "Courier New",monospace'; c.textAlign = 'center';
+        c.fillText('GAME PAK', 32, 15);
+        // a screenshot window
+        c.fillStyle = '#05050a'; c.fillRect(9, 22, 46, 24);
+        c.fillStyle = fg;
+        for (let i = 0; i < 26; i++) {
+          c.globalAlpha = 0.25 + Math.random() * 0.5;
+          c.fillRect(10 + Math.floor(Math.random() * 44), 23 + Math.floor(Math.random() * 22), 3, 2);
+        }
+        c.globalAlpha = 1;
+        c.fillStyle = '#d8cfae'; c.fillRect(6, 50, 52, 8);
+        c.fillStyle = '#2a2418';
+        c.font = 'bold 6px "Courier New",monospace';
+        c.fillText('RENTAL COPY', 32, 56);
+        c.strokeStyle = 'rgba(0,0,0,.7)'; c.strokeRect(2.5, 2.5, 59, 59);
+        const d = c.getImageData(0, 0, 64, 64), p = d.data;
+        for (let i = 0; i < p.length; i += 4) { const n = (Math.random() - 0.5) * 14; p[i] += n; p[i + 1] += n; p[i + 2] += n; }
+        c.putImageData(d, 0, 0);
+      });
+      continue;
+    }
     out[g] = makeTex(64, 64, (c) => {
       c.fillStyle = '#141418'; c.fillRect(0, 0, 64, 64);
       // sleeve face
@@ -817,13 +847,21 @@ function makeTapeTextures() {
   return out;
 }
 
-/** A VHS clamshell: 0.19 x 0.11 x 0.028 m, origin at its centre. */
+/**
+ * A VHS clamshell: 0.19 x 0.11 x 0.028 m, origin at its centre.
+ * A cartridge box is a different object -- shorter, wider and much
+ * thicker -- so it reads as one across the shop and in your hands.
+ */
 function buildTapeMesh(tapeTex) {
   const out = {};
   for (const g of GENRES) {
     const b = new MeshBuilder();
     b.light = () => 1;
-    b.box(-0.055, -0.095, -0.014, 0.055, 0.095, 0.014, {
+    const game = g === 'GAMES';
+    const hw = game ? 0.062 : 0.055;
+    const hh = game ? 0.072 : 0.095;
+    const hd = game ? 0.024 : 0.014;
+    b.box(-hw, -hh, -hd, hw, hh, hd, {
       all: { tex: tapeTex[g], uv: [4, 4, 60, 60] },
       pz: { tex: tapeTex[g], uv: [2, 2, 62, 62] },
       nz: { tex: tapeTex[g], uv: [2, 2, 62, 62] },
@@ -856,7 +894,6 @@ function buildSolids() {
   add(12.24, 5.80, 12.96, 6.52, 'popcorn');
   add(3.15, 0.12, 3.85, 0.68, 'candy');
   add(0.22, 1.0, 0.62, 1.4, 'trash');
-  add(0.0, 2.4, 0.52, 8.4, 'shelf');
   for (const s of SHELVES) add(s.x0, s.z0, s.x1, s.z1, 'shelf');
   // keep people out of the street beyond the sidewalk
   add(-9, -4.9, 22, -4.6, 'curb');

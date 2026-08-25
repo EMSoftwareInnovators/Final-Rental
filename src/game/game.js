@@ -19,7 +19,7 @@ import { createCustomer, updateCustomer, CS, observeVisible, moodLabel } from '.
 import { createKiller, updateKiller, KP, killerActive, killerInside, killerInView, addIntel } from './killer.js';
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
 import { DialogueRunner, buildOfficerIntro, talkTo, buildPhoneCall } from './dialogue.js';
-import { UI, howToHtml, optionsHtml, reportHtml, endingHtml } from './ui.js';
+import { UI, howToHtml, optionsHtml, reportHtml, endingHtml, glyph, glyphText, setScheme } from './ui.js';
 import { randomAppearance, paintSkin, voicePitchOf, pronounOf } from './appearance.js';
 import { OFFICER } from './personality.js';
 import { GENRE_LABEL, GENRES, makeTape } from './tapes.js';
@@ -30,6 +30,10 @@ const ST = {
 };
 
 const RES = [[256, 192, '256x192'], [320, 240, '320x240'], [400, 300, '400x300']];
+
+/** Arm's length of a shelf run, and how long squaring a box away takes. */
+const SHELVE_REACH = 1.05;
+const SHELVE_TIME = 1.5;
 
 export class Game {
   constructor() {
@@ -62,7 +66,7 @@ export class Game {
     this.queue = [];
     this.counterSlots = [];
     this.bin = [];
-    this.rewinder = { tape: null, t: 0, dur: 6.5, done: false, running: false };
+    this.rewinder = { tape: null, t: 0, dur: 20, done: false, running: false };
     this.door = { locked: false, swing: 0, target: 0, holdOpen: 0 };
     this.storage = freshStorageDoor();
     this.officer = null;
@@ -138,7 +142,7 @@ export class Game {
     this.queue = [];
     this.counterSlots = COUNTER_SLOTS.map(() => null);
     this.bin = [];
-    this.rewinder = { tape: null, t: 0, dur: 6.5, done: false, running: false };
+    this.rewinder = { tape: null, t: 0, dur: 20, done: false, running: false };
     this.till = 0;
     this.owedTotal = 0;
     this.stats = {
@@ -152,6 +156,7 @@ export class Game {
     this.storage = freshStorageDoor();
     // whatever the last night ended as, none of it belongs to this one
     this.death = null; this.shake = 0; this.endKind = null; this.endData = null;
+    this.hold = null;
     this.flash = 0; this._exitNagT = -99; this._heldTalk = null;
     this.lights = 1; this.flickerT = 0; this.flickerAmt = 0;
     this.distress = 0; this.tension = 0;
@@ -210,11 +215,18 @@ export class Game {
      MAIN LOOP
      ============================================================ */
   frame(now) {
+    this.input.poll();
+    if (this.input.scheme !== this._scheme) {
+      this._scheme = this.input.scheme;
+      setScheme(this._scheme);
+      this.onSchemeChanged();
+    }
     let dt = (now - this.last) / 1000;
     this.last = now;
     if (dt > 0.1) dt = 0.1;
     dt *= this.timeScale;
     this.time += dt;
+    this._dt = dt;
 
     this.fade += (this.fadeTo - this.fade) * Math.min(1, dt * 3.2);
     this.flash = Math.max(0, this.flash - dt * 3.4);
@@ -245,6 +257,14 @@ export class Game {
     this.render(dt);
     this.input.endFrame();
     requestAnimationFrame(this.frame);
+  }
+
+  /** Redraw whatever panel is open so its button art matches the new device. */
+  onSchemeChanged() {
+    if (this.state === ST.HOWTO) this.ui.showPanel(howToHtml());
+    else if (this.state === ST.OPTIONS) { this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel); }
+    else if (this.state === ST.PAUSE) this.showPauseMenu();
+    this._promptCache = null;
   }
 
   /* ---------------- title ---------------- */
@@ -299,8 +319,11 @@ export class Game {
   updatePanelMenu() {
     const i = this.input;
     if (this.state === ST.HOWTO) {
-      if (i.hit('Enter', 'KeyE', 'Escape', 'Space') || i.mousePressed[0]) {
-        this.sound.uiBack(); this.ui.hidePanel(); this.state = ST.TITLE;
+      if (i.hit('Enter', 'KeyE', 'Escape', 'Space')) {
+        this.sound.uiBack();
+        this.ui.hidePanel();
+        if (this._fromPause) { this._fromPause = false; this.showPauseMenu(); }
+        else this.state = ST.TITLE;
       }
       return;
     }
@@ -325,10 +348,10 @@ export class Game {
       this.ui.showPanel(optionsHtml(this.optView()));
     }
     this.ui.panelSelect(this.optSel);
-    if (i.hit('Enter', 'KeyE', 'Escape') || i.mousePressed[0]) {
+    if (i.hit('Enter', 'KeyE', 'Escape')) {
       if (this.optSel === BACK || i.hit('Escape')) {
         this.sound.uiBack();
-        if (this._fromPause) { this._fromPause = false; this.pause(); }
+        if (this._fromPause) { this._fromPause = false; this.showPauseMenu(); }
         else { this.ui.hidePanel(); this.state = ST.TITLE; }
       } else if (TOGGLES[this.optSel]) {
         this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
@@ -415,10 +438,19 @@ export class Game {
 
     // ---- pause / notepad ----
     if (i.hit('Escape')) { this.pause(); return; }
+    /* Before the bulletin exists there is nothing on the page and nobody to
+       compare anybody against, so the notepad simply is not a thing yet. */
     if (i.hit('Tab')) {
-      this.notesOpen = !this.notesOpen;
-      this.sound.paper();
-      if (!this.notesOpen) this.ui.hideNotes();
+      if (!this.night.bulletin.known.size) {
+        this.sound.error();
+        this.ui.toast(this.night.deputy
+          ? `Nothing in the notebook yet.`
+          : `Nothing to write down tonight.`, '');
+      } else {
+        this.notesOpen = !this.notesOpen;
+        this.sound.paper();
+        if (!this.notesOpen) this.ui.hideNotes();
+      }
     }
     // Throwing the bolt is the one thing you may need to do without lining
     // up a crosshair first, so it gets its own key anywhere in the room.
@@ -471,24 +503,35 @@ export class Game {
      standing at the counter with briefingStarted already true and nothing
      left to start: he never spoke or moved again. The conversation is now
      held intact behind the pause panel and put back on resume. */
+  /* Pausing, and coming back to it out of the options page.
+     `pause()` used to refuse to run unless the state was PLAY, so backing
+     out of Options returned to nothing: the options panel stayed up, the
+     state stayed OPTIONS, and the next press dropped you to the title
+     screen. Entering the pause menu and returning to it are now separate
+     things, and only the first one touches the world. */
   pause() {
     if (this.state !== ST.PLAY) return;
-    this.state = ST.PAUSE;
     this.input.exitLock();
     this.ui.setPrompt('');
     this.ui.hideNotes(); this.notesOpen = false;
     this._heldTalk = this.phone.active ? 'phone' : this.dlg.active ? 'dlg' : null;
     if (this._heldTalk) { this.ui.hideDialogue(); this.ui.hidePhone(); }
+    this.pauseSel = 0;
+    this.showPauseMenu();
+  }
+
+  showPauseMenu() {
+    this.state = ST.PAUSE;
     this.ui.showPanel(`<h2>SHIFT PAUSED</h2>
       <ul><li class="opt sel">${this._heldTalk ? 'Back to the conversation' : 'Back to the counter'}</li>`
       + `<li class="opt">Options</li><li class="opt">Quit to title</li></ul>
-      <p class="pad-foot">[E] select</p>`);
-    this.pauseSel = 0;
-    this.ui.panelSelect(0);
+      <p class="pad-foot">${this.ui.keyHint('confirm')} select &nbsp;&middot;&nbsp; ${this.ui.keyHint('up')}${this.ui.keyHint('down')} move</p>`);
+    this.ui.panelSelect(this.pauseSel || 0);
   }
 
   resume() {
     this.ui.hidePanel();
+    this._fromPause = false;
     this.state = ST.PLAY;
     if (this._heldTalk === 'phone' && this.phone.node) {
       this.ui.showPhone(this.phone.node, this.phone.sel);
@@ -500,6 +543,10 @@ export class Game {
     this._heldTalk = null;
   }
 
+  /* Pause and options take no mouse input at all.
+     Pointer lock is released while paused, so the canvas sees ordinary
+     clicks -- and a single click anywhere both picked whatever the cursor
+     happened to be over and grabbed the pointer again. */
   updatePause() {
     const i = this.input;
     const N = 3;
@@ -507,7 +554,7 @@ export class Game {
     if (i.hit('ArrowDown', 'KeyS')) { this.pauseSel = (this.pauseSel + 1) % N; this.sound.uiMove(); }
     this.ui.panelSelect(this.pauseSel);
     if (i.hit('Escape')) { this.resume(); return; }
-    if (i.hit('Enter', 'KeyE', 'Space') || i.mousePressed[0]) {
+    if (i.hit('Enter', 'KeyE', 'Space')) {
       this.sound.uiSelect();
       if (this.pauseSel === 0) this.resume();
       else if (this.pauseSel === 1) { this.state = ST.OPTIONS; this.optSel = 0; this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(0); this._fromPause = true; }
@@ -576,7 +623,7 @@ export class Game {
       this.sound.rewindPitch(Math.min(1, r.t / r.dur));
       if (r.t >= r.dur) {
         r.running = false; r.done = true; r.tape.rewound = true;
-        this.sound.rewindStop();
+        this.sound.rewindEnd();
         this.ui.toast(`${r.tape.title} rewound`, 'good');
       }
     }
@@ -655,6 +702,34 @@ export class Game {
     }
   }
 
+  /**
+   * Why this person cannot be rung up yet, or '' if they can.
+   *
+   * Business happens at the counter, at the front of the line. You could
+   * previously check somebody out from the middle of the SCI-FI aisle,
+   * which made the queue -- and everyone's patience with it -- decorative.
+   */
+  cannotServe(c) {
+    if (!c || c === this.officer) return '';
+    if (c.state === CS.TALKING) return '';
+    if (c.awaitingChange) return '';
+    const atWindow = c.queueIndex === 0
+      && (c.state === CS.WAITING || c.state === CS.TO_COUNTER)
+      && Math.hypot(c.x - SPOTS.service.x, c.z - SPOTS.service.z) < 1.1;
+    if (atWindow) return '';
+    if (c.queueIndex > 0) return 'waiting in line';
+    return 'not at the counter';
+  }
+
+  /** Within arm's length of the run itself, not merely pointed at it. */
+  nearShelf(sh) {
+    if (!sh) return false;
+    const p = this.player;
+    const cx = Math.max(sh.x0, Math.min(p.x, sh.x1));
+    const cz = Math.max(sh.z0, Math.min(p.z, sh.z1));
+    return Math.hypot(p.x - cx, p.z - cz) < SHELVE_REACH;
+  }
+
   /** Is the clerk actually behind his own counter? */
   atCounter() {
     const p = this.player;
@@ -668,7 +743,7 @@ export class Game {
     this.ui.setObjective('', false);
     if (this.officerDone) return;
     this.officerDone = true;
-    this.ui.toast(`Press TAB to read your notes.`, '');
+    this.ui.toast(`${glyphText('notes')} reads your notes.`, '');
     this.ui.toast(`Clock's running. Shift ends at midnight.`, '');
   }
 
@@ -813,8 +888,22 @@ export class Game {
      ============================================================ */
   buildTargets() {
     const t = [];
+    /* Standing in the back room you could still put a tape on the FAMILY
+       run through a breeze-block wall, because the interaction ray does not
+       care what is between you and the box. Nothing on the sales floor is
+       reachable from in there. */
+    const inBackRoom = this.player.z > D + 0.02;
+    if (inBackRoom) {
+      t.push({ kind: 'storage', aabb: { x0: SDOOR_X0 - 0.25, x1: SDOOR_X1 + 0.25, y0: 0.2, y1: 2.0, z0: D - 0.45, z1: D + 0.45 } });
+      for (const c of this.people()) {
+        if (c.hidden || c.z < D) continue;
+        const h = ACTOR_HEIGHT * c.app.height.scale;
+        t.push({ kind: 'person', c, cyl: { x: c.x, z: c.z, r: 0.46, y0: 0.05, y1: Math.max(h + 0.30, 1.90) } });
+      }
+      return t;
+    }
     for (const s of SHELVES) {
-      t.push({ kind: 'shelf', genre: s.genre, aabb: { x0: s.x0 - 0.12, x1: s.x1 + 0.12, y0: 0.2, y1: s.top, z0: s.z0 - 0.12, z1: s.z1 + 0.12 } });
+      t.push({ kind: 'shelf', genre: s.genre, shelf: s, aabb: { x0: s.x0 - 0.12, x1: s.x1 + 0.12, y0: 0.2, y1: s.top, z0: s.z0 - 0.12, z1: s.z1 + 0.12 } });
     }
     COUNTER_SLOTS.forEach((s, i) => {
       t.push({ kind: 'slot', i, aabb: { x0: s.x - 0.13, x1: s.x + 0.13, y0: s.y - 0.02, y1: s.y + 0.16, z0: s.z - 0.14, z1: s.z + 0.14 } });
@@ -826,7 +915,7 @@ export class Game {
     t.push({ kind: 'door', aabb: { x0: DOOR_X0 - 0.2, x1: DOOR_X1 + 0.2, y0: 0.2, y1: 2.1, z0: -0.35, z1: 0.35 } });
     t.push({ kind: 'storage', aabb: { x0: SDOOR_X0 - 0.25, x1: SDOOR_X1 + 0.25, y0: 0.2, y1: 2.0, z0: D - 0.45, z1: D + 0.45 } });
     for (const c of this.people()) {
-      if (c.hidden) continue;
+      if (c.hidden || c.z > D + 0.02) continue;
       const h = ACTOR_HEIGHT * c.app.height.scale;
       // Deliberately taller and wider than the person. A five-foot customer's
       // head sits below the clerk's eye line, and looking straight ahead at
@@ -847,18 +936,28 @@ export class Game {
     const tgt = castInteract(this.player, this.buildTargets());
     this.hover = tgt;
     this.ui.setReticle(!!tgt);
-    if (!tgt) { this.ui.setPrompt(''); return; }
+    if (!tgt) {
+      this.ui.setPrompt('');
+      if (this.hold) { this.hold = null; this.ui.setHold(0); }
+      return;
+    }
     const held = topTape(this.player);
-    const K = (s) => `<span class="key">${s}</span>`;
+    const K = () => glyph('interact');
     let prompt = '';
     let act = null;
 
     switch (tgt.kind) {
       case 'shelf': {
-        if (held) {
+        const near = this.nearShelf(tgt.shelf);
+        if (held && near) {
           const ok = held.genre === tgt.genre;
-          prompt = `${K('E')}Shelve ${held.title}\n<span class="sub">${GENRE_LABEL[tgt.genre]} run ${ok ? '- correct section' : "- this is not its section"}${held.rewound ? '' : ' - NOT REWOUND'}</span>`;
-          act = () => this.shelve(held, tgt.genre);
+          const bad = !held.game && !held.rewound;
+          prompt = `${K()}<span class="hold">Hold</span> to shelve ${held.title}`
+            + `\n<span class="sub">${GENRE_LABEL[tgt.genre]} run ${ok ? '- correct section' : '- this is not its section'}`
+            + `${bad ? ' - NOT REWOUND' : ''}</span>`;
+          act = 'HOLD';
+        } else if (held) {
+          prompt = `<span class="sub">${GENRE_LABEL[tgt.genre]} - step up to the shelf</span>`;
         } else {
           prompt = `<span class="sub">${GENRE_LABEL[tgt.genre]}</span>`;
         }
@@ -866,21 +965,26 @@ export class Game {
       }
       case 'slot': {
         const cur = this.counterSlots[tgt.i];
-        if (cur) { prompt = `${K('E')}Pick up ${cur.title}\n<span class="sub">${GENRE_LABEL[cur.genre]} / ${cur.rewound ? 'rewound' : 'NOT rewound'}</span>`; act = () => this.pickSlot(tgt.i); }
-        else if (held) { prompt = `${K('E')}Set down ${held.title}`; act = () => this.putSlot(tgt.i); }
+        if (cur) {
+          const state = cur.game ? 'cartridge' : (cur.rewound ? 'rewound' : 'NOT rewound');
+          prompt = `${K()}Pick up ${cur.title}\n<span class="sub">${GENRE_LABEL[cur.genre]} / ${state}</span>`;
+          act = () => this.pickSlot(tgt.i);
+        }
+        else if (held) { prompt = `${K()}Set down ${held.title}`; act = () => this.putSlot(tgt.i); }
         break;
       }
       case 'bin': {
-        if (held) { prompt = `${K('E')}Drop ${held.title} in returns`; act = () => this.binFromHand(); }
-        else if (this.bin.length) { prompt = `${K('E')}Take from returns\n<span class="sub">${this.bin.length} waiting</span>`; act = () => this.takeFromBin(); }
+        if (held) { prompt = `${K()}Drop ${held.title} in returns`; act = () => this.binFromHand(); }
+        else if (this.bin.length) { prompt = `${K()}Take from returns\n<span class="sub">${this.bin.length} waiting</span>`; act = () => this.takeFromBin(); }
         else prompt = `<span class="sub">RETURNS - empty</span>`;
         break;
       }
       case 'rewinder': {
         const r = this.rewinder;
-        if (!r.tape && held) { prompt = held.rewound ? `${K('E')}Load ${held.title}\n<span class="sub">already rewound</span>` : `${K('E')}Load ${held.title}`; act = () => this.loadRewinder(); }
+        if (!r.tape && held && held.game) prompt = `<span class="sub">REWINDER - ${held.title} is a cartridge</span>`;
+        else if (!r.tape && held) { prompt = held.rewound ? `${K()}Load ${held.title}\n<span class="sub">already rewound</span>` : `${K()}Load ${held.title}`; act = () => this.loadRewinder(); }
         else if (r.tape && r.running) prompt = `<span class="sub">REWINDING ${r.tape.title}...</span>`;
-        else if (r.tape) { prompt = `${K('E')}Take ${r.tape.title}`; act = () => this.unloadRewinder(); }
+        else if (r.tape) { prompt = `${K()}Take ${r.tape.title}`; act = () => this.unloadRewinder(); }
         else prompt = `<span class="sub">REWINDER - empty</span>`;
         break;
       }
@@ -888,7 +992,7 @@ export class Game {
         const cash = this.player.cash;
         const owedOut = this.changeOwedOut();
         if (cash.owed > 0.001) {
-          prompt = `${K('E')}Ring up $${cash.owed.toFixed(2)}\n<span class="sub">$${cash.tendered.toFixed(2)} in your hand`
+          prompt = `${K()}Ring up $${cash.owed.toFixed(2)}\n<span class="sub">$${cash.tendered.toFixed(2)} in your hand`
             + `${cash.tendered - cash.owed > 0.001 ? ` &middot; $${(cash.tendered - cash.owed).toFixed(2)} to count back` : ''}</span>`;
           act = () => this.ringUp();
         } else if (owedOut.total > 0.001) {
@@ -899,7 +1003,7 @@ export class Game {
           prompt = `<span class="sub">$${this.player.changeInHand.toFixed(2)} in your hand`
             + `\n${owedOut.who} waiting on $${owedOut.total.toFixed(2)}</span>`;
         } else if (this.player.changeInHand > 0.001) {
-          prompt = `${K('E')}Put $${this.player.changeInHand.toFixed(2)} back in the drawer\n<span class="sub">nobody waiting on it</span>`;
+          prompt = `${K()}Put $${this.player.changeInHand.toFixed(2)} back in the drawer\n<span class="sub">nobody waiting on it</span>`;
           act = () => {
             this.till = round2(this.till + this.player.changeInHand);
             this.ui.toast(`Returned $${this.player.changeInHand.toFixed(2)} to the drawer`, '');
@@ -907,18 +1011,18 @@ export class Game {
             this.sound.cashDrawer();
           };
         } else {
-          prompt = `${K('E')}Count the drawer\n<span class="sub">$${this.till.toFixed(2)} tonight${this.owedTotal ? ` / $${this.owedTotal.toFixed(2)} on accounts` : ''}</span>`;
+          prompt = `${K()}Count the drawer\n<span class="sub">$${this.till.toFixed(2)} tonight${this.owedTotal ? ` / $${this.owedTotal.toFixed(2)} on accounts` : ''}</span>`;
           act = () => { this.sound.cashDrawer(); this.ui.toast(`Drawer: $${this.till.toFixed(2)}`, ''); };
         }
         break;
       }
       case 'phone': {
-        prompt = `${K('E')}Pick up the phone`;
+        prompt = `${K()}Pick up the phone`;
         act = () => this.pickUpPhone();
         break;
       }
       case 'door': {
-        prompt = this.door.locked ? `${K('E')}Unlock the front door` : `${K('E')}Lock the front door`;
+        prompt = this.door.locked ? `${K()}Unlock the front door` : `${K()}Lock the front door`;
         act = () => this.toggleLock();
         break;
       }
@@ -928,18 +1032,18 @@ export class Game {
         if (st.broken) {
           prompt = `<span class="sub">BACK ROOM - the frame is bent, it will not shut</span>`;
         } else if (st.locked) {
-          prompt = `${K('E')}Unlock the back room`;
+          prompt = `${K()}Unlock the back room`;
           act = () => this.toggleStorage();
         } else if (st.open) {
-          prompt = `${K('E')}Pull the back room door to`;
+          prompt = `${K()}Pull the back room door to`;
           act = () => this.toggleStorage();
         } else if (inside) {
           // shut and standing on the inside: the only thing worth doing
-          prompt = `${K('E')}Throw the bolt`
-            + `\n<span class="sub">${K('F')} does it from anywhere in here &middot; press again to open up</span>`;
+          prompt = `${K()}Throw the bolt`
+            + `\n<span class="sub">${glyph('bolt')} does it from anywhere in here &middot; press again to open up</span>`;
           act = () => this.lockStorage();
         } else {
-          prompt = `${K('E')}Open the back room`;
+          prompt = `${K()}Open the back room`;
           act = () => this.toggleStorage();
         }
         break;
@@ -947,15 +1051,39 @@ export class Game {
       case 'person': {
         const c = tgt.c;
         const m = c === this.officer ? null : moodLabel(c);
-        prompt = `${K('E')}Talk to ${c.name}${m ? `\n<span class="sub">${m.text}</span>` : ''}`;
+        const why = this.cannotServe(c);
+        prompt = `${K()}Talk to ${c.name}`
+          + (why ? `\n<span class="sub">${why}</span>` : (m ? `\n<span class="sub">${m.text}</span>` : ''));
         act = () => this.talkToPerson(c);
         break;
       }
       default: break;
     }
-    if (held && tgt.kind !== 'shelf') prompt += `\n<span class="sub">${K('G')}put it down</span>`;
+    if (held && tgt.kind !== 'shelf') prompt += `\n<span class="sub">${glyph('drop')}put it down</span>`;
     this.ui.setPrompt(prompt);
-    if (act && (this.input.hit('KeyE') || this.input.mousePressed[0])) act();
+    /* A held action rather than a tap. Sliding a box back into a run and
+       squaring it up is a couple of seconds of work, and making it a tap
+       from two metres away meant a whole shelf could be cleared without
+       ever stopping walking. */
+    if (act === 'HOLD') {
+      const holding = this.input.isDown('KeyE') || this.input.mouse[0];
+      if (holding && this.hold && this.hold.tgt === tgt.kind + ':' + tgt.genre) {
+        this.hold.t += this._dt;
+        if (this.hold.t >= SHELVE_TIME) {
+          this.hold = null;
+          this.shelve(held, tgt.genre);
+        }
+      } else if (holding) {
+        this.hold = { tgt: tgt.kind + ':' + tgt.genre, t: 0 };
+        this.sound.pickup();
+      } else if (this.hold) {
+        this.hold = null;
+      }
+      this.ui.setHold(this.hold ? this.hold.t / SHELVE_TIME : 0);
+    } else {
+      if (this.hold) { this.hold = null; this.ui.setHold(0); }
+      if (act && (this.input.hit('KeyE') || this.input.mousePressed[0])) act();
+    }
     if (this.input.hit('KeyG') && held) this.dropHeld();
   }
 
@@ -963,7 +1091,8 @@ export class Game {
   shelve(tape, genre) {
     this.player.held.pop();
     const right = tape.genre === genre;
-    if (right && tape.rewound) {
+    // a cartridge is always "rewound", so it can only ever be right or wrong shelf
+    if (right && (tape.game || tape.rewound)) {
       this.stats.shelvedRight++;
       this.sound.shelve(true);
       this.ui.toast(`Shelved: ${tape.title}`, 'good');
@@ -976,6 +1105,7 @@ export class Game {
       this.sound.shelve(false);
       this.ui.toast(`Shelved without rewinding: ${tape.title}`, 'bad');
     }
+    this.sound.footstep(0, false);
   }
   pickSlot(i) {
     if (!canCarry(this.player)) { this.sound.error(); this.ui.toast('Hands full', 'bad'); return; }
@@ -995,10 +1125,18 @@ export class Game {
     this.sound.pickup();
   }
   loadRewinder() {
-    const t = this.player.held.pop();
-    this.rewinder.tape = t; this.rewinder.t = 0; this.rewinder.done = false;
-    if (t.rewound) { this.rewinder.done = true; this.rewinder.running = false; this.sound.registerBeep(); }
-    else { this.rewinder.running = true; this.sound.rewindStart(); }
+    const t = topTape(this.player);
+    if (!t) return;
+    if (t.game) { this.sound.error(); this.ui.toast(`${t.title} is a cartridge. It does not rewind.`, 'bad'); return; }
+    this.player.held.pop();
+    const r = this.rewinder;
+    r.tape = t; r.t = 0; r.done = false;
+    /* How long depends on how far through it was left, which the customer
+       is not going to tell you. A machine that took six seconds was a
+       formality; one that takes half a minute is a thing to plan around. */
+    r.dur = t.rewindDur || (t.rewindDur = 13 + this.rng.range(0, 16));
+    if (t.rewound) { r.done = true; r.running = false; this.sound.registerBeep(); }
+    else { r.running = true; this.sound.rewindStart(); }
   }
   unloadRewinder() {
     if (!canCarry(this.player)) { this.sound.error(); this.ui.toast('Hands full', 'bad'); return; }
@@ -1124,7 +1262,7 @@ export class Game {
     if (c.isKiller && this.killer.phase !== KP.CUSTOMER) { this.sound.error(); return; }
     c._prevState = c.state;
     c.state = CS.TALKING;
-    this.beginDialogue(c, talkTo(c, this.ctx));
+    this.beginDialogue(c, talkTo(c, this.ctx, { atCounter: !this.cannotServe(c) }));
   }
 
   updateConversation() {
@@ -1815,6 +1953,7 @@ export class Game {
 
       /* --- suspect --- */
       killerIntel: (n) => addIntel(g.killer, n),
+      notesKey: () => glyphText('notes'),
       learnBulletin: () => {
         const b = g.night.bulletin;
         for (const k of b.keys) b.known.add(k);

@@ -240,36 +240,89 @@ export class Sound {
   }
   cashDrawer() { this.noise({ filter: 'lowpass', freq: 500, gain: 0.16, a: 0.003, d: 0.3 }); this.tone({ freq: 130, type: 'square', gain: 0.1, a: 0.003, d: 0.2, when: 0.14 }); }
   paper() { this.noise({ filter: 'highpass', freq: 2600, q: 0.7, gain: 0.09, a: 0.004, d: 0.22, rate: 1.6 }); }
+  /* ---------------- the rewinder ----------------
+     A tabletop rewinder is not a hiss. It is a small DC motor with a belt,
+     a reel of tape whipping through a guide, and a bearing that is not
+     quite true -- so: a motor whine that climbs as the take-up reel fills
+     and its diameter grows, a tape-rush band above it, a slow flutter from
+     the off-centre reel, and a solenoid clack at each end.               */
   rewindStart() {
-    if (!this.ready || this.rewindNode) return;
-    const ctx = this.ctx;
+    if (!this.ready || this.rewindNode || this.muted) return;
+    const ctx = this.ctx, t0 = this.t;
+
+    const out = ctx.createGain();
+    out.gain.value = 0.0001;
+    out.gain.exponentialRampToValueAtTime(0.9, t0 + 0.18);
+    out.connect(this.sfxBus);
+
+    // the motor: a squarish whine plus its own octave, through a lowpass
+    const motor = ctx.createGain(); motor.gain.value = 0.055;
+    const mlp = ctx.createBiquadFilter(); mlp.type = 'lowpass'; mlp.frequency.value = 1400; mlp.Q.value = 1.2;
+    const o1 = ctx.createOscillator(); o1.type = 'sawtooth'; o1.frequency.value = 112;
+    const o2 = ctx.createOscillator(); o2.type = 'square'; o2.frequency.value = 224;
+    const o2g = ctx.createGain(); o2g.gain.value = 0.35;
+    o1.connect(mlp); o2.connect(o2g).connect(mlp);
+    mlp.connect(motor).connect(out);
+
+    // tape rushing over the guides: a narrow noise band that rides with it
     const src = ctx.createBufferSource(); src.buffer = this.noiseBuf; src.loop = true;
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 900; bp.Q.value = 4;
-    const g = ctx.createGain(); g.gain.value = 0.0001;
-    g.gain.exponentialRampToValueAtTime(0.11, this.t + 0.25);
-    const osc = ctx.createOscillator(); osc.type = 'sawtooth'; osc.frequency.value = 74;
-    const og = ctx.createGain(); og.gain.value = 0.05;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
-    src.connect(bp).connect(g).connect(this.sfxBus);
-    osc.connect(og).connect(lp).connect(this.sfxBus);
-    src.start(); osc.start();
-    this.rewindNode = { src, osc, g, og, bp };
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 2200; bp.Q.value = 1.6;
+    const hiss = ctx.createGain(); hiss.gain.value = 0.075;
+    src.connect(bp).connect(hiss).connect(out);
+
+    // a reel that is fractionally off true, wobbling everything once a turn
+    const lfo = ctx.createOscillator(); lfo.type = 'sine'; lfo.frequency.value = 5.4;
+    const lfoG = ctx.createGain(); lfoG.gain.value = 7;
+    lfo.connect(lfoG).connect(o1.frequency);
+    const lfoH = ctx.createGain(); lfoH.gain.value = 150;
+    lfo.connect(lfoH).connect(bp.frequency);
+
+    o1.start(t0); o2.start(t0); src.start(t0); lfo.start(t0);
+    // the clack of the mechanism engaging
+    this.noise({ filter: 'bandpass', freq: 1500, q: 3, gain: 0.16, a: 0.001, d: 0.05 });
+    this.tone({ freq: 130, type: 'square', gain: 0.12, a: 0.001, d: 0.09, filter: 'lowpass', cutoff: 700 });
+    this.rewindNode = { src, o1, o2, lfo, out, bp, mlp, motor, hiss };
   }
+
+  /**
+   * @param p 0..1 through the rewind. The take-up reel is getting fatter,
+   * so the same motor speed pulls more tape per turn: the whine rises, the
+   * rush brightens, and the flutter slows down.
+   */
   rewindPitch(p) {
-    if (!this.rewindNode) return;
-    this.rewindNode.bp.frequency.setTargetAtTime(700 + p * 1400, this.t, 0.15);
-    this.rewindNode.osc.frequency.setTargetAtTime(66 + p * 40, this.t, 0.15);
+    const n = this.rewindNode;
+    if (!n) return;
+    const t = this.t;
+    n.o1.frequency.setTargetAtTime(104 + p * 78, t, 0.25);
+    n.o2.frequency.setTargetAtTime((104 + p * 78) * 2, t, 0.25);
+    n.bp.frequency.setTargetAtTime(1900 + p * 2100, t, 0.25);
+    n.mlp.frequency.setTargetAtTime(1200 + p * 1500, t, 0.3);
+    n.lfo.frequency.setTargetAtTime(5.6 - p * 2.4, t, 0.4);
+    n.hiss.gain.setTargetAtTime(0.06 + p * 0.05, t, 0.3);
   }
+
+  /** Pulled out mid-rewind: the motor just stops. */
   rewindStop() {
-    if (!this.rewindNode) return;
-    const { src, osc, g, og } = this.rewindNode;
-    g.gain.setTargetAtTime(0.0001, this.t, 0.08);
-    og.gain.setTargetAtTime(0.0001, this.t, 0.08);
-    src.stop(this.t + 0.5); osc.stop(this.t + 0.5);
+    const n = this.rewindNode;
+    if (!n) return;
+    const t = this.t;
+    n.out.gain.cancelScheduledValues(t);
+    n.out.gain.setValueAtTime(Math.max(0.0002, n.out.gain.value), t);
+    n.out.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    for (const node of [n.o1, n.o2, n.lfo, n.src]) { try { node.stop(t + 0.3); } catch (e) { /* already stopped */ } }
     this.rewindNode = null;
-    this.tone({ freq: 1200, type: 'square', gain: 0.08, a: 0.002, d: 0.06, when: 0.45 });
-    this.noise({ filter: 'lowpass', freq: 400, gain: 0.14, a: 0.002, d: 0.16, when: 0.5 });
+    this.noise({ filter: 'bandpass', freq: 1100, q: 3, gain: 0.12, a: 0.001, d: 0.06 });
   }
+
+  /** Ran to the end: the reel hits the leader and the machine kicks out. */
+  rewindEnd() {
+    this.rewindStop();
+    this.noise({ filter: 'lowpass', freq: 900, gain: 0.2, a: 0.001, d: 0.12, when: 0.02 });
+    this.tone({ freq: 96, type: 'square', gain: 0.16, a: 0.001, d: 0.16, when: 0.02, filter: 'lowpass', cutoff: 600 });
+    this.noise({ filter: 'bandpass', freq: 2600, q: 2, gain: 0.1, a: 0.001, d: 0.07, when: 0.13 });
+    this.tone({ freq: 1320, type: 'square', gain: 0.05, a: 0.002, d: 0.08, when: 0.3 });
+  }
+
   phonePickup() { this.noise({ filter: 'bandpass', freq: 1400, q: 2, gain: 0.12, a: 0.002, d: 0.1 }); this.tone({ freq: 350, type: 'sine', gain: 0.06, a: 0.05, d: 0.9, when: 0.15 }); this.tone({ freq: 440, type: 'sine', gain: 0.06, a: 0.05, d: 0.9, when: 0.15 }); }
   phoneHang() { this.tone({ freq: 200, type: 'square', gain: 0.1, a: 0.002, d: 0.08, filter: 'lowpass', cutoff: 800 }); this.noise({ filter: 'bandpass', freq: 900, gain: 0.1, a: 0.002, d: 0.12 }); }
   dialTone(digit) {

@@ -236,6 +236,8 @@ export function buildTextures() {
     SCIFI: { base: ['#123043', '#0a2233', '#1d4f5c', '#2b1a52'], ink: '#9fe8ff', accent: '#39c5f3' },
     DRAMA: { base: ['#3b3730', '#4a4237', '#2b2822', '#57503f'], ink: '#e6dcc4', accent: '#b9a06a' },
     FAMILY: { base: ['#2c6b3f', '#3f8c52', '#7d4a9c', '#2f5fa8'], ink: '#fff3c9', accent: '#ffd447' },
+    // Cartridge boxes are shorter, wider and far louder than a clamshell.
+    GAMES: { base: ['#2b1a52', '#3d2470', '#12103a', '#4a1a5c'], ink: '#e8ddff', accent: '#c9a4ff' },
   };
   T.spines = {};
   for (const [genre, pal] of Object.entries(GENRE_PALETTE)) {
@@ -261,6 +263,30 @@ export function buildTextures() {
       grime(g, w, h, 0.12);
     });
   }
+  /* Cartridge boxes stand in shorter, fatter blocks than tape clamshells,
+     so the games run gets its own spine art rather than borrowing one. */
+  T.spines.GAMES = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#0b0b12', w, h);
+    const pal = GENRE_PALETTE.GAMES;
+    let x = 0;
+    while (x < w) {
+      const bw = 5 + R.int(6);
+      g.fillStyle = pal.base[R.int(pal.base.length)];
+      g.fillRect(x, 4, bw, h - 8);
+      // a wide title band and a publisher stripe, the way a cart box looks
+      g.fillStyle = pal.ink;
+      g.fillRect(x + 1, 12 + R.int(6), bw - 2, 2);
+      g.fillStyle = pal.accent;
+      g.fillRect(x + 1, h - 18, bw - 2, 4);
+      g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(x, 4, 1, h - 8);
+      g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(x + bw - 1, 4, 1, h - 8);
+      x += bw;
+    }
+    g.fillStyle = '#241d14'; g.fillRect(0, 0, w, 4); g.fillRect(0, h - 3, w, 3);
+    noise(g, w, h, 8);
+    grime(g, w, h, 0.1);
+  });
+
   T.spinesEmpty = makeTex(64, 64, (g, w, h) => {
     fill(g, '#0d0d10', w, h);
     g.fillStyle = '#241d14'; g.fillRect(0, 0, w, 2); g.fillRect(0, h - 1, w, 1);
@@ -274,6 +300,7 @@ export function buildTextures() {
     HORROR: ['#3a0a0a', '#ff4b3a'], COMEDY: ['#3a2c05', '#ffd447'],
     ACTION: ['#08203a', '#4fa8ff'], SCIFI: ['#0a2a33', '#5cf0ff'],
     DRAMA: ['#2a2418', '#e8d9ae'], FAMILY: ['#0a2e18', '#7cf09a'],
+    GAMES: ['#1a0a2e', '#c9a4ff'],
   };
   for (const [genre, [bg, fg]] of Object.entries(SIGN_COLOR)) {
     T.signs[genre] = makeTex(64, 16, (g, w, h) => {

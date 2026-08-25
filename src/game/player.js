@@ -42,22 +42,27 @@ export function forwardOf(p) {
 }
 
 export function updatePlayer(p, dt, input, ctx) {
-  if (!p.frozen && input.locked) {
-    p.yaw += input.mdx * input.sensitivity;
-    p.pitch -= input.mdy * input.sensitivity * (input.invertY ? -1 : 1);
+  if (!p.frozen) {
+    // mouse: raw counts, already frame-independent
+    if (input.locked) {
+      p.yaw += input.mdx * input.sensitivity;
+      p.pitch -= input.mdy * input.sensitivity * (input.invertY ? -1 : 1);
+    }
+    // stick: a rate, so it has to be scaled by the frame
+    if (input.lookX || input.lookY) {
+      const k = input.padSensitivity * dt * (0.35 + input.sensitivity * 200);
+      p.yaw += input.lookX * k;
+      p.pitch -= input.lookY * k * (input.invertY ? -1 : 1) * 0.82;
+    }
     p.pitch = clamp(p.pitch, -1.28, 1.28);
   }
 
+  // movement comes in already merged from keyboard and stick
   let mx = 0, mz = 0;
-  if (!p.frozen) {
-    if (input.isDown('KeyW', 'ArrowUp')) mz += 1;
-    if (input.isDown('KeyS', 'ArrowDown')) mz -= 1;
-    if (input.isDown('KeyA')) mx -= 1;
-    if (input.isDown('KeyD')) mx += 1;
-  }
-  const run = input.isDown('ShiftLeft', 'ShiftRight');
+  if (!p.frozen) { mx = input.moveX || 0; mz = input.moveZ || 0; }
+  const run = !!input.run;
   const len = Math.hypot(mx, mz);
-  const speed = run ? 3.05 : 1.72;
+  const speed = (run ? 3.05 : 1.72) * Math.min(1, len || 1);   // stick honours its own throw
   let ax = 0, az = 0;
   if (len > 0) {
     mx /= len; mz /= len;

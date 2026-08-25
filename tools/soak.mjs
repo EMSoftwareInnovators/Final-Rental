@@ -194,8 +194,9 @@ const tapes = await ev(() => {
   return { loaded: !!g.rewinder.tape, running: g.rewinder.running };
 });
 check('unrewound tape loads into the rewinder', tapes.loaded && tapes.running);
-await ev(() => { window.__game.timeScale = 12; });
-await wait(1200);
+console.log(`      rewind takes ${await ev(() => Math.round(window.__game.rewinder.dur))}s of shift time`);
+await ev(() => { window.__game.timeScale = 30; });
+await wait(2400);
 const rew = await ev(() => {
   const g = window.__game;
   const done = g.rewinder.done && g.rewinder.tape.rewound;
@@ -208,6 +209,24 @@ const rew = await ev(() => {
 check('rewinder finishes and marks the tape rewound', rew.done);
 check('tape comes back out into your hands', rew.held);
 check('shelving on the right genre scores', rew.shelved && rew.hands === 0);
+
+/* ---------- 4a2. a cartridge is not a tape ---------- */
+const cart = await ev(() => {
+  const g = window.__game;
+  const t = window.__tapes.makeTape('GAMES', g.rng, {});
+  g.player.held = [t];
+  const before = g.rewinder.tape;
+  g.loadRewinder();
+  const refused = g.rewinder.tape === before && g.player.held.length === 1;
+  const b = g.stats.shelvedRight;
+  g.shelve(g.player.held[0], 'GAMES');
+  return { refused, isGame: t.game, rewound: t.rewound, price: t.price,
+    shelved: g.stats.shelvedRight === b + 1, title: t.title };
+});
+check('games are their own genre and never need rewinding',
+  cart.isGame && cart.rewound === true, `${cart.title} $${cart.price.toFixed(2)}`);
+check('the rewinder refuses a cartridge', cart.refused);
+check('and the games run takes it', cart.shelved);
 
 const wrong = await ev(() => {
   const g = window.__game;

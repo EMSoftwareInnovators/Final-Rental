@@ -163,22 +163,36 @@ const p2 = await prompt();
 check('rewinder is reachable from behind the counter', /Load BLOOD ORCHARD/.test(p2), p2.slice(0, 60));
 await page.keyboard.press('KeyE');
 await wait(200);
-await ev(() => { window.__game.timeScale = 10; });
-await wait(1400);
+const dur = await ev(() => Math.round(window.__game.rewinder.dur));
+await ev(() => { window.__game.timeScale = 30; });
+await wait(2200);
 await ev(() => { window.__game.timeScale = 1; });
-check('the tape rewound', await ev(() => window.__game.rewinder.done));
+check('the tape rewound', await ev(() => window.__game.rewinder.done), `${dur}s of shift time`);
 await page.keyboard.press('KeyE');
 await wait(250);
 check('and came back out rewound',
   await ev(() => window.__game.player.held.length === 1 && window.__game.player.held[0].rewound));
 
-// shelve it on HORROR
+/* Shelve it on HORROR. Two rules now: you have to be at the run, and it
+   is a held action rather than a tap. */
+await look(3.2, 5.2, -Math.PI / 2, -0.05);
+await wait(250);
+const far = await prompt();
+check('you cannot shelve from across the aisle', /step up to the shelf/.test(far), far.slice(0, 70));
+
 await look(2.45, 5.2, -Math.PI / 2, -0.05);
 await wait(250);
 const p3 = await prompt();
-check('the horror run offers the right shelf', /Shelve BLOOD ORCHARD/.test(p3) && /correct section/.test(p3), p3.slice(0, 80));
-await page.keyboard.press('KeyE');
-await wait(300);
+check('the horror run offers the right shelf', /shelve BLOOD ORCHARD/i.test(p3) && /correct section/.test(p3), p3.slice(0, 80));
+
+await page.keyboard.down('KeyE');
+await wait(400);
+const partway = await ev(() => ({ held: window.__game.player.held.length, hold: window.__game.hold && +window.__game.hold.t.toFixed(2) }));
+check('holding starts the put-back rather than finishing it',
+  partway.held === 1 && partway.hold > 0, `${partway.hold}s in`);
+await wait(1500);
+await page.keyboard.up('KeyE');
+await wait(200);
 check('shelved and scored',
   await ev(() => window.__game.stats.shelvedRight === 1 && window.__game.player.held.length === 0));
 

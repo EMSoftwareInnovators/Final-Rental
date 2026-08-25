@@ -8,7 +8,7 @@
    are.
    ============================================================ */
 import { line } from './personality.js';
-import { GENRE_LABEL, tapeLabel, lateFee } from './tapes.js';
+import { GENRE_LABEL, tapeLabel, lateFee, mediaWord } from './tapes.js';
 
 const money = (v) => `$${v.toFixed(2)}`;
 
@@ -61,9 +61,14 @@ const reply = (label, fn, opts = {}) => ({ label, fn, ...opts });
 export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
   const rng = ctx.rng;
   let asked = 0;
+  let c_toldNotes = false;
   const extras = bulletin.extra.slice();
   const C = caseFile || {};
   const A = C.angle || {};
+
+  const notepadLine = () => say(officer,
+    `Write it down. All of it.\n\nYou keep that where you can get at it -- ${ctx.notesKey()} -- and you hold it up against every face that comes through that door. Not most of it. All of it.`,
+    [reply(`I've got it.`, () => outro())]);
 
   const outro = () => say(officer,
     bulletin.certain
@@ -120,7 +125,7 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
     // this is the moment the description actually reaches your notepad
     ctx.learnBulletin();
     return say(officer, bulletin.description, [
-    reply('Let me write that down.', () => askNode()),
+    reply('Let me write that down.', () => (c_toldNotes ? askNode() : (c_toldNotes = true, notepadLine()))),
     reply(`That's half the men in this county.`, () => say(officer,
       `Yeah. It is. That's the problem.`, [reply('...', () => askNode())])),
     ]);
@@ -149,13 +154,16 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
 /* ============================================================
    CUSTOMERS
    ============================================================ */
-export function talkTo(c, ctx) {
+export function talkTo(c, ctx, opts = {}) {
   if (c.awaitingChange) return changeRoot(c, ctx);
   if (c.mood <= 0 && !c.resolvedAnger) return angryRoot(c, ctx);
   if (c.script === 'confused' && !c.confusionResolved) {
     c.confusionResolved = true;
     return confusedRoot(c, ctx);
   }
+  /* Business is done at the window, at the front of the line. Anywhere
+     else you can talk to somebody, but you cannot take their money. */
+  if (opts.atCounter === false) return idleRoot(c, ctx);
   /* Everything below here reads c.tape and its price or its due date.
      Two people never have one: a shopper still working down the shelves,
      and somebody you already served, whose tape is in your hands. Talking
@@ -224,7 +232,7 @@ function returnRoot(c, ctx) {
   const rng = ctx.rng;
   const tape = c.tape;
   if (!tape) return farewell(c, ctx);
-  const fee = lateFee(tape.daysLate);
+  const fee = lateFee(tape.daysLate, tape.genre);
 
   const finish = () => {
     if (!c.gaveTape) return handOver(c, ctx);
@@ -247,17 +255,22 @@ function feeNode(c, ctx, then) {
   const rng = ctx.rng;
   const tape = c.tape;
   if (!tape) return then();
-  const fee = lateFee(tape.daysLate);
+  const fee = lateFee(tape.daysLate, tape.genre);
   const disputes = !c.isKiller && rng() > c.personality.honesty;
 
   const paid = () => {
     c.feeSettled = true;
     const t = ctx.takeCash(fee, c, 'late fee');
     ctx.mood(c, +2);
+    /* They hand you a note and say what it is. Working out that a five for
+       a three means two back is the clerk's job, and the HUD keeps the
+       running total -- being told the arithmetic every single time made
+       the player a passenger at their own counter. */
     return say(c, t.change > 0
-      ? `${rng.pick(['Out of ' + money(t.tendered) + '.', 'Only got a ' + money(t.tendered) + ' on me.', 'Sorry, big bill.'])}`
+      ? rng.pick([`Out of ${money(t.tendered)}.`, `${money(t.tendered)} is the smallest I've got.`,
+        `Sorry — big bill.`, `That's a ${money(t.tendered)}.`])
       : line(c, 'thanks', rng, `Thanks.`),
-      [reply(t.change > 0 ? `I'll get your change.` : `...`, () => then())]);
+      [reply(`...`, () => then())]);
   };
   const waived = () => {
     c.feeSettled = true;
@@ -296,10 +309,11 @@ function feeNode(c, ctx, then) {
   ]);
 
   const canPay = c.hasMoney;
-  const opening = say(c, `${tapeLabel(tape)} — ${tape.daysLate} day${tape.daysLate > 1 ? 's' : ''} over. That's ${money(fee)}.`,
-    [], { asPlayer: true });
-
-  opening.next = () => {
+  /* This used to be an `asPlayer` node with no replies -- a screen of the
+     clerk talking to himself that you pressed through, which read like a
+     different system from every other exchange in the game. It is a normal
+     line from them with normal replies now. */
+  const settle = () => {
     if (!canPay) {
       return say(c, line(c, 'noMoney', rng, `I don't have it on me.`), [
         reply(`I'll put it on your account. Bring it Friday.`, () => { ctx.mood(c, +18); return refused(); }),
@@ -318,7 +332,18 @@ function feeNode(c, ctx, then) {
       reply(`On second thought — forget it tonight.`, () => waived(), { cost: `-${money(fee)}` }),
     ]);
   };
-  return opening;
+
+  const days = `${tape.daysLate} day${tape.daysLate > 1 ? 's' : ''}`;
+  return say(c, rng.pick([
+    `Something wrong?`,
+    `You're pulling a face.`,
+    `That's the look. What is it.`,
+    `Go on. How bad.`,
+  ]), [
+    reply(`${tapeLabel(tape)} is ${days} over. That's ${money(fee)}.`, () => settle()),
+    reply(`Due back ${tape.daysLate > 6 ? 'last week' : 'Tuesday'}. It's ${days} late — ${money(fee)}.`, () => settle()),
+    reply(`I have to charge you for this. ${money(fee)}, ${days}.`, () => { ctx.mood(c, -3); return settle(); }),
+  ]);
 }
 
 function handOver(c, ctx) {
@@ -340,7 +365,27 @@ function handOver(c, ctx) {
     c.gaveTape = true;
     return say(c, rng.pick([`Sure.`, `There you go.`, `Right in.`]), [reply('...', () => farewell(c, ctx))]);
   }));
-  if (!tape.rewound) {
+  if (tape.game) {
+    cs.push(reply(`Hang on — is the cartridge actually in the box?`, () => {
+      const honest = rng() < c.personality.honesty;
+      if (honest) {
+        return say(c, rng.pick([
+          `...Ah. No. It's in the machine. I'll bring it Tuesday.`,
+          `It is. I checked twice. I'm the sort of person who checks twice.`,
+          `Open it. Go on, open it. I'll wait.`,
+        ]), [
+          reply(`I'll check it now.`, () => { ctx.mood(c, -3); return handOver(c, ctx); }),
+          reply(`I'll take your word for it.`, () => { ctx.mood(c, +8); return handOver(c, ctx); }),
+        ]);
+      }
+      ctx.mood(c, -6);
+      return say(c, rng.pick([
+        `Why would I bring you an empty box?`,
+        `Of course it is. What is this.`,
+        `Every time. Every single time with you people.`,
+      ]), [reply(`Sorry — had to ask.`, () => { ctx.mood(c, +5); return handOver(c, ctx); })]);
+    }));
+  } else if (!tape.rewound) {
     cs.push(reply(`Hang on — is this rewound?`, () => {
       const honest = rng() < c.personality.honesty;
       ctx.mood(c, -4);
@@ -383,10 +428,12 @@ function rentRoot(c, ctx) {
   const complete = () => {
     c.checkedOut = true;
     const t = ctx.checkout(tape, c);
+    const sign = tape.game ? `Three nights. Cartridge back in the box.` : `Two nights. Be kind, rewind.`;
     return say(c, t && t.change > 0
-      ? `Out of ${money(t.tendered)}, sorry.`
+      ? rng.pick([`Out of ${money(t.tendered)}, sorry.`, `${money(t.tendered)}. It's all I've got on me.`,
+        `Here — ${money(t.tendered)}.`])
       : line(c, 'thanks', rng, `Thanks.`),
-      [reply('Two nights. Be kind, rewind.', () => finish())]);
+      [reply(sign, () => finish())]);
   };
 
   const broke = () => say(c, line(c, 'noMoney', rng, `I'm short.`), [

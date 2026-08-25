@@ -69,6 +69,12 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
   transition:width .08s,height .08s,border-color .08s;
 }
 #reticle.hot{width:2.2cqw;height:2.2cqw;border-color:var(--amber)}
+/* held actions: the reticle fills clockwise while you keep the key down */
+#reticle.holding{
+  width:4.4cqw;height:4.4cqw;border-color:var(--amber-dim);
+  background:conic-gradient(var(--amber) calc(var(--hold,0) * 360deg), transparent 0);
+}
+#prompt .hold{color:var(--amber);font-weight:bold}
 
 #prompt{
   position:absolute;left:50%;top:60%;transform:translateX(-50%);
@@ -78,6 +84,29 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 #prompt .key{
   display:inline-block;padding:0 .7cqw;margin-right:.6cqw;
   border:0.25cqw solid var(--amber);color:var(--amber);
+}
+
+/* ---------------- controller glyphs ----------------
+   A pad button is a filled roundel in its own colour, so it reads as the
+   thing on the controller rather than as a word. */
+.key.btn{
+  border-radius:50%;border-width:0.22cqw;
+  min-width:2.9cqw;text-align:center;font-weight:bold;
+  padding:0 .45cqw;
+}
+.key.x-a{border-color:#7ac943;color:#9ade6a}
+.key.x-b{border-color:#d64b3a;color:#ff7f6a}
+.key.x-x{border-color:#3a7fd6;color:#79b4ff}
+.key.x-y{border-color:#e0b32a;color:#ffd86a}
+.key.x-m,.key.x-d{border-color:#cfc7b0;color:#e8e0c8;border-radius:0.5cqw}
+.key.p-x,.key.p-o,.key.p-t,.key.p-s{border-color:#cfd6e6;color:#e6ecf8}
+.key.p-m,.key.p-d{border-color:#cfd6e6;color:#e6ecf8;border-radius:0.5cqw}
+.pad li .key.btn,#panel-body .key.btn{
+  min-width:2.4cqw;border-color:#5a5140;color:#2a2418;background:#cfc7ac;
+}
+#panel-body .key{
+  display:inline-block;min-width:2.2cqw;padding:0 .4cqw;
+  border:0.18cqw solid #8c1d0e;color:#8c1d0e;text-align:center;
 }
 #prompt .sub{display:block;font-size:2.2cqw;color:var(--amber-dim)}
 
@@ -202,6 +231,8 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 }
 #panel-body .howto .keys li{font-size:1.95cqw;line-height:1.24;white-space:nowrap}
 #panel-body .howto .keys b{display:inline-block;min-width:6.4cqw;color:#8c1d0e}
+#panel-body .howto .keys .key{min-width:5.2cqw;margin-right:.5cqw}
+#panel-body .howto .keys .key.btn{min-width:3.4cqw}
 #panel-body .howto .cols{gap:0 1.8cqw}
 #panel-body .howto .cols li{
   font-size:1.95cqw;line-height:1.26;margin-bottom:.4cqw;

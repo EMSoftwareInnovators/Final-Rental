@@ -10,6 +10,8 @@ import * as personality from './game/personality.js';
 import * as dialogue from './game/dialogue.js';
 import * as night from './game/night.js';
 import * as world from './game/world.js';
+import * as uimod from './game/ui.js';
+import * as tapes from './game/tapes.js';
 
 const start = async () => {
   const game = new Game();
@@ -22,6 +24,8 @@ const start = async () => {
   window.__dlg = dialogue;
   window.__night = night;
   window.__world = world;
+  window.__ui = uimod;
+  window.__tapes = tapes;
   try {
     await game.boot();
     game.applyOptions();
