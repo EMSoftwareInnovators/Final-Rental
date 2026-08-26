@@ -50,6 +50,7 @@ export class Game {
     this.menuSel = 0;
     this.optSel = 0;
     this.padSel = 0;
+    this.wantLock = false;
     this.dlg = new DialogueRunner();
     this.phone = new DialogueRunner();
     this.notesOpen = false;
@@ -94,7 +95,20 @@ export class Game {
     this.solids = this.world.solids;
 
     this.input.onLockChange = (locked) => {
-      if (!locked && this.state === ST.PLAY && !this.dlg.active && !this.phone.active) this.pause();
+      if (locked) { this.wantLock = true; return; }
+      if (this.state === ST.PLAY && !this.dlg.active && !this.phone.active) this.pause();
+    };
+    /* A pointer-lock request is only granted off the back of a user gesture,
+       or shortly after the last one was released. The end of the
+       establishing shot is neither -- by then the click that started the
+       night is many seconds old -- so the request was quietly refused and
+       the camera did not move for the whole shift. Whoever wants the lock
+       says so, and the next keystroke or click, which IS a gesture, takes
+       it. */
+    this.input.onGesture = () => {
+      if (!this.wantLock || this.input.locked) return;
+      if (this.state !== ST.PLAY || this.dlg.active || this.phone.active) return;
+      this.input.requestLock();
     };
     addEventListener('resize', () => this.layout());
     this.layout();
@@ -210,6 +224,7 @@ export class Game {
     this.player.frozen = false;
     this.ui.setHudVisible(true);
     this.ui.cinema(false);
+    this.wantLock = true;
     this.input.requestLock();
   }
 
@@ -647,6 +662,7 @@ export class Game {
      things, and only the first one touches the world. */
   pause() {
     if (this.state !== ST.PLAY) return;
+    this.wantLock = false;
     this.input.exitLock();
     this.ui.setPrompt('');
     this.ui.hideNotes(); this.notesOpen = false;
@@ -674,6 +690,7 @@ export class Game {
     } else if (this._heldTalk === 'dlg' && this.dlg.node) {
       this.ui.showDialogue(this.dlg.node, this.dlg.sel, this.ctx);
     } else {
+      this.wantLock = true;
       this.input.requestLock();
     }
     this._heldTalk = null;
@@ -1073,6 +1090,16 @@ export class Game {
   }
 
   updateInteraction() {
+    /* If the browser has not given us the pointer, looking around does not
+       work, and a dead camera with no explanation is the worst possible
+       version of that. Say so, and the next click takes it. */
+    if (this.wantLock && !this.input.locked && this.input.scheme === 'kbm') {
+      this.hover = null;
+      this.ui.setReticle(false);
+      this.ui.setPrompt(`Click to look around`);
+      if (this.hold) { this.hold = null; this.ui.setHold(0); }
+      return;
+    }
     const tgt = castInteract(this.player, this.buildTargets());
     this.hover = tgt;
     this.ui.setReticle(!!tgt);
@@ -1386,7 +1413,7 @@ export class Game {
       this.briefingStarted = false;
       if (p.state === 'BRIEF') { p.state = 'WAIT'; p.nagTimer = 4; }
     }
-    if (this.state === ST.PLAY) this.input.requestLock();
+    if (this.state === ST.PLAY) { this.wantLock = true; this.input.requestLock(); }
   }
   talkToPerson(c) {
     if (c === this.officer) {
@@ -1455,7 +1482,7 @@ export class Game {
     this.ui.hidePhone();
     this.player.frozen = false;
     this.sound.phoneHang();
-    if (this.state === ST.PLAY) this.input.requestLock();
+    if (this.state === ST.PLAY) { this.wantLock = true; this.input.requestLock(); }
   }
 
   /**
@@ -1470,7 +1497,7 @@ export class Game {
     this.ui.hidePhone();
     this.phone.node = null;
     this.player.frozen = false;
-    if (this.state === ST.PLAY) this.input.requestLock();
+    if (this.state === ST.PLAY) { this.wantLock = true; this.input.requestLock(); }
     this.sound.ringback();
 
     if (target.isKiller !== true) {

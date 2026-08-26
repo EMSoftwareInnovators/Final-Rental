@@ -132,6 +132,7 @@ export class Input {
       if (!this.down.has(k)) this.pressed.add(k);
       this.down.add(k);
       this.scheme = 'kbm';
+      if (this.onGesture) this.onGesture();
     });
     addEventListener('keyup', (e) => {
       const k = norm(e);
@@ -155,6 +156,9 @@ export class Input {
     this.target.addEventListener('mousedown', (e) => {
       if (e.button < 3) { if (!this.mouse[e.button]) this.mousePressed[e.button] = true; this.mouse[e.button] = true; }
       this.scheme = 'kbm';
+      /* Fired from inside the real event, which is the only place the
+         browser will honour a pointer-lock request. */
+      if (this.onGesture) this.onGesture();
       e.preventDefault();
     });
     addEventListener('mouseup', (e) => { if (e.button < 3) this.mouse[e.button] = false; });
@@ -342,7 +346,23 @@ export class Input {
     this._padDown.clear();
   }
 
-  requestLock() { if (!this.locked && this.target.requestPointerLock) this.target.requestPointerLock(); }
+  /**
+   * Ask for the pointer.
+   *
+   * The browser only grants this off the back of a user gesture, or shortly
+   * after a previous lock was released. Asking from anywhere else -- the end
+   * of a cinematic, say -- fails silently, and in Chrome the returned
+   * promise rejects, so swallow it rather than logging on every night
+   * change. Whoever wanted the lock should also set a flag and try again on
+   * the next keystroke or click.
+   */
+  requestLock() {
+    if (this.locked || !this.target.requestPointerLock) return;
+    try {
+      const p = this.target.requestPointerLock();
+      if (p && p.catch) p.catch(() => { });
+    } catch (err) { /* not granted; the next gesture will try again */ }
+  }
   exitLock() { if (this.locked && document.exitPointerLock) document.exitPointerLock(); }
 
   isDown(...keys) { return keys.some((k) => this.down.has(k)); }
