@@ -740,6 +740,46 @@ const notes = await ev(async () => {
 check('a night with no deputy leaves the notepad empty',
   notes.known === 0 && notes.keys > 0, `${notes.known} of ${notes.keys} traits on file`);
 
+/* ---------- 7e2. the shift must not give tonight away ---------- */
+/* Whether a deputy is coming decides whether a killer might be working, so
+   nothing the player can see at the start of a shift may differ between the
+   two. The clock is held on a deputy night, but it must not say so. */
+const tell = await ev(() => {
+  const g = window.__game;
+  const M = window.__night;
+  const seen = (deputy) => {
+    const said = [];
+    const realToast = g.ui.toast.bind(g.ui);
+    g.ui.toast = (t) => { said.push(String(t)); };
+    g.night = M.makeNight(4242, deputy ? 5 : 1, 'HORROR');
+    g.nightNo = deputy ? 5 : 1;
+    g.officerDone = !deputy;
+    g.ui.toast(`NIGHT ${g.nightNo} — SUNSET VIDEO`, '');
+    g.ui.toast(`Get behind the counter.`, '');
+    g.ui.toast(`Shift ends at midnight.`, '');
+    // and what the clock itself shows while it is being held
+    g.ui.setClock('9:00 PM', g.nightNo, deputy);
+    const clock = {
+      night: g.ui.el.clockNight.textContent,
+      cls: g.ui.el.clockTime.parentElement.className,
+    };
+    // and what pressing the notepad says before anything is on it
+    g.night.bulletin.known.clear();
+    g.ui.toast(`Nothing in the notebook yet.`, '');
+    g.ui.toast = realToast;
+    return { said: said.map((t) => t.replace(/NIGHT \d+/, 'NIGHT n')), clock };
+  };
+  const withDeputy = seen(true);
+  const without = seen(false);
+  return { withDeputy, without };
+});
+check('the clock never says it has been stopped',
+  !/STOPPED/i.test(tell.withDeputy.clock.night) && !/held/.test(tell.withDeputy.clock.cls),
+  `"${tell.withDeputy.clock.night}"`);
+check('and a deputy night opens with exactly the same words as a quiet one',
+  tell.withDeputy.said.join('|') === tell.without.said.join('|'),
+  tell.withDeputy.said.join(' / '));
+
 /* ---------- 7f. a casual shift has nothing in it ---------- */
 await ev(() => {
   const g = window.__game;

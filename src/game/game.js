@@ -138,7 +138,12 @@ export class Game {
      ============================================================ */
   startNight(n) {
     this.nightNo = n;
-    this.night = makeNight(this.seed, n, this.mode);
+    if (!this.run) this.run = { calmUntil: 0, standDownNight: 0, arrests: 0 };
+    const R = this.run;
+    this.night = makeNight(this.seed, n, this.mode, {
+      calm: n <= R.calmUntil,
+      standDown: n === R.standDownNight,
+    });
     this.rng = this.night.rng;
     /* Two clocks.
        `sim` is real time on the shop floor: it runs from the moment you
@@ -327,6 +332,10 @@ export class Game {
     this.mode = mode;
     this.nightNo = 1;
     this.seed = (Math.random() * 0xffffffff) >>> 0;
+    /* What the run knows that a single night does not. An arrest buys a few
+       quiet nights, and the first of those is the one the deputy comes by to
+       say so. After that visit he stays away until there is a reason. */
+    this.run = { calmUntil: 0, standDownNight: 0, arrests: 0 };
     this.startNight(1);
   }
 
@@ -572,12 +581,12 @@ export class Game {
       this.sound.restoreRoom();
       this.ui.toast(`NIGHT ${this.nightNo} — SUNSET VIDEO`, '');
       this.ui.toast(`Get behind the counter.`, '');
-      // What the clock is doing, and why, said plainly the first time.
-      if (this.night.deputy) {
-        this.ui.toast(`The clock over the door has stopped again.`, '');
-      } else {
-        this.ui.toast(`Shift ends at midnight.`, '');
-      }
+      /* The same line every night, whatever tonight turns out to be.
+         This used to say "the clock over the door has stopped again" on
+         deputy nights and "shift ends at midnight" on the rest, which
+         told the player before anybody had come through the door whether
+         tonight was a night the killer might be working. */
+      this.ui.toast(`Shift ends at midnight.`, '');
     }
   }
 
@@ -594,9 +603,10 @@ export class Game {
     if (i.hit('Tab')) {
       if (!this.night.bulletin.known.size) {
         this.sound.error();
-        this.ui.toast(this.night.deputy
-          ? `Nothing in the notebook yet.`
-          : `Nothing to write down tonight.`, '');
+        /* One line either way. "Nothing to write down tonight" told the
+           player no deputy was coming, which told them no killer was
+           coming, which is the whole question the shift is asking. */
+        this.ui.toast(`Nothing in the notebook yet.`, '');
       } else {
         this.notesOpen = !this.notesOpen;
         this.sound.paper();
@@ -1742,7 +1752,18 @@ export class Game {
     data.night = this.nightNo;
     this.endData = data;
     data.mode = this.mode;
-    if (kind === 'CAUGHT') { this.sound.siren(); this.sound.chimeGood(); }
+    if (kind === 'CAUGHT') {
+      this.sound.siren(); this.sound.chimeGood();
+      /* An arrest buys the town a breather. The next few nights have nobody
+         working them, and the first of those is the one a deputy comes by
+         to say so -- after which he stays away until there is a reason to
+         come back. */
+      const R = this.run || (this.run = { calmUntil: 0, standDownNight: 0, arrests: 0 });
+      R.arrests++;
+      R.standDownNight = this.nightNo + 1;
+      R.calmUntil = this.nightNo + 3 + this.rng.int(3);
+      data.calmNights = R.calmUntil - this.nightNo;
+    }
     if (kind === 'FIRED') { this.sound.siren(); this.sound.chimeBad(); }
     // ATTACKED runs its own soundtrack out of updateDeath()
     setTimeout(() => { if (this.state === ST.ENDING) this.ui.showPanel(endingHtml(kind, data)); },
@@ -1791,7 +1812,7 @@ export class Game {
     } else if (!this.night.deputy) {
       note = `Nobody from the county came by tonight. Nobody had anything to tell you.`;
     } else if (!k || (k.phase === KP.ABSENT && !k.seenAsCustomer)) {
-      note = `Nobody came for you tonight. The deputy will be back tomorrow with less to go on.`;
+      note = `Nobody came for you tonight. The deputy will be back tomorrow with more to go on, which is not the comfort it sounds like.`;
     } else if (k.seenAsCustomer) {
       note = `Somebody in that store tonight matched the bulletin, and you let them walk out with a tape.`;
     } else {

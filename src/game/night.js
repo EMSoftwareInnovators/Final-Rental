@@ -12,6 +12,10 @@ import {
 import { planKiller, KILLER_FIRST_NIGHT, killerChance } from './killer.js';
 import { GENRES } from './tapes.js';
 import { planSpecials } from './specials.js';
+import {
+  MORE_DETAIL, PRIOR_ARREST, DIFFERENT_MAN, HOW_MANY, WHY_MORE_HELPS,
+  CERTAIN_YES, CERTAIN_NO, GREETINGS, ALL_CLEAR, ALL_CLEAR_WHY, pick as pickFor,
+} from './briefing.js';
 
 export { KILLER_FIRST_NIGHT, killerChance };
 
@@ -35,20 +39,45 @@ export function deputyComes(n, mode) {
 }
 
 /* Which traits the deputy actually got out of the witness. */
+/**
+ * How much of the description the deputy has tonight.
+ *
+ * It grows. The county takes somebody off the street most nights, and each
+ * one talks, so the picture gets fuller: three things to check on the first
+ * night with a bulletin, ten by the end of a long run.
+ *
+ * That is harder, not easier. A short list is quick to clear somebody
+ * against. A long one means every ordinary customer now matches four or
+ * five of it, and the question stops being "does he match" and becomes
+ * "does he match ALL of it" -- which takes time you do not have with three
+ * people in the queue.
+ */
 function bulletinKeyCount(n) {
-  return Math.max(3, 6 - Math.floor((n - 1) / 1.6));
+  return Math.min(10, 3 + Math.floor((n - DEPUTY_FIRST_NIGHT) / 1.15));
 }
-function extraKeyCount(n) { return n <= 1 ? 3 : n <= 3 ? 2 : n <= 5 ? 1 : 0; }
+/** Extra traits he will give up if you ask. Also grows. */
+function extraKeyCount(n) { return Math.min(4, 1 + Math.floor((n - DEPUTY_FIRST_NIGHT) / 2.5)); }
 function decoyCount(n) { return Math.min(4, 1 + Math.floor(n / 2)); }
 function decoyOverlap(n, keyCount) { return Math.min(keyCount - 1, 1 + Math.floor(n / 2)); }
 
 /* Traits that make good bulletin material -- things a witness would notice. */
 const PRIORITY = ['jacket', 'height', 'build', 'hair', 'mark', 'hat', 'facial', 'glasses', 'gait', 'carry', 'pants', 'smell', 'voice'];
 
-export function makeNight(seed, n, mode = MODE.HORROR) {
+/**
+ * One night.
+ *
+ * `opts` carries what the RUN knows and a single night does not: whether an
+ * arrest has bought a few quiet nights, and whether tonight is the one the
+ * deputy comes by to say so.
+ */
+export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
   const rng = makeRng(seed ^ (n * 0x9e3779b1));
   const length = nightLength(n);
-  const deputy = deputyComes(n, mode);
+  /* A stand-down visit is still a visit. A calm night with no visit due has
+     nobody from the county in it at all -- and, importantly, the deputy does
+     not come back the following night either, because there is nothing for
+     him to say. */
+  const deputy = opts.standDown ? true : (opts.calm ? false : deputyComes(n, mode));
 
   /* ---- the suspect ---- */
   const suspect = randomAppearance(rng);
@@ -77,8 +106,13 @@ export function makeNight(seed, n, mode = MODE.HORROR) {
     extras.push({ key: k, officerLine: officerExtraLine(k, suspect, rng) });
   }
 
-  const plan = planKiller(rng, n, length, mode);
-  const caseFile = makeCaseFile(rng, n, suspect);
+  /* A stand-down night is a calm night by definition: he is not going to
+     walk in and tell you it is over while somebody is working the parade. */
+  const quiet = opts.calm || opts.standDown;
+  const plan = quiet
+    ? { appears: false, at: Infinity, asCustomer: false }
+    : planKiller(rng, n, length, mode);
+  const caseFile = makeCaseFile(rng, n, suspect, { standDown: !!opts.standDown });
 
   /* The deputy is not the first person through the door any more. He comes
      when he comes, somewhere in the first third of the shift, and there may
@@ -135,6 +169,7 @@ export function makeNight(seed, n, mode = MODE.HORROR) {
   return {
     n, seed, rng, mode, length, bulletin, suspect, plan, schedule, caseFile,
     deputy, deputyAt, swarm: specials.swarm,
+    calm: quiet, standDown: !!opts.standDown,
     officerApp: makeOfficerApp(rng),
     officerName: `Deputy ${randomName(rng).split(' ')[1]}`,
     overlap,
@@ -199,8 +234,11 @@ const PRESS_NAMES = [
   'the Nine-to-Midnight', 'the Counter Killer', 'the Closing Hour',
 ];
 
-export function makeCaseFile(rng, n, suspect) {
+export function makeCaseFile(rng, n, suspect, opts = {}) {
   const angle = ANGLES[(n - 1) % ANGLES.length];
+  /* Drawn by night rather than by roll, so a given night always reads the
+     same however many times you play it -- and so consecutive nights never
+     hand you the same account of the same arrest twice running. */
   return {
     name: randomName(rng, suspect.gender),
     alias: rng.pick(PRESS_NAMES),
@@ -208,6 +246,23 @@ export function makeCaseFile(rng, n, suspect) {
     // Nights one and two of the manhunt have no yesterday to account for.
     first: n <= KILLER_FIRST_NIGHT,
     caughtLast: n > KILLER_FIRST_NIGHT,
+    /** Tonight's reason the description got longer. */
+    moreDetail: pickFor(MORE_DETAIL, n, 1),
+    /** What happened to the one from last night, and why it does not help. */
+    priorArrest: pickFor(PRIOR_ARREST, n, 2),
+    differentMan: pickFor(DIFFERENT_MAN, n, 3),
+    whyMoreHelps: pickFor(WHY_MORE_HELPS, n, 4),
+    howMany: pickFor(HOW_MANY, n, 5),
+    greeting: pickFor(GREETINGS, n, 6),
+    certainYes: pickFor(CERTAIN_YES, n, 7),
+    certainNo: pickFor(CERTAIN_NO, n, 8),
+    /** The night he comes to say it is over. */
+    allClear: pickFor(ALL_CLEAR, n, 9),
+    allClearWhy: pickFor(ALL_CLEAR_WHY, n, 10),
+    /** How many things are on tonight's list, for his own commentary on it. */
+    detailCount: bulletinKeyCount(n),
+    grew: n > DEPUTY_FIRST_NIGHT,
+    standDown: !!opts.standDown,
   };
 }
 

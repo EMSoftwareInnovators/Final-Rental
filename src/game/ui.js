@@ -80,12 +80,23 @@ export class UI {
   }
 
   /* ---------------- HUD ---------------- */
+  /**
+   * The clock over the door.
+   *
+   * It does stop -- while the deputy still has something to say, and while
+   * the killer is in the building -- but it does not SAY that it has
+   * stopped, and it is not dimmed while it is. It used to be marked
+   * "STOPPED", which told the player, before anybody had walked through the
+   * door, that tonight was a night with a deputy in it, and therefore a
+   * night the killer might be working. That is the one thing the shift is
+   * supposed to keep from them. A clock that seems slow is ambience; a
+   * clock that announces it has been held is the answer to the question.
+   */
   setClock(time, night, held) {
     this.el.clockTime.textContent = time;
-    // The shift clock stops while the deputy still has something to say.
-    // Without a mark on it, a clock that will not move looks like a bug.
-    this.el.clockNight.textContent = held ? `NIGHT ${night} - STOPPED` : `NIGHT ${night}`;
-    this.el.clockTime.parentElement.classList.toggle('held', !!held);
+    this.el.clockNight.textContent = `NIGHT ${night}`;
+    this.el.clockTime.parentElement.classList.remove('held');
+    void held;
   }
   setTill(v) { this.el.till.textContent = v.toFixed(2); }
 

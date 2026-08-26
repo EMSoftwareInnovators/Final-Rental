@@ -68,6 +68,33 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
   const C = caseFile || {};
   const A = C.angle || {};
 
+  /* ---- the night he comes to say it is finished ---- */
+  if (C.standDown) {
+    return say(officer, `${C.greeting}\n\n${C.allClear}`, [
+      reply(`You're certain.`, () => say(officer,
+        `${C.allClearWhy}\n\nI would not come in here and say it if I wasn't.`, [
+        reply(`Then that's that.`, () => standDownOutro()),
+        reply(`You said that in September.`, () => say(officer,
+          `I did. And I was wrong in September, and I have had to live in this county since.\n\nI am not wrong tonight.`,
+          [reply(`...Alright.`, () => standDownOutro())]), { risk: true }),
+      ])),
+      reply(`So there's nothing to look for tonight.`, () => say(officer,
+        `Nothing. Sell your tapes. Lock up at midnight because it's midnight, not because of anybody.`,
+        [reply(`I'll take it.`, () => standDownOutro())])),
+      reply(`What happens now?`, () => say(officer,
+        `${C.allClearWhy}\n\nNow it's paperwork, and then it's somebody else's town.`,
+        [reply(`Goodnight, deputy.`, () => standDownOutro())])),
+    ]);
+  }
+
+  function standDownOutro() {
+    return say(officer, rng.pick([
+      `Get home safe. For the ordinary reason, for once.`,
+      `Enjoy the quiet. They don't come round often.`,
+      `You did alright these last few weeks. Somebody should say so.`,
+    ]), [reply(`Goodnight.`, () => { ctx.finishIntro(); return null; })]);
+  }
+
   const notepadLine = () => say(officer,
     `Write it down. All of it.\n\nYou keep that where you can get at it -- ${ctx.notesKey()} -- and you hold it up against every face that comes through that door. Not most of it. All of it.`,
     [reply(`I've got it.`, () => outro())]);
@@ -78,47 +105,74 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
       : `Might be nothing tonight. Might be. Either way — you see it, you lock up and you call. Be sure before you do.`,
     [reply('Understood.', () => { ctx.finishIntro(); return null; })]);
 
+  /* Why the list is longer than it was last night.
+     The county is not getting nowhere -- they take somebody most nights,
+     and every one of them talks. So the description grows, which sounds
+     like progress and is in fact the problem: by the end of a run every
+     ordinary customer matches four things on a list of nine. */
+  const whyMore = () => say(officer, C.moreDetail, [
+    reply(`So you know more than you did yesterday.`, () => say(officer,
+      `${C.whyMoreHelps}`, [
+      reply(`Read it out.`, () => detail()),
+      reply(`How many of them are there?`, () => howMany()),
+    ])),
+    reply(`That's ${C.detailCount} things to check on every customer.`, () => say(officer,
+      rng.pick([
+        `It is. I'd rather hand you ${C.detailCount} and have you slow than hand you two and have you wrong.`,
+        `Yes. And you have got a queue and one pair of eyes, and I am sorry about that.`,
+        `Which is why you write it down instead of trying to hold it in your head.`,
+      ]), [reply(`Go on, then.`, () => detail())])),
+    reply(`Just give me tonight's.`, () => detail()),
+  ]);
+
+  const howMany = () => say(officer, C.howMany, [
+    reply(`...Right.`, () => detail()),
+    reply(`And you're still calling it one man on the radio.`, () => say(officer,
+      rng.pick([
+        `I do not write the radio.`,
+        `You have noticed that too, then.`,
+        `Take that up with the sheriff. Bring a witness.`,
+      ]), [reply(`Read me the description.`, () => detail())]), { risk: true }),
+  ]);
+
   /* Why it is a different man tonight.
      A player who is paying attention will notice that the person they put
      in a cruiser on Tuesday is not the person at the glass on Wednesday,
-     and the deputy is the only one in the building who can account for it.
-     He has a different account every few nights, and none of them are
-     especially reassuring. */
+     and the deputy is the only one in the building who can account for it. */
   const theOtherOne = () => say(officer,
-    `${A.prior || `We took somebody off the street last night.`}\n\n${A.lead || ''}`, [
+    `${C.priorArrest}\n\n${C.differentMan}`, [
     reply(`So it isn't the same person.`, () => say(officer,
       `${A.why || `No. It is not.`}`, [
-      reply(`How many of them are there?`, () => say(officer,
-        rng.pick([
-          `I have asked that question in three meetings and nobody will put a number on it.`,
-          `More than we have said publicly. That is as far as I will go.`,
-          `Enough that we stopped numbering them and started dating them.`,
-        ]), [reply(`...Right.`, () => detail())])),
+      reply(`How many of them are there?`, () => howMany()),
+      reply(`Then how do you have MORE on him than you did yesterday?`, () => whyMore()),
       reply(`Then the description's no good to me.`, () => say(officer,
-        `The description is what we have got tonight. Tomorrow it will be a different one and I will read you that as well.`,
+        `The description is what we have got tonight, and there is more of it than there was last night. Tomorrow there will be more again.`,
         [reply(`Go on, then.`, () => detail())])),
     ])),
+    reply(`What did last night's one tell you?`, () => whyMore()),
     reply(`Just give me tonight's.`, () => detail()),
   ]);
 
   const askNode = () => {
     const cs = [];
-    if (extras.length && asked < 2) {
+    if (extras.length && asked < 3) {
       cs.push(reply('Anything else you can give me?', () => {
         asked++;
         const e = extras.shift();
         ctx.addBulletinDetail(e);
         return say(officer, e.officerLine, [
-          ...(extras.length && asked < 2 ? [reply('Anything else?', () => askNode().choices[0].fn())] : []),
+          ...(extras.length && asked < 3 ? [reply('Anything else?', () => askNode().choices[0].fn())] : []),
           reply(`Got it.`, () => outro()),
         ]);
       }));
     }
     cs.push(reply(`How sure are you it's tonight?`, () => say(officer,
-      bulletin.certain
-        ? `I'm not. Nobody is. But three in six weeks and every one of them was working a counter after ten at night. You're a counter after ten at night.`
-        : `I'm not sure of anything. That's the job. Somebody saw somebody. Could be a guy who looks like a guy.`,
+      bulletin.certain ? C.certainYes : C.certainNo,
       [reply('Great. Thanks.', () => outro())])));
+    if (C.grew) {
+      cs.push(reply(`Why is there more of it every night?`, () => say(officer,
+        `${C.moreDetail}\n\n${C.whyMoreHelps}`, [reply(`...Right.`, () => outro())])));
+    }
     cs.push(reply(`I'll keep an eye out.`, () => outro()));
     return say(officer, `Anything you want to ask me, ask it now. I'm not coming back tonight.`, cs);
   };
@@ -127,25 +181,21 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
     // this is the moment the description actually reaches your notepad
     ctx.learnBulletin();
     return say(officer, bulletin.description, [
-    reply('Let me write that down.', () => (c_toldNotes ? askNode() : (c_toldNotes = true, notepadLine()))),
-    reply(`That's half the men in this county.`, () => say(officer,
-      `Yeah. It is. That's the problem.`, [reply('...', () => askNode())])),
+      reply('Let me write that down.', () => (c_toldNotes ? askNode() : (c_toldNotes = true, notepadLine()))),
+      reply(`That's half the men in this county.`, () => say(officer,
+        `Yeah. It is. That's the problem.`, [reply('...', () => askNode())])),
+      ...(C.grew ? [reply(`That's more than last night.`, () => whyMore())] : []),
     ]);
   };
 
-  const greet = rng.pick([
-    `Evening. Sorry — I know you're closing soon. County sheriff's office.`,
-    `Evening. You the only one on tonight? ... Figures.`,
-    `Don't get up. This'll take two minutes.`,
-  ]);
-
   const alias = C.alias ? ` The papers are calling it ${C.alias}.` : '';
   const opener = C.caughtLast
-    ? `${greet}\n\nWe've got a new description out on somebody working this side of the river. New one. Not the one from last night.`
-    : `${greet}\n\nWe've got a description out on somebody working this side of the river. I'm hitting every business still lit up.${alias}`;
+    ? `${C.greeting}\n\nWe've got a new description out on somebody working this side of the river. New one. Not the one from last night — and there's more of it than there was.`
+    : `${C.greeting}\n\nWe've got a description out on somebody working this side of the river. I'm hitting every business still lit up.${alias}`;
 
   return say(officer, opener, [
     ...(C.caughtLast ? [reply(`Hold on. You caught somebody last night.`, () => theOtherOne())] : []),
+    ...(C.grew ? [reply(`More of it how?`, () => whyMore())] : []),
     reply(`Go ahead.`, () => detail()),
     reply(`Is this about the ones on the news?`, () => say(officer,
       `The news has about a third of it.${alias} Here's what matters to you tonight.`,
