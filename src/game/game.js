@@ -2214,6 +2214,23 @@ export class Game {
         c.speed *= 1.12;
       },
 
+      /** Is anybody in here making the shop genuinely hard to stand in? */
+      stenchActive: () => g.customers.some((c) => !c.hidden && c.nuisance
+        && (c.nuisance === 'stench' || c.nuisance === 'skunk')
+        && c.state !== CS.LEAVING && c.state !== CS.GONE),
+      /** Somebody decides they will wait until the air clears. */
+      stenchHoldsOff: (c) => {
+        g.ui.toast(g.rng.pick([
+          `${c.name} looks at the counter, looks at the smell, and stays where they are.`,
+          `${c.name} is not coming any closer while that is in here.`,
+          `${c.name} would like to pay, and is not walking through that to do it.`,
+        ]), 'bad');
+      },
+      /** The one at the television has picked something up again. */
+      stonerTook: (c) => {
+        g.ui.toast(`${c.name} takes something off the shelf and wanders off with it.`, '');
+      },
+
       /* He puts it down, finds the switch, and the shop is his. */
       boomboxDown: (c) => {
         const yaw = c.yaw + Math.PI;
@@ -2274,6 +2291,13 @@ export class Game {
       leave: (c) => {
         // Whatever he brought in, he takes back out.
         if (g.boombox && g.boombox.owner === c.id) g.ctx.boomboxUp(c);
+        /* And whatever he picked up and forgot about goes in the returns
+           bin on the way past, which makes it the clerk's problem. */
+        if (c.special === 'SMOKER' && c.tape && !c.checkedOut) {
+          g.bin.push(c.tape); c.tape = null;
+          g.sound.drop();
+          g.ui.toast(`${c.name} drops a tape in the returns bin on his way out.`, 'bad');
+        }
         // Not while you are holding their change. They go and stand at the
         // window until the drawer opens, and get angry about it in their
         // own time -- which is the player's failure to make, not a line of

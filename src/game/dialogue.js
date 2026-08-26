@@ -1184,6 +1184,65 @@ function eject(c, ctx, texts, opts = {}) {
   ]);
 }
 
+/**
+ * The two who will not be told.
+ *
+ * Neither of them thinks he is doing anything. There is no single line that
+ * gets rid of either one -- you work them down over a lot of exchanges, and
+ * between exchanges they go back to what they were doing and you have to
+ * come and start again. That is deliberate: they are a tax on the night,
+ * paid in the only currency the shift has, which is time.
+ *
+ * `resist` is how much of them is left. Standing your ground takes it down.
+ * Arguing on their terms does not, and one or two things put it back up.
+ */
+function grind(c, ctx, spec) {
+  const rng = ctx.rng;
+  if (c.resist === undefined) c.resist = spec.resist;
+
+  // Between goes he is not listening. Come back in a minute.
+  if (c.brushT > 0) {
+    return say(c, rng.pick(spec.brush), [reply(`...`, () => null)]);
+  }
+
+  if (c.resist <= 0) {
+    return say(c, rng.pick(spec.gone), [
+      reply(`Out.`, () => { ctx.leave(c); return null; }),
+      ...(spec.andSell ? [reply(`...Wait. Do you actually want to rent something?`,
+        () => { ctx.mood(c, +14); return spec.andSell(); })] : []),
+    ]);
+  }
+
+  const step = (d, then) => {
+    c.resist = Math.max(0, c.resist - d);
+    c.brushT = spec.cool;
+    return then;
+  };
+
+  const beat = spec.beats[Math.min(spec.beats.length - 1,
+    spec.beats.length - 1 - Math.floor(c.resist / (spec.resist / spec.beats.length + 0.001)))];
+
+  const cs = [
+    reply(rng.pick(spec.firm), () => step(1, say(c, rng.pick(spec.give), [
+      reply(`Good. Keep going.`, () => null),
+    ]))),
+    reply(rng.pick(spec.firmer), () => {
+      // Leaning harder works, but he digs in first and you get one more round.
+      if (rng.chance(0.34)) {
+        c.resist = Math.min(spec.resist, c.resist + 1);
+        c.brushT = spec.cool;
+        return say(c, rng.pick(spec.dig), [reply(`...`, () => null)]);
+      }
+      return step(2, say(c, rng.pick(spec.give), [reply(`Right.`, () => null)]));
+    }, { risk: true }),
+    reply(rng.pick(spec.reason), () => step(0, say(c, rng.pick(spec.deflect), [
+      reply(`That isn't what I asked.`, () => null),
+    ]))),
+    reply(`...Forget it.`, () => { ctx.mood(c, +4); c.brushT = spec.cool; return null; }),
+  ];
+  return say(c, beat, cs);
+}
+
 export function specialRoot(c, ctx) {
   const rng = ctx.rng;
   switch (c.special) {
@@ -1204,24 +1263,130 @@ export function specialRoot(c, ctx) {
         ]),
       });
 
-    /* ---------------- the smell ---------------- */
+    /* ---------------- the smell ----------------
+       He does not think he smells. He thinks you have a problem with him,
+       and he would like to discuss it, at length, in the aisle. */
     case 'REEKER':
-      return eject(c, ctx, [
-        `I'm looking. A man's allowed to look.`,
-        `I haven't touched anything. Have I touched anything?`,
-        `You people. You're all the same. I was going to rent something.`,
-        `Fine! FINE. I'm going. I'm going.`,
-      ], { takes: 4 });
+      return grind(c, ctx, {
+        resist: 9,
+        cool: 14,
+        beats: [
+          `I'm looking. A man's allowed to look.`,
+          `I haven't touched anything. Have I touched anything? Name one thing.`,
+          `Is this about how I look? Because it sounds like it's about how I look.`,
+          `I've been coming to this parade since before you worked here.`,
+          `There's no sign. Show me the sign that says I can't stand here.`,
+          `You know what this is? This is discrimination, is what this is.`,
+          `I have a right to be in a shop. That's not a special right, that's the normal one.`,
+          `Fine. FINE. But I want it on record that I was going to rent something.`,
+        ],
+        firm: [
+          `I need you to leave.`,
+          `You're going to have to go.`,
+          `This isn't a discussion. Out.`,
+          `I'm not arguing with you. The door's there.`,
+        ],
+        firmer: [
+          `Leave, or I call the county and they can explain it to you.`,
+          `Out. Now. I'm done being polite about it.`,
+          `You are clearing off or I am clearing you off.`,
+        ],
+        reason: [
+          `Sir, people can smell you from the door.`,
+          `It's not about you. It's about the shop.`,
+          `Nobody else can stand in here.`,
+          `I have customers who won't come to the counter.`,
+        ],
+        give: [
+          `...Alright. Alright, I hear you. Give me a minute.`,
+          `You don't have to say it like that. I'm going.`,
+          `Fine. I'm gathering my things. Such as they are.`,
+          `(he doesn't move, but he stops arguing)`,
+        ],
+        dig: [
+          `No. No, now I'm staying. Now it's a principle.`,
+          `You raise your voice at me and I'll be here all night.`,
+          `See, that's the tone. That's exactly the tone.`,
+        ],
+        deflect: [
+          `Everybody smells of something. You smell of that carpet.`,
+          `It's the coat. It's not me, it's the coat, and the coat's outside my control.`,
+          `I can't smell anything, so.`,
+          `That's their problem, isn't it. That's not a me problem.`,
+        ],
+        brush: [
+          `(he has turned his back and is reading a box he is not reading)`,
+          `We already talked. I'm going in a minute.`,
+          `Mm. In a minute.`,
+        ],
+        gone: [
+          `Right. That's me. And I hope you're pleased with yourself.`,
+          `I'm going. I said I was going. I've been going this whole time.`,
+        ],
+      });
 
-    /* ---------------- the television ---------------- */
+    /* ---------------- the television ----------------
+       He is not being difficult. He genuinely cannot hold on to the idea of
+       leaving for long enough to do it, and the conversation keeps coming
+       back round to the screen. */
     case 'SMOKER':
-      return eject(c, ctx, [
-        `(he does not look away from the screen) ...Yeah.`,
-        `There's a pattern in it. If you watch long enough there's a pattern.`,
-        `Whoa. Hey. You don't have to be like that about it.`,
-        `Yeah, no, I hear you. I'm going. This has been really nice, though.`,
-      ], {
-        takes: 4,
+      return grind(c, ctx, {
+        resist: 10,
+        cool: 16,
+        beats: [
+          `(he does not look away from the screen) ...Yeah.`,
+          `There's a pattern in it. If you watch long enough there's a pattern.`,
+          `Wait, sorry — you said something. Say it again.`,
+          `I'm not watching it watching it. It's more like it's on.`,
+          `Okay so. Okay. What was the question.`,
+          `Am I in the way? I can stand somewhere else. Where should I stand.`,
+          `You know when you know you have to do a thing, but the thing is later?`,
+          `Yeah, no, totally. Totally. ...What are we doing?`,
+          `I feel like we've had this conversation. Have we had this conversation?`,
+        ],
+        firm: [
+          `You need to go home.`,
+          `Out. Front door. Now.`,
+          `I need you to leave the shop.`,
+          `Go. Home. Two words.`,
+        ],
+        firmer: [
+          `I am walking you to that door myself in a minute.`,
+          `LEAVE. Do you understand the word?`,
+          `Out, or I'm calling somebody about it.`,
+        ],
+        reason: [
+          `You smell like a bonfire in a hedge.`,
+          `Everyone in here can smell you, man.`,
+          `I've got people who won't come to the till.`,
+          `You've been stood there forty minutes.`,
+        ],
+        give: [
+          `Yeah. Yeah, okay. That's fair. I'm gonna go.`,
+          `Right. Door. I know where the door is.`,
+          `Okay. Okay okay okay. Going. Going now.`,
+          `(he takes one step toward the door and stops)`,
+        ],
+        dig: [
+          `Whoa. Hey. You don't have to be like that about it.`,
+          `That's — okay, now I feel weird. Now I'm gonna need a minute.`,
+          `See now I've forgotten what I was doing and it's because of that.`,
+        ],
+        deflect: [
+          `That's just my jacket. My jacket's been through some stuff.`,
+          `Is it me? It might be me. It's probably the carpet though.`,
+          `Do you ever think about how a tape has the whole movie on it? Just — sitting there?`,
+          `What's on after this one?`,
+        ],
+        brush: [
+          `(he has gone back to the screen and does not appear to have noticed you leave)`,
+          `Yeah man. In a minute.`,
+          `Hm? Oh. Hey.`,
+        ],
+        gone: [
+          `Yeah, no, I hear you. I'm going. This has been really nice, though.`,
+          `Okay. I'm out. You're a good person. I said that already, right?`,
+        ],
         andSell: () => say(c, `Do you have the one where nothing happens?`, [
           reply(`Comedy section. Off you go.`, () => {
             if (!c.hasMoney) { return say(c, `Ah. Yeah. Money.`, [reply('...', () => { ctx.leave(c); return null; })]); }

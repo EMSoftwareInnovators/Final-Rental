@@ -125,9 +125,12 @@ const settled = await ev(() => {
 check('everyone on the roster runs their own tree, not the rent one',
   settled.every((c) => c.script === 'special'),
   settled.filter((c) => c.script !== 'special').map((c) => `${c.id}:${c.script}`).join(' ') || 'all 12');
+/* Only one of them arrives with a tape -- the man carrying somebody else's.
+   The one at the television may well be holding one by now, but he did not
+   come in with it: he wandered off and took it off a shelf. */
 check('and only the man with somebody else\'s tape walked in holding one',
-  settled.filter((c) => c.tape).length === 1
-  && settled.find((c) => c.tape).id === 'RETURNS',
+  settled.filter((c) => c.tape && c.id !== 'SMOKER').length === 1
+  && settled.some((c) => c.tape && c.id === 'RETURNS'),
   settled.filter((c) => c.tape).map((c) => `${c.id}:${c.tape}`).join(' '));
 
 const actors = settled.filter((c) => c.act);
@@ -248,9 +251,15 @@ const mash = await ev(() => {
 });
 check('and mashing one button always reaches the end of the conversation',
   mash.length === 0, mash.join(' ') || '48 runs, all terminated');
+/* The two who will not be told have no exit inside a single conversation
+   by design -- they are worn down across many of them, with a cooling-off
+   period in between, which is what the grind checks above walk end to end.
+   Everybody else can be got out of the shop in one go. */
+const GRINDERS = ['REEKER', 'SMOKER'];
 check('every one of them has a way out of the shop',
-  trees.every((t) => t.exits > 0),
-  trees.filter((t) => !t.exits).map((t) => t.id).join(' ') || 'all 12 can be got rid of');
+  trees.filter((t) => !GRINDERS.includes(t.id)).every((t) => t.exits > 0),
+  trees.filter((t) => !t.exits && !GRINDERS.includes(t.id)).map((t) => t.id).join(' ')
+  || 'all ten can be got rid of in one conversation');
 check('and most of them can be turned into a sale if you handle them right',
   trees.filter((t) => t.sales > 0).length >= 9,
   `${trees.filter((t) => t.sales > 0).length} of ${trees.length} will rent something`);
@@ -344,6 +353,117 @@ check('and it is coming from the machine, not from your head',
   `${boom.far.toFixed(3)} across the shop, ${boom.near.toFixed(3)} standing over it`);
 check('he takes it with him when he goes, and the shop goes quiet',
   !boom.afterLeave.box && !boom.afterLeave.playing && boom.afterLeave.carrying === 'BOOMBOX');
+
+/* ---------- 4a3. the two who will not be told ---------- */
+const grindTest = await ev(() => {
+  const g = window.__game;
+  const D = window.__dlg;
+  const out = {};
+  for (const id of ['REEKER', 'SMOKER']) {
+    const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById(id));
+    c.x = 4; c.z = 4; c.state = 'ACTING';
+    g.customers.push(c);
+    const lines = new Set();
+    let rounds = 0, brushed = 0, wait = 0;
+    // Lean on him, over and over, the way a player would.
+    while (c.state !== 'LEAVING' && rounds < 60) {
+      rounds++;
+      let node = D.talkTo(c, g.ctx, { atCounter: false });
+      if (node && node.text) lines.add(node.text);
+      // take the firm option, then close the exchange
+      let steps = 0;
+      while (node && (node.choices || []).length && steps < 6) {
+        steps++;
+        const r = node.choices[0];
+        node = r.go ? r.go() : (r.fn ? r.fn() : null);
+        if (node && node.text) lines.add(node.text);
+      }
+      if (c.brushT > 0) {
+        brushed++;
+        wait += c.brushT;
+        c.brushT = 0;                     // stand in for waiting him out
+      }
+    }
+    out[id] = { rounds, brushed, lines: lines.size, left: c.state === 'LEAVING',
+      wait: Math.round(wait), resist: c.resist };
+    const k = g.customers.indexOf(c);
+    if (k >= 0) g.customers.splice(k, 1);
+  }
+  return out;
+});
+for (const id of ['REEKER', 'SMOKER']) {
+  const r = grindTest[id];
+  check(`${id.toLowerCase()}: he goes in the end`, r.left, `after ${r.rounds} goes`);
+  check(`${id.toLowerCase()}: but not quickly`, r.rounds >= 6, `${r.rounds} separate exchanges`);
+  check(`${id.toLowerCase()}: and he stops listening between them`,
+    r.brushed >= 4 && r.wait >= 60,
+    `brushed you off ${r.brushed} times, ${r.wait}s of waiting him out`);
+  check(`${id.toLowerCase()}: with plenty to say while he does it`, r.lines >= 12, `${r.lines} lines`);
+}
+
+const stink = await ev(async () => {
+  const g = window.__game;
+  g.customers.length = 0;
+  const before = g.ctx.stenchActive();
+  const reeker = window.__cust.makeSpecial(g.rng, window.__specials.specialById('REEKER'));
+  reeker.x = 4; reeker.z = 4; reeker.state = 'ACTING';
+  g.customers.push(reeker);
+  const during = g.ctx.stenchActive();
+  // an ordinary shopper who has picked something out
+  const shopper = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+  shopper.x = 2.6; shopper.z = 2.8; shopper.state = 'BROWSING';
+  shopper.browse = { visits: 1, seen: 1, phase: 'READ', t: 99, dur: 0, shelf: null,
+    spot: { x: 2.6, z: 2.8, yaw: 0 } };
+  shopper.browse.shelf = window.__world.SHELVES[0];
+  shopper.browse.spot = shopper.browse.shelf.browse[0];
+  g.customers.push(shopper);
+  let wentToCounter = false;
+  for (let i = 0; i < 600; i++) {
+    window.__cust.updateCustomer(shopper, 1 / 20, g.ctx);
+    if (shopper.state === 'TO_COUNTER' || shopper.state === 'WAITING') { wentToCounter = true; break; }
+  }
+  // now get rid of him and try again
+  reeker.state = 'LEAVING';
+  const after = g.ctx.stenchActive();
+  let wentAfter = false;
+  for (let i = 0; i < 900; i++) {
+    window.__cust.updateCustomer(shopper, 1 / 20, g.ctx);
+    if (shopper.state === 'TO_COUNTER' || shopper.state === 'WAITING') { wentAfter = true; break; }
+  }
+  g.customers.length = 0;
+  return { before, during, after, wentToCounter, wentAfter };
+});
+check('the shop knows when it is unbearable',
+  !stink.before && stink.during && !stink.after);
+check('and nobody will come to the counter while it is',
+  !stink.wentToCounter, `went anyway: ${stink.wentToCounter}`);
+check('but they will once he has gone', stink.wentAfter);
+
+const errand = await ev(async () => {
+  const g = window.__game;
+  g.customers.length = 0;
+  g.bin.length = 0;
+  const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById('SMOKER'));
+  c.x = 2.3; c.z = 2.8; c.state = 'ACTING'; c.parked = true;
+  c.errandT = 0.1;                        // due one now
+  g.customers.push(c);
+  let took = false;
+  for (let i = 0; i < 3000; i++) {
+    window.__cust.updateCustomer(c, 1 / 20, g.ctx);
+    if (c.tape) took = true;
+    if (took && !c.errand) break;
+  }
+  const back = { x: +c.x.toFixed(1), z: +c.z.toFixed(1), holding: !!c.tape };
+  g.ctx.leave(c);
+  const binned = g.bin.length;
+  g.customers.length = 0;
+  return { took, back, binned };
+});
+check('the one at the television wanders off and takes something', errand.took);
+check('and brings it back to the screen, still holding it',
+  errand.back.holding && Math.abs(errand.back.x - 2.3) < 1.2, JSON.stringify(errand.back));
+check('and leaves it in the returns bin on his way out',
+  errand.binned === 1, `${errand.binned} in the bin`);
 
 /* ---------- 4b. the ones with a wrong idea about the shop ---------- */
 const prem = await ev(() => {

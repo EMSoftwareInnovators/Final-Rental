@@ -134,6 +134,20 @@ export function makeSpecial(rng, sp) {
   return c;
 }
 
+/**
+ * Is the shop currently unbearable?
+ *
+ * Two of the regulars make the place genuinely hard to stand in -- the one
+ * who has not washed and the one who smells like a bonfire in a hedge. An
+ * ordinary customer will keep shopping, at a distance, but will not walk up
+ * to a counter and hold a conversation next to it. Nobody checks out and
+ * nobody hands a tape back until whoever it is has gone.
+ */
+function repelled(c, ctx) {
+  if (c.special || c.isKiller || c === ctx.officer) return false;
+  return ctx.stenchActive();
+}
+
 /* Where each act happens. */
 const ACT_SPOT = {
   DANCE: { x: 6.6, z: 3.4, yaw: Math.PI },
@@ -181,6 +195,10 @@ function step(c, dt, ctx) {
 /* ---------------- per-frame update ---------------- */
 export function updateCustomer(c, dt, ctx) {
   const rng = ctx.rng;
+  if (c.stenchGripe > 0) c.stenchGripe -= dt;
+  // The two who will not be told go back to what they were doing between
+  // goes, and are not listening again for a while.
+  if (c.brushT > 0) c.brushT -= dt;
 
   /* Somebody who is owed change goes to the window and stays there. It used
      to be handled inside the queue state alone, which meant anyone paid
@@ -230,6 +248,7 @@ export function updateCustomer(c, dt, ctx) {
         c.path = null; c.timer = 0;
         if (c.act) { c.state = CS.ACTING; }
         else if (c.script === 'rent' || c.browsesFirst) c.state = CS.BROWSING;
+        else if (repelled(c, ctx)) c.state = CS.BROWSING;
         else c.state = CS.TO_COUNTER;
       }
       break;
@@ -274,6 +293,41 @@ export function updateCustomer(c, dt, ctx) {
           c.dwell -= dt;
           if (c.dwell <= 0) c.actSpot = null;
         }
+      }
+      /* He is at the television, and every so often something on a shelf
+         occurs to him. He goes and gets it, brings it back, and by the time
+         he is back he has no idea why he is holding it. */
+      if (c.act === 'TV' && !c.errand) {
+        c.errandT = (c.errandT || 30 + rng() * 40) - dt;
+        if (c.errandT <= 0 && !c.tape) {
+          const sh = SHELVES[rng.int(SHELVES.length)];
+          const b = sh.browse[rng.int(sh.browse.length)];
+          c.errand = { shelf: sh, spot: b, phase: 'GO' };
+          c.parked = false;
+          setDest(c, b.x, b.z, ctx);
+        }
+      }
+      if (c.errand) {
+        const E = c.errand;
+        if (E.phase === 'GO') {
+          if (step(c, dt, ctx)) {
+            c.tape = makeTape(E.shelf.genre, rng, { rewound: true });
+            c.tape.heldBy = c.id;
+            ctx.tookFromShelf(c);
+            ctx.stonerTook(c);
+            E.phase = 'BACK';
+            c.path = null; c.parked = false;
+          }
+          performAct(c, dt);
+          break;
+        }
+        // back to the screen, still holding it, no longer sure why
+        const home = ACT_SPOT[c.act];
+        if (!c.path && dist(c.x, c.z, home.x, home.z) > 0.4) setDest(c, home.x, home.z, ctx);
+        if (c.path) { step(c, dt, ctx); performAct(c, dt); break; }
+        c.errand = null;
+        c.errandT = 90 + rng() * 90;
+        c.parked = true;
       }
       // the performance itself, in the animation
       performAct(c, dt);
@@ -336,7 +390,17 @@ export function updateCustomer(c, dt, ctx) {
           B.seen++;
           const lastChance = B.seen >= B.visits;
           const keep = lastChance || rng() < 0.30 + B.seen * 0.22;
-          if (keep) {
+          if (keep && repelled(c, ctx)) {
+            /* They have picked something and they are not going anywhere
+               near the counter with THAT in the building. They hang back
+               and wait it out. */
+            B.phase = 'GOTO'; B.shelf = null; B.spot = null; B.t = 0; B.seen = 0;
+            c.path = null;
+            if (!c.stenchGripe || c.stenchGripe <= 0) {
+              c.stenchGripe = 12 + rng() * 12;
+              ctx.stenchHoldsOff(c);
+            }
+          } else if (keep) {
             c.anim.headPitch = 0;
             ctx.chose(c);
             c.state = CS.TO_COUNTER; c.path = null; c.timer = 0;
