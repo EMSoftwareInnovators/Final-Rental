@@ -137,7 +137,9 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
   const decoys = decoyCount(n);
   const overlap = decoyOverlap(n, keys.length);
   const schedule = [];
-  const windowEnd = length * 0.84;
+  /* People come in right up to closing. The rota used to stop at 84% of
+     the night, so the last stretch of every shift was an empty shop. */
+  const windowEnd = length * 0.97;
   for (let i = 0; i < count; i++) {
     const base = (i / count) * windowEnd;
     const t = Math.max(14, base + rng.range(-9, 14) - n * 0.6);

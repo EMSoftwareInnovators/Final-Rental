@@ -98,9 +98,20 @@ const moved = await ev(async () => {
 check('and the camera turns', moved > 0.05, `yaw moved ${moved.toFixed(3)}`);
 
 /* ---- now the part that was actually broken: the next night ---- */
+/* Run the night out. Midnight shuts the door rather than ending the shift,
+   so the shop has to empty and the tapes have to be away before a report
+   appears -- put the strays back as they turn up. */
 await ev(() => { window.__game.timeScale = 60; });
-for (let i = 0; i < 90; i++) {
+for (let i = 0; i < 260; i++) {
   if ((await state()).state === 'REPORT') break;
+  await ev(() => {
+    const g = window.__game;
+    if (g.dlg.node) g.dlg.cancel();
+    if (!g.closing) return;
+    g.player.held.length = 0; g.bin.length = 0;
+    g.counterSlots = g.counterSlots.map(() => null);
+    g.rewinder.tape = null;
+  });
   await wait(200);
 }
 await ev(() => { window.__game.timeScale = 1; });

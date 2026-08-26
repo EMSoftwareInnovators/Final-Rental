@@ -808,14 +808,26 @@ await ev(() => {
   g.killer.plan.appears = false; g.killer.phase = 'ABSENT';
 });
 let reached = false;
-for (let i = 0; i < 140; i++) {
-  const st = await ev(() => ({ s: window.__game.state, e: Math.round(window.__game.elapsed), n: window.__game.nightNo }));
+let sawClosing = false;
+for (let i = 0; i < 300; i++) {
+  const st = await ev(() => ({ s: window.__game.state, e: Math.round(window.__game.elapsed),
+    n: window.__game.nightNo, closing: window.__game.closing }));
+  if (st.closing) sawClosing = true;
   if (st.s === 'REPORT') { reached = true; break; }
   if (st.s === 'ENDING') break;
   // keep clearing any dialogue the customers open
   await ev(() => { const g = window.__game; if (g.dlg.node) g.dlg.cancel(); });
+  // and put away anything the shift left lying about, which closing waits on
+  await ev(() => {
+    const g = window.__game;
+    if (!g.closing) return;
+    g.player.held.length = 0; g.bin.length = 0;
+    g.counterSlots = g.counterSlots.map(() => null);
+    g.rewinder.tape = null;
+  });
   await wait(200);
 }
+check('midnight shuts the shop rather than ending the night on the spot', sawClosing);
 check('a quiet night runs to close and produces a report', reached);
 const rep = await ev(() => ({ stats: window.__game.stats, grade: window.__game.grade }));
 console.log('      ', JSON.stringify(rep.stats), rep.grade);

@@ -156,6 +156,9 @@ export class Game {
        you the night. */
     this.sim = 0;
     this.elapsed = 0;
+    this.closing = false;
+    this.closingT = 0;
+    this.walkInAt = 0;
     this.player = createPlayer();
     this.player.frozen = true;
 
@@ -633,15 +636,35 @@ export class Game {
 
     // ---- systems ----
     this.updateDoor(dt);
-    updatePlayer(this.player, dt, i, this.ctx);
-    this.updateRewinder(dt);
-    this.updateOfficer(dt);
-    this.spawnDue();
-    for (const c of this.customers) if (!c.hidden) updateCustomer(c, dt, this.ctx);
-    this.customers = this.customers.filter((c) => c.state !== CS.GONE);
-    updateKiller(this.killer, dt, this.ctx);
-    this.swingForKiller();
-    this.checkKillerProximity();
+    /* Everything that MOVES runs in sub-steps.
+
+       A frame's dt is capped at a tenth of a second and then multiplied by
+       timeScale, so a fast-forward hands the simulation whole seconds at a
+       time. Walking is integrated per step and arrival is "within 16cm of
+       the waypoint" -- give that a six second step and a customer covers
+       eight metres in one go, sails past the waypoint, gets pushed back off
+       a wall, and oscillates around the doorway forever without ever
+       arriving. A shop full of people who cannot find the exit is what that
+       looks like from the outside.
+
+       Input, the HUD and the interaction ray stay at one per frame: they
+       read edges, and running them per sub-step would fire every keypress
+       several times over. */
+    const SUB = 1 / 30;
+    let remain = dt;
+    while (remain > 0.0001) {
+      const h = Math.min(remain, SUB);
+      remain -= h;
+      updatePlayer(this.player, h, i, this.ctx);
+      this.updateRewinder(h);
+      this.updateOfficer(h);
+      this.spawnDue();
+      for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
+      this.customers = this.customers.filter((c) => c.state !== CS.GONE);
+      updateKiller(this.killer, h, this.ctx);
+      this.swingForKiller();
+      this.checkKillerProximity();
+    }
     this.updateObservation(dt);
     this.updateAtmosphere(dt);
 
@@ -656,7 +679,61 @@ export class Game {
     if (this.notesOpen) this.ui.showNotes(this.night.bulletin, this.player.lookTarget);
 
     // ---- night end ----
-    if (this.elapsed >= this.night.length && !holdClock && !talking) this.endNight();
+    this.updateClosing(dt, holdClock, talking);
+  }
+
+  /**
+   * Midnight, and what still has to happen before you can go home.
+   *
+   * The clock reaching the end of the shift used to end the night on the
+   * spot, mid-sentence, with three people in the queue and a tape still in
+   * the rewinder. It shuts the door instead: nobody else comes in, and the
+   * shift is not over until the last customer is out of the building one
+   * way or another and every tape is back in a run.
+   */
+  updateClosing(dt, holdClock, talking) {
+    if (this.elapsed < this.night.length || holdClock) return;
+
+    if (!this.closing) {
+      this.closing = true;
+      this.closingT = 0;
+      this.door.locked = true;
+      this.sound.chimeGood();
+      this.ui.toast(`Midnight. Door's shut.`, '');
+      this.ui.toast(`Everybody out, everything back on the shelves.`, '');
+    }
+    this.closingT += dt;
+
+    /* Everyone still inside is now on their way out. They finish what they
+       are doing -- a customer at the counter still gets served, and still
+       gets their change -- but nobody starts anything new, and the ones
+       still reading the back of a box put it down. */
+    for (const c of this.customers) {
+      if (c.hidden || c.state === CS.GONE || c.state === CS.LEAVING) continue;
+      if (!c._toldClosing) { c._toldClosing = true; this.ctx.hurry(c); }
+      const busy = c === this.speaking || c.awaitingChange
+        || c.state === CS.WAITING || c.state === CS.TO_COUNTER || c.state === CS.TALKING;
+      // Browsers go now. People mid-transaction get a fair while, then go too.
+      if (!busy || this.closingT > 150) {
+        if (c.tape && !c.checkedOut && c.script !== 'return') this.ctx.returnToShelf(c);
+        this.ctx.leave(c);
+      }
+    }
+
+    const left = this.customers.filter((c) => !c.hidden && c.state !== CS.GONE).length;
+    const strays = this.player.held.length + this.bin.length
+      + this.counterSlots.filter(Boolean).length + (this.rewinder.tape ? 1 : 0);
+
+    if (left || strays) {
+      const bits = [];
+      if (left) bits.push(`${left} still in the shop`);
+      if (strays) bits.push(`${strays} ${strays === 1 ? 'tape' : 'tapes'} not shelved`);
+      this.ui.setObjective(`CLOSING — ${bits.join(' · ')}`, this.closingT > 60);
+      return;
+    }
+    if (talking) return;
+    this.ui.setObjective('');
+    this.endNight();
   }
 
   /* Pausing used to run through DialogueRunner.cancel(), which threw the
@@ -933,6 +1010,8 @@ export class Game {
      Scheduled against the shop-floor clock, not the one over the door: the
      store does not stop having customers because a deputy is talking. */
   spawnDue() {
+    // Once the door is shut for the night nobody else comes in.
+    if (this.closing) return;
     for (const s of this.night.schedule) {
       if (s.spawned || this.sim < s.t) continue;
       s.spawned = true;
@@ -947,6 +1026,22 @@ export class Game {
       else app = sanitizeInnocent(rng, randomAppearance(rng), this.night.suspect, this.night.bulletin.keys);
       const c = createCustomer(rng, { app, intent: s.intent, wantGenre: s.genre });
       this.customers.push(c);
+    }
+    /* And when the rota runs dry, people keep turning up anyway, because a
+       video shop at half eleven on a Friday is not empty. The planned rota
+       is what the night is built around -- the decoys, the specials, the
+       one who might be him -- and this is the ordinary traffic on top of
+       it, right up to the moment the door is shut. */
+    this.walkInAt = this.walkInAt || 0;
+    if (this.officerDone && this.sim >= this.walkInAt
+      && this.night.schedule.every((s) => s.spawned)
+      && this.customers.length <= 4) {
+      const rng = this.rng;
+      this.walkInAt = this.sim + rng.range(16, 38);
+      const app = sanitizeInnocent(rng, randomAppearance(rng), this.night.suspect, this.night.bulletin.keys);
+      this.customers.push(createCustomer(rng, {
+        app, intent: rng.chance(0.42) ? 'RETURN' : 'RENT', wantGenre: rng.pick(GENRES),
+      }));
     }
   }
 
@@ -2002,9 +2097,18 @@ export class Game {
       get shiftClock() { return g.elapsed; },
       get doorLocked() { return g.door.locked; },
       get speaking() { return g.speaking; },
-      // A thumb latch lets anyone already inside leave. The deadbolt is only
-      // ever a problem for whoever is on the pavement.
-      doorPassable: (who) => !g.door.locked || (!!who && who.z > 0.15),
+      /* A thumb latch lets anyone already inside leave. The deadbolt is only
+         ever a problem for whoever is on the pavement.
+
+         The `leaving` half matters: testing position alone flips the answer
+         exactly at the threshold, so somebody on their way out could pass
+         while their feet were inside and was blocked the instant they
+         crossed it -- which pushed them back inside, where they could pass
+         again. At midnight, with the door bolted and the whole shop trying
+         to leave at once, that was a room full of people bouncing off the
+         doorway forever and a shift that never ended. Once you have been
+         told to go, the latch works wherever you are standing. */
+      doorPassable: (who) => !g.door.locked || (!!who && (who.z > 0.15 || who.leaving || who.exited)),
       /* The clerk does not leave. There is a shift on, the till is open and
          the tapes are his problem until midnight -- and letting the player
          wander into the street turned the back half of the map into a place
@@ -2034,6 +2138,13 @@ export class Game {
       openDoor: () => g.openDoorFor(),
       knock: (c) => { g.sound.knock(3); g.ui.toast(`Someone is knocking.`, ''); },
       lockedOut: (c) => {
+        /* Turning somebody away costs you -- unless it is past midnight and
+           the shop is shut, in which case it is not a mistake, it is the
+           end of the shift doing what it is for. */
+        if (g.closing) {
+          g.ui.toast(`${c.name} tried the door. Too late.`, '');
+          return;
+        }
         g.stats.turnedAway++;
         g.sound.chimeBad();
         g.ui.toast(`${c.name} found the door locked and left.`, 'bad');
