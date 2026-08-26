@@ -12,7 +12,7 @@ const server = spawn(process.execPath, ['serve.cjs'], { stdio: 'ignore', env: { 
 await new Promise((r) => setTimeout(r, 700));
 
 let failed = 0;
-for (const t of ['tools/uvtest.mjs', 'tools/menuwalk.mjs', 'tools/soak.mjs', 'tools/specials.mjs', 'tools/playthrough.mjs']) {
+for (const t of ['tools/uvtest.mjs', 'tools/menuwalk.mjs', 'tools/padmenu.mjs', 'tools/soak.mjs', 'tools/specials.mjs', 'tools/playthrough.mjs']) {
   console.log(`\n===== ${t} =====`);
   failed += await run(process.execPath, [t]);
 }

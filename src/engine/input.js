@@ -9,9 +9,16 @@
    draw a keyboard cap, an Xbox face button or a PlayStation shape.
    ============================================================ */
 
-/** Standard-mapping button index -> the keys it stands in for. */
+/**
+ * Standard-mapping button index -> the keys it stands in for.
+ *
+ * The bottom face button confirms and the right one goes back, which is
+ * the same physical button on both families: A / cross to select, B /
+ * circle to back out. Both sit at indices 0 and 1 under the standard
+ * mapping, so one table serves both.
+ */
 const PAD_KEYS = {
-  0: ['PadA', 'KeyE', 'Enter'],          // A / cross      -- interact, confirm
+  0: ['PadA', 'KeyE', 'Enter', 'Space'], // A / cross      -- interact, confirm
   1: ['PadB', 'Escape'],                 // B / circle     -- back, pause
   2: ['PadX', 'KeyG'],                   // X / square     -- put it down
   3: ['PadY', 'Tab'],                    // Y / triangle   -- the notepad
@@ -30,6 +37,14 @@ const PAD_KEYS = {
 };
 
 const DEAD = 0.22;
+
+/* Menu navigation off the stick. A stick is not a key, so it gets an
+   explicit edge: push past NAV_ON to fire, fall back under NAV_OFF before
+   it can fire again, and hold it to repeat at a readable rate. */
+const NAV_ON = 0.55;
+const NAV_OFF = 0.35;
+const NAV_DELAY = 420;    // ms before a held direction starts repeating
+const NAV_REPEAT = 150;   // ms between repeats after that
 
 /** Which family of button art a pad wants, from whatever it calls itself. */
 export function schemeFor(id) {
@@ -72,6 +87,10 @@ export class Input {
     this.padId = '';
     this._padIndex = -1;
     this._padDown = new Set();
+    /** Per-direction stick-nav state: held flag and next-fire timestamp. */
+    this._nav = { u: 0, d: 0, l: 0, r: 0 };
+    /** What the pad calls itself and how it says it is laid out. */
+    this.padMapping = '';
     this._bind();
   }
 
@@ -95,6 +114,7 @@ export class Input {
     addEventListener('blur', () => {
       this.down.clear(); this.mouse = [false, false, false];
       this._padDown.clear(); this.moveX = 0; this.moveZ = 0; this.lookX = 0; this.lookY = 0;
+      this._nav.u = this._nav.d = this._nav.l = this._nav.r = 0;
     });
 
     document.addEventListener('pointerlockchange', () => {
@@ -149,10 +169,15 @@ export class Input {
       const t = (a - DEAD) / (1 - DEAD);
       return Math.sign(v) * t * t;              // squared, for fine control near centre
     };
-    const lx = curve(ax[0] || 0), ly = curve(ax[1] || 0);
+    const rawX = ax[0] || 0, rawY = ax[1] || 0;
+    const lx = curve(rawX), ly = curve(rawY);
     const rx = curve(ax[2] || 0), ry = curve(ax[3] || 0);
     if (lx || ly) { this.moveX = lx; this.moveZ = -ly; used = true; }
     if (rx || ry) { this.lookX = rx; this.lookY = ry; used = true; }
+    // The left stick drives menus as well as the player. Feeding it in as
+    // arrow-key edges means every menu that already reads the keyboard gets
+    // stick navigation without knowing a stick exists.
+    if (this._stickNav(rawX, rawY)) used = true;
 
     const btns = pad.buttons || [];
     for (let i = 0; i < btns.length; i++) {
@@ -174,10 +199,58 @@ export class Input {
       }
     }
     if (this._padDown.has('PadLB') || this._padDown.has('PadL3')) this.run = true;
+    /* Some pads report the D-pad as a hat switch on a ninth axis instead of
+       as four buttons. Fold that in so those pads can drive a menu too. */
+    if (ax.length > 9) {
+      const hat = ax[9];
+      if (hat >= -1.2 && hat <= 1.2) {
+        const HAT = [['PadUp', 'ArrowUp'], ['PadRight', 'ArrowRight'],
+          ['PadDown', 'ArrowDown'], ['PadLeft', 'ArrowLeft']];
+        // -1 is up, and it sweeps clockwise through the eight positions.
+        const oct = Math.round((hat + 1) * 3.5);
+        const live = hat > 1.05 ? -1 : oct;
+        HAT.forEach((keys, q) => {
+          const on = live >= 0 && (live === q * 2 || live === (q * 2 + 7) % 8 || live === (q * 2 + 1) % 8);
+          const id = 'Hat' + keys[0];
+          if (on) {
+            used = true;
+            if (!this._padDown.has(id)) { this._padDown.add(id); for (const k of keys) this.pressed.add(k); }
+          } else this._padDown.delete(id);
+        });
+      }
+    }
+
     if (used) {
       this.scheme = schemeFor(pad.id);
       this.padId = pad.id;
+      this.padMapping = pad.mapping || '';
     }
+  }
+
+  /**
+   * Turn stick deflection into repeating arrow-key edges.
+   *
+   * These go into `pressed` only, never `down`: a menu asks `hit()` and
+   * gets one press per push, while the analog movement values the player
+   * uses stay untouched by it.
+   */
+  _stickNav(x, y) {
+    const now = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    const DIRS = [
+      ['u', -y, 'ArrowUp'], ['d', y, 'ArrowDown'],
+      ['l', -x, 'ArrowLeft'], ['r', x, 'ArrowRight'],
+    ];
+    let any = false;
+    for (const [id, v, key] of DIRS) {
+      if (v >= NAV_ON) {
+        any = true;
+        if (!this._nav[id]) { this._nav[id] = now + NAV_DELAY; this.pressed.add(key); }
+        else if (now >= this._nav[id]) { this._nav[id] = now + NAV_REPEAT; this.pressed.add(key); }
+      } else if (v < NAV_OFF) {
+        this._nav[id] = 0;
+      }
+    }
+    return any;
   }
 
   requestLock() { if (!this.locked && this.target.requestPointerLock) this.target.requestPointerLock(); }

@@ -27,6 +27,8 @@ const GLYPHS = {
   run:       ['SHIFT',      ['LB', 'x-b'],           ['L1', 'p-o']],
   up:        ['\u2191',     ['\u2191', 'x-d'],       ['\u2191', 'p-d']],
   down:      ['\u2193',     ['\u2193', 'x-d'],       ['\u2193', 'p-d']],
+  left:      ['\u2190',     ['\u2190', 'x-d'],       ['\u2190', 'p-d']],
+  right:     ['\u2192',     ['\u2192', 'x-d'],       ['\u2192', 'p-d']],
   move:      ['WASD',       ['\u25CE L', 'x-d'],     ['\u25CE L', 'p-d']],
   look:      ['MOUSE',      ['\u25CE R', 'x-d'],     ['\u25CE R', 'p-d']],
 };
@@ -346,7 +348,8 @@ export function optionsHtml(o) {
     <li class="opt">Tape damage &nbsp; ${bar(o.grain)}${o.vhs ? '' : ' <span class="quiet">(tape off)</span>'}</li>
     <li class="opt">Back</li>
   </ul>
-  <p class="pad-foot">LEFT / RIGHT adjust &nbsp;&middot;&nbsp; [E] select</p>`;
+  <p class="pad-foot">${glyph('left')}${glyph('right')} adjust &nbsp;&middot;&nbsp; ${glyph('confirm')} select &nbsp;&middot;&nbsp; ${glyph('back')} back</p>
+  <p class="pad-foot quiet">${o.pad ? `Controller: ${escape(o.pad)}` : 'No controller detected'}</p>`;
 }
 
 export function reportHtml(night, stats, grade, next) {

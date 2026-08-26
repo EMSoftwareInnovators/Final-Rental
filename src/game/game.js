@@ -260,6 +260,11 @@ export class Game {
     requestAnimationFrame(this.frame);
   }
 
+  /** Run something for its noise only. If it fails, the game carries on. */
+  quietly(fn) {
+    try { fn(); } catch (err) { this._audioDead = err; }
+  }
+
   /** Redraw whatever panel is open so its button art matches the new device. */
   onSchemeChanged() {
     if (this.state === ST.HOWTO) this.ui.showPanel(howToHtml());
@@ -300,11 +305,14 @@ export class Game {
     const i = this.input;
     const items = this.titleItems;
     const n = items.length;
-    if (i.hit('ArrowUp', 'KeyW')) { this.menuSel = (this.menuSel + n - 1) % n; this.sound.init(); this.sound.uiMove(); }
-    if (i.hit('ArrowDown', 'KeyS')) { this.menuSel = (this.menuSel + 1) % n; this.sound.init(); this.sound.uiMove(); }
+    if (i.hit('ArrowUp', 'KeyW')) { this.menuSel = (this.menuSel + n - 1) % n; this.quietly(() => { this.sound.init(); this.sound.uiMove(); }); }
+    if (i.hit('ArrowDown', 'KeyS')) { this.menuSel = (this.menuSel + 1) % n; this.quietly(() => { this.sound.init(); this.sound.uiMove(); }); }
     this.ui.titleSelect(this.menuSel);
     if (i.hit('Enter', 'KeyE', 'Space') || i.mousePressed[0]) {
-      this.sound.init(); this.sound.resume(); this.sound.uiSelect();
+      // Bringing the mixer up is the first thing a menu press does, and on a
+      // pad there has been no click or keystroke to unlock audio with. If the
+      // browser refuses, that is a silent title screen -- not a dead one.
+      this.quietly(() => { this.sound.init(); this.sound.resume(); this.sound.uiSelect(); });
       items[this.menuSel]();
     }
   }
@@ -314,6 +322,8 @@ export class Game {
       sens: this.opts.sens, invert: this.opts.invert, vol: this.opts.vol,
       resLabel: RES[this.opts.res][2], snap: this.opts.snap, grain: this.opts.grain,
       vhs: this.opts.vhs,
+      // Named here so a pad that behaves oddly can at least be identified.
+      pad: this.input.padId,
     };
   }
 
@@ -556,7 +566,7 @@ export class Game {
     this.ui.panelSelect(this.pauseSel);
     if (i.hit('Escape')) { this.resume(); return; }
     if (i.hit('Enter', 'KeyE', 'Space')) {
-      this.sound.uiSelect();
+      this.quietly(() => this.sound.uiSelect());
       if (this.pauseSel === 0) this.resume();
       else if (this.pauseSel === 1) { this.state = ST.OPTIONS; this.optSel = 0; this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(0); this._fromPause = true; }
       else {
