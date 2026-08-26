@@ -123,6 +123,9 @@ export function makeSpecial(rng, sp) {
   c.blocksLine = !!sp.blocksLine;
   c.asked = 0;                 // how many times you have asked them to go
   c.actTimer = 0;
+  // He arrives with it under one arm and does not put it down until he
+  // reaches his spot.
+  if (sp.act === 'DANCE') { c.carrying = 'BOOMBOX'; c.rigUp = false; c.setupT = 0; }
   // All of them run their own tree rather than the ordinary rent/return one.
   c.script = 'special';
   // Only the man who wandered in with somebody else's tape is carrying
@@ -249,6 +252,14 @@ export function updateCustomer(c, dt, ctx) {
         }
         c.yaw = angleTowards(c.yaw, spot.yaw, dt * 3);
         c.moveSpeed = 0;
+        /* He does not start dancing the moment he arrives. He is carrying
+           the thing: he has to crouch, put it down, find the switch, and
+           stand back up. The music starts when it starts, not before. */
+        if (c.act === 'DANCE' && !c.rigUp) {
+          c.setupT = (c.setupT || 0) + dt;
+          if (c.setupT > 2.6) { c.rigUp = true; ctx.boomboxDown(c); }
+          break;
+        }
       } else {
         // no fixed spot: drift along the shelves indefinitely
         if (!c.path) {
@@ -479,6 +490,16 @@ function performAct(c, dt) {
   const t = c.actPhase;
   switch (c.act) {
     case 'DANCE':
+      if (!c.rigUp) {
+        // crouched over it, both hands down, working the switch
+        const k = Math.min(1, (c.setupT || 0) / 0.5);
+        a.bob = -0.16 * k;
+        a.lean = 0.42 * k;
+        a.armL = 0.9 * k; a.armR = 0.9 * k;
+        a.headPitch = 0.5 * k;
+        a.armLz = 0.2 * k; a.armRz = -0.2 * k;
+        break;
+      }
       a.bob = Math.abs(Math.sin(t * 5.2)) * 0.09;
       a.lean = Math.sin(t * 2.6) * 0.16;
       a.armL = -1.5 + Math.sin(t * 5.2) * 1.1;

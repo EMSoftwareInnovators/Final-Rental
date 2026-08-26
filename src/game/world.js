@@ -285,8 +285,36 @@ export function buildWorld(T) {
   }
   const cashMesh = cashB.build();
 
+  /* The boombox. Built as its own mesh because it is not part of the shop:
+     a man carries it in, puts it down, and carries it out again. */
+  const boomB = new MeshBuilder();
+  boomB.light = () => 1;
+  {
+    const HW = 0.26, HH = 0.155, HD = 0.095;
+    boomB.box(-HW, 0, -HD, HW, HH * 2, HD, {
+      all: { tex: T.boomShell, uv: [0, 0, 64, 40] },
+      nz: { tex: T.boomFront, uv: [0, 0, 64, 64], sub: [3, 2, false] },
+      py: { tex: T.boomTop, uv: [0, 0, 64, 32], sub: [3, 1, false] },
+      ny: null,
+    });
+    // carry handle, up over the top
+    boomB.box(-0.10, HH * 2, -0.012, 0.10, HH * 2 + 0.022, 0.012,
+      { all: { tex: T.boomShell, uv: [0, 0, 32, 8] } });
+    boomB.box(-0.115, HH * 2 - 0.05, -0.012, -0.092, HH * 2 + 0.01, 0.012,
+      { all: { tex: T.boomShell, uv: [0, 0, 8, 16] } });
+    boomB.box(0.092, HH * 2 - 0.05, -0.012, 0.115, HH * 2 + 0.01, 0.012,
+      { all: { tex: T.boomShell, uv: [0, 0, 8, 16] } });
+    // little rubber feet
+    boomB.box(-HW + 0.03, -0.016, -HD + 0.02, -HW + 0.09, 0, HD - 0.02,
+      { all: { tex: T.boomShell, uv: [0, 0, 12, 6] } });
+    boomB.box(HW - 0.09, -0.016, -HD + 0.02, HW - 0.03, 0, HD - 0.02,
+      { all: { tex: T.boomShell, uv: [0, 0, 12, 6] } });
+  }
+  const boomMesh = boomB.build();
+
   return {
     mesh,
+    boomMesh,
     tvMesh, tvPos, tvTextures,
     cashMesh,
     doorOpenMesh: doorLeaf(T.doorGlass),

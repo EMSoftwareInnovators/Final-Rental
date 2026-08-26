@@ -173,6 +173,8 @@ export class Sound {
    */
   update(dt) {
     if (!this.ready) return;
+    // Keep the boombox's loop fed a beat or two ahead of the audio clock.
+    if (this.boom) this._boomTick();
     this.tension += (this._tensionTarget - this.tension) * Math.min(1, dt * 1.2);
     const t = this.t;
 
@@ -447,6 +449,172 @@ export class Sound {
   tvHiss(pan = 0) { this.noise({ filter: 'highpass', freq: 3200, gain: 0.03, a: 0.4, d: 0.1, s: 1, sT: 2.5, r: 0.6, pan }); }
 
   /** Distance/direction attenuation helper for world sounds. */
+  /* ============================================================
+     THE BOOMBOX
+
+     A man brings his own music in, puts it on the floor and turns it up.
+     It is a four bar loop at 96 to the minute -- kick, snare, hats, a bass
+     line and a two-note stab -- scheduled a beat or two ahead off the audio
+     clock rather than the frame clock, so it does not stutter when the
+     renderer does.
+
+     It runs on its own path into the master with a cheap-speaker lowpass
+     across it. It deliberately does not go through the effects limiter:
+     the whole point of the man is that he is too loud, and a limiter would
+     politely turn him down every time somebody took a step.
+     ============================================================ */
+  boomboxStart() {
+    this.init();
+    if (!this.ready || this.boom) return;
+    const ctx = this.ctx;
+    const out = ctx.createGain(); out.gain.value = 0.0001;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 2600; lp.Q.value = 0.7;
+    // a little box resonance, so it sounds like plastic on a carpet
+    const peak = ctx.createBiquadFilter();
+    peak.type = 'peaking'; peak.frequency.value = 180; peak.Q.value = 1.1; peak.gain.value = 5;
+    const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    lp.connect(peak).connect(out);
+    if (pan) out.connect(pan).connect(this.master); else out.connect(this.master);
+    this.boom = { out, lp, peak, pan, bus: lp, next: ctx.currentTime + 0.08, step: 0, vol: 0.34 };
+  }
+
+  boomboxStop() {
+    const b = this.boom;
+    if (!b) return;
+    const t = this.ctx.currentTime;
+    b.out.gain.cancelScheduledValues(t);
+    b.out.gain.setValueAtTime(Math.max(0.0001, b.out.gain.value), t);
+    b.out.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+    const dead = b;
+    setTimeout(() => { try { dead.out.disconnect(); } catch (e) { /* already gone */ } }, 600);
+    this.boom = null;
+  }
+
+  /** Where it is, relative to the listener. Called every frame by the game. */
+  boomboxAt(gain, pan) {
+    const b = this.boom;
+    if (!b || this.muted) return;
+    const t = this.ctx.currentTime;
+    const want = Math.max(0.0001, gain * b.vol);
+    b.out.gain.setTargetAtTime(want, t, 0.08);
+    if (b.pan) b.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, pan)), t, 0.08);
+    // it gets duller and boomier the further off it is
+    b.lp.frequency.setTargetAtTime(1100 + gain * 2200, t, 0.15);
+  }
+
+  /** Schedule whatever falls in the next fraction of a second. */
+  _boomTick() {
+    const b = this.boom;
+    if (!b || this.muted) return;
+    const ctx = this.ctx;
+    const SPB = 60 / 96;                 // 96 beats to the minute
+    const SIXTEENTH = SPB / 4;
+    const AHEAD = 0.35;
+    while (b.next < ctx.currentTime + AHEAD) {
+      const t = b.next;
+      const s = b.step % 64;             // four bars of sixteenths
+      const beat = Math.floor(s / 4) % 4;
+      const sub = s % 4;
+
+      // kick: one, the and of two, and a pickup at the end of the bar
+      if (sub === 0 && (beat === 0 || beat === 2)) this._boomKick(t);
+      if (s % 16 === 10) this._boomKick(t, 0.7);
+      if (s === 62) this._boomKick(t, 0.55);
+      // snare on two and four
+      if (sub === 0 && (beat === 1 || beat === 3)) this._boomSnare(t);
+      // hats on every eighth, with an open one at the end of each bar
+      if (s % 2 === 0) this._boomHat(t, s % 16 === 14 ? 0.16 : 0.055, s % 16 === 14);
+      // bass: a five-note figure that moves every bar
+      const BASS = [55, 55, 73.42, 55, 61.74, 55, 49, 55];
+      if (s % 4 === 0) {
+        const bar = Math.floor(s / 16);
+        this._boomBass(t, BASS[(Math.floor(s / 4) + bar) % BASS.length], SPB * 0.9);
+      }
+      // a two-note stab off the beat, only in the second half of the loop
+      if (s >= 32 && (s % 16 === 6 || s % 16 === 12)) {
+        this._boomStab(t, s % 16 === 6 ? 293.66 : 349.23);
+      }
+      b.next += SIXTEENTH;
+      b.step++;
+    }
+  }
+
+  _boomKick(t, amp = 1) {
+    const ctx = this.ctx, b = this.boom;
+    const o = ctx.createOscillator(); o.type = 'sine';
+    o.frequency.setValueAtTime(120, t);
+    o.frequency.exponentialRampToValueAtTime(42, t + 0.09);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9 * amp, t + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
+    o.connect(g).connect(b.bus); o.start(t); o.stop(t + 0.34);
+  }
+
+  _boomSnare(t) {
+    const ctx = this.ctx, b = this.boom;
+    const n = ctx.createBufferSource(); n.buffer = this.noiseBuf; n.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 1750; f.Q.value = 0.9;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.55, t + 0.004);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+    n.connect(f).connect(g).connect(b.bus); n.start(t); n.stop(t + 0.22);
+    // a bit of body under it
+    const o = ctx.createOscillator(); o.type = 'triangle';
+    o.frequency.setValueAtTime(190, t);
+    const g2 = ctx.createGain();
+    g2.gain.setValueAtTime(0.0001, t);
+    g2.gain.exponentialRampToValueAtTime(0.3, t + 0.004);
+    g2.gain.exponentialRampToValueAtTime(0.0001, t + 0.10);
+    o.connect(g2).connect(b.bus); o.start(t); o.stop(t + 0.13);
+  }
+
+  _boomHat(t, amp, open) {
+    const ctx = this.ctx, b = this.boom;
+    const n = ctx.createBufferSource(); n.buffer = this.noiseBuf; n.loop = true;
+    n.playbackRate.value = 2.4;
+    const f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = 7200;
+    const g = ctx.createGain();
+    const len = open ? 0.20 : 0.045;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(Math.max(0.002, amp), t + 0.003);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    n.connect(f).connect(g).connect(b.bus); n.start(t); n.stop(t + len + 0.03);
+  }
+
+  _boomBass(t, freq, len) {
+    const ctx = this.ctx, b = this.boom;
+    const o = ctx.createOscillator(); o.type = 'sawtooth';
+    o.frequency.setValueAtTime(freq, t);
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass'; f.Q.value = 6;
+    f.frequency.setValueAtTime(320, t);
+    f.frequency.exponentialRampToValueAtTime(110, t + len * 0.8);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.42, t + 0.012);
+    g.gain.setValueAtTime(0.42, t + len * 0.6);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    o.connect(f).connect(g).connect(b.bus); o.start(t); o.stop(t + len + 0.04);
+  }
+
+  _boomStab(t, freq) {
+    const ctx = this.ctx, b = this.boom;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.20, t + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.26);
+    for (const [mult, detune] of [[1, -7], [1, 7], [1.5, 4]]) {
+      const o = ctx.createOscillator(); o.type = 'square';
+      o.frequency.value = freq * mult; o.detune.value = detune;
+      o.connect(g); o.start(t); o.stop(t + 0.30);
+    }
+    const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 2400;
+    g.connect(f).connect(b.bus);
+  }
+
   spatial(px, pz, yaw, x, z, maxDist = 12) {
     const dx = x - px, dz = z - pz;
     const d = Math.hypot(dx, dz);

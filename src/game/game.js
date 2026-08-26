@@ -159,6 +159,8 @@ export class Game {
     this.closing = false;
     this.closingT = 0;
     this.walkInAt = 0;
+    this.boombox = null;
+    this.sound.boomboxStop();
     this.player = createPlayer();
     this.player.frozen = true;
 
@@ -658,15 +660,18 @@ export class Game {
       updatePlayer(this.player, h, i, this.ctx);
       this.updateRewinder(h);
       this.updateOfficer(h);
-      this.spawnDue();
       for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
       this.customers = this.customers.filter((c) => c.state !== CS.GONE);
       updateKiller(this.killer, h, this.ctx);
       this.swingForKiller();
       this.checkKillerProximity();
     }
+    // Once a frame, not once a sub-step: this decides whether somebody new
+    // walks in, which is not something to integrate thirty times over.
+    this.spawnDue();
     this.updateObservation(dt);
     this.updateAtmosphere(dt);
+    this.updateBoomboxAudio();
 
     // ---- interaction ----
     if (!talking) this.updateInteraction();
@@ -1034,7 +1039,7 @@ export class Game {
        it, right up to the moment the door is shut. */
     this.walkInAt = this.walkInAt || 0;
     if (this.officerDone && this.sim >= this.walkInAt
-      && this.night.schedule.every((s) => s.spawned)
+      && this.night.schedule.length && this.night.schedule.every((s) => s.spawned)
       && this.customers.length <= 4) {
       const rng = this.rng;
       this.walkInAt = this.sim + rng.range(16, 38);
@@ -2004,6 +2009,7 @@ export class Game {
     if (this.rewinder && this.rewinder.tape) {
       this.drawTape(this.rewinder.tape, 11.88, PROPS.rewinder.y1 + 0.02, 1.58, 0, Math.PI / 2);
     }
+    this.drawBoombox();
 
     // ---- people ----
     for (const c of this.people()) {
@@ -2055,6 +2061,37 @@ export class Game {
     // the death shot still gets to wreck the picture; without the tape it
     // wrecks it the way a console losing sync would, not the way a tape does
     this.post.render(rz.color, death ? Object.assign(base, death, { dt, vhs: tape }) : base);
+  }
+
+  /** The boombox on the floor, and the same thing under his arm. */
+  drawBoombox() {
+    const M = this._mats;
+    const b = this.boombox;
+    if (b) {
+      setPosYaw(M.m, b.x, 0, b.z, b.yaw);
+      this.raster.drawMesh(this.world.boomMesh, M.m,
+        { shade: lightAt(b.x, 0.3, b.z) * this.lights });
+    }
+    for (const c of this.customers) {
+      if (c.hidden || c.carrying !== 'BOOMBOX') continue;
+      // carried low against the hip, tucked under the arm
+      const hs = c.app.height.scale;
+      const lx = 0.30 * c.app.build.w * hs, ly = 0.78 * hs, lz = 0.06 * hs;
+      const cy = Math.cos(c.yaw), sy = Math.sin(c.yaw);
+      setPosYaw(M.m, c.x + lx * cy + lz * sy, ly, c.z - lx * sy + lz * cy, c.yaw + 0.35);
+      this.raster.drawMesh(this.world.boomMesh, M.m,
+        { shade: lightAt(c.x, 0.9, c.z) * this.lights });
+    }
+  }
+
+  /** Where the music is coming from, from where the player is standing. */
+  updateBoomboxAudio() {
+    const b = this.boombox;
+    if (!b) return;
+    const p = this.player;
+    const s = this.sound.spatial(p.x, p.z, p.yaw, b.x, b.z, 16);
+    // it is a loud machine in a small shop: audible everywhere, just duller
+    this.sound.boomboxAt(0.32 + s.gain * 0.68, s.pan);
   }
 
   drawTape(t, x, y, z, yaw, pitch) {
@@ -2177,6 +2214,26 @@ export class Game {
         c.speed *= 1.12;
       },
 
+      /* He puts it down, finds the switch, and the shop is his. */
+      boomboxDown: (c) => {
+        const yaw = c.yaw + Math.PI;
+        g.boombox = {
+          x: c.x + Math.sin(c.yaw) * 0.34,
+          z: c.z + Math.cos(c.yaw) * 0.34,
+          yaw, owner: c.id,
+        };
+        c.carrying = null;
+        g.sound.boomboxStart();
+        g.ui.toast(`${c.name} sets a boombox down and turns it up.`, 'bad');
+      },
+      /** He picks it up again on his way out, and the shop goes quiet. */
+      boomboxUp: (c) => {
+        if (!g.boombox || (c && g.boombox.owner !== c.id)) return;
+        g.boombox = null;
+        g.sound.boomboxStop();
+        if (c) c.carrying = 'BOOMBOX';
+      },
+
       /* The rest of the room reacting to whoever is ruining it. Only people
          who are actually in the shop and can actually perceive it. */
       nuisanceGripe: (c) => {
@@ -2207,6 +2264,7 @@ export class Game {
         g.ui.toast(`${c.name} has lost patience.`, 'bad');
       },
       storm: (c) => {
+        if (g.boombox && g.boombox.owner === c.id) g.ctx.boomboxUp(c);
         g.stats.stormedOut++;
         c.leaving = true; c.rushing = true; c.state = CS.LEAVING; c.path = null;
         g.releaseCounterSpot(c);
@@ -2214,6 +2272,8 @@ export class Game {
         g.ui.toast(`${c.name} walked out.`, 'bad');
       },
       leave: (c) => {
+        // Whatever he brought in, he takes back out.
+        if (g.boombox && g.boombox.owner === c.id) g.ctx.boomboxUp(c);
         // Not while you are holding their change. They go and stand at the
         // window until the drawer opens, and get angry about it in their
         // own time -- which is the player's failure to make, not a line of

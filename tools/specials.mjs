@@ -293,6 +293,58 @@ check('you can take a special on wherever they are standing',
 check('but an ordinary customer still has to be at the counter to be served',
   !reach.normalSells, `"${reach.normal.slice(0, 44)}"`);
 
+/* ---------- 4a2. the man who brings his own music ---------- */
+const boom = await ev(async () => {
+  const g = window.__game;
+  g.customers.length = 0;
+  // An earlier check put the whole roster in the shop, him included, so
+  // clear whatever he left playing before watching him do it properly.
+  g.boombox = null;
+  g.sound.boomboxStop();
+  g.sound.muted = false;                 // the whole point of him is the noise
+  g.sound.init();
+  const sp = window.__specials.specialById('BOOMBOX');
+  const c = window.__cust.makeSpecial(g.rng, sp);
+  g.customers.push(c);
+  const seen = [];
+  let musicWhileCarrying = false;
+  g.timeScale = 8;
+  for (let i = 0; i < 90; i++) {
+    await new Promise((r) => requestAnimationFrame(r));
+    seen.push(`${c.state}/${c.carrying || '-'}/${c.rigUp ? 'up' : '-'}/${g.boombox ? 'down' : '-'}`);
+    if (c.carrying === 'BOOMBOX' && g.sound.boom) musicWhileCarrying = true;
+    if (g.boombox && c.rigUp) break;
+  }
+  const playing = !!g.sound.boom;
+  // it is coming from where he put it, not from the player's head
+  g.player.x = 1.0; g.player.z = 9.0;
+  g.updateBoomboxAudio();
+  const far = g.sound.boom ? g.sound.boom.out.gain.value : -1;
+  g.player.x = g.boombox.x; g.player.z = g.boombox.z + 0.4;
+  g.updateBoomboxAudio();
+  await new Promise((r) => setTimeout(r, 300));
+  const near = g.sound.boom ? g.sound.boom.out.gain.value : -1;
+  // and he takes it with him
+  g.ctx.leave(c);
+  const afterLeave = { box: !!g.boombox, playing: !!g.sound.boom, carrying: c.carrying };
+  g.timeScale = 1;
+  g.sound.muted = true;
+  g.customers.length = 0;
+  return { seen: [...new Set(seen)], playing, musicWhileCarrying, far, near, afterLeave };
+});
+check('he walks in carrying it', boom.seen.some((s) => /ENTERING\/BOOMBOX/.test(s)));
+check('and it is silent until he has put it down', !boom.musicWhileCarrying);
+check('he sets it down and sets it up before he starts dancing',
+  boom.seen.some((s) => /ACTING\/BOOMBOX\/-\/-/.test(s))
+  && boom.seen.some((s) => /ACTING\/-\/up\/down/.test(s)),
+  boom.seen.join(' | '));
+check('the music is running', boom.playing === true);
+check('and it is coming from the machine, not from your head',
+  boom.near > boom.far && boom.far >= 0,
+  `${boom.far.toFixed(3)} across the shop, ${boom.near.toFixed(3)} standing over it`);
+check('he takes it with him when he goes, and the shop goes quiet',
+  !boom.afterLeave.box && !boom.afterLeave.playing && boom.afterLeave.carrying === 'BOOMBOX');
+
 /* ---------- 4b. the ones with a wrong idea about the shop ---------- */
 const prem = await ev(() => {
   const D = window.__dlg;

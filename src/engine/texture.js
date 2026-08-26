@@ -712,6 +712,50 @@ export function buildTextures() {
   /* -------- popcorn cart, built from parts --------
      A red-and-gold concession cart: enamelled base, a glass case with a
      kettle hanging in it, a heap of popped corn, and a lit marquee.     */
+  /* ---- the boombox ----
+     Black plastic and a lot of silver: two big speaker grilles, a deck in
+     the middle and a row of sliders. It has to read from across the shop,
+     so the grilles are high contrast and the badge is bright. */
+  T.boomShell = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#1d1e21', w, h);
+    g.fillStyle = 'rgba(255,255,255,.09)'; g.fillRect(0, 0, w, 3);
+    g.fillStyle = 'rgba(0,0,0,.40)'; g.fillRect(0, h - 5, w, 5);
+    g.fillStyle = '#2a2c30'; g.fillRect(3, 6, w - 6, h - 14);
+    noise(g, w, h, 5); grime(g, w, h, 0.14);
+  });
+  T.boomFront = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#191a1d', w, h);
+    // two speaker grilles
+    const grille = (cx) => {
+      g.fillStyle = '#0d0e10';
+      g.beginPath(); g.arc(cx, 34, 13, 0, 7); g.fill();
+      g.strokeStyle = '#4a4d53'; g.lineWidth = 1;
+      for (let r = 3; r <= 12; r += 3) { g.beginPath(); g.arc(cx, 34, r, 0, 7); g.stroke(); }
+      g.fillStyle = '#5c6068'; g.beginPath(); g.arc(cx, 34, 2.5, 0, 7); g.fill();
+    };
+    grille(14); grille(50);
+    // the deck between them
+    g.fillStyle = '#26282c'; g.fillRect(25, 20, 14, 20);
+    g.fillStyle = '#0c0d0f'; g.fillRect(27, 23, 10, 11);
+    g.fillStyle = '#8a8f98'; g.fillRect(27, 36, 10, 2);
+    // sliders and a badge
+    g.fillStyle = '#33363b'; g.fillRect(24, 44, 16, 12);
+    g.fillStyle = '#9aa0aa';
+    for (let i = 0; i < 4; i++) g.fillRect(26 + i * 3.6, 46, 1.6, 8);
+    g.fillStyle = '#c9a227'; g.fillRect(22, 6, 20, 5);
+    g.fillStyle = '#141518'; g.font = 'bold 5px "Courier New",monospace';
+    g.textAlign = 'center'; g.fillText('STEREO', 32, 10.2);
+    g.fillStyle = '#d24b2a'; g.fillRect(44, 47, 4, 4);      // the power lamp
+    noise(g, w, h, 4); grime(g, w, h, 0.12);
+  });
+  T.boomTop = makeTex(64, 32, (g, w, h) => {
+    fill(g, '#212327', w, h);
+    g.fillStyle = '#17181b'; g.fillRect(6, 6, w - 12, h - 12);
+    g.fillStyle = '#3c4046';
+    for (let i = 0; i < 5; i++) g.fillRect(12 + i * 9, 11, 5, 3);
+    noise(g, w, h, 4);
+  });
+
   T.popRed = makeTex(64, 64, (g, w, h) => {           // enamelled panels
     fill(g, '#9e2b1c', w, h);
     g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(0, 0, w, 6);
