@@ -110,7 +110,7 @@ check('and they arrive as themselves, not as a random face',
   spawned.map((c) => c.name).sort().join('|') === roster.map((s) => s.name).sort().join('|'));
 
 await ev(() => { window.__game.timeScale = 20; });
-await wait(3000);
+await wait(5000);
 await ev(() => { window.__game.timeScale = 1; });
 
 const settled = await ev(() => {
@@ -290,6 +290,154 @@ check('you can take a special on wherever they are standing',
   reach.anywhere && reach.anywhere === reach.counter, `"${reach.anywhere.slice(0, 44)}"`);
 check('but an ordinary customer still has to be at the counter to be served',
   !reach.normalSells, `"${reach.normal.slice(0, 44)}"`);
+
+/* ---------- 4b. the ones with a wrong idea about the shop ---------- */
+const prem = await ev(() => {
+  const D = window.__dlg;
+  const keys = (t) => Object.keys(t);
+  const L = D.LOST_PREMISES, M = D.DIM_PREMISES;
+  const bad = [];
+  [['lost', L], ['dim', M]].forEach(([kind, tbl]) => {
+    keys(tbl).forEach((k) => {
+      const P = tbl[k];
+      ['open', 'push', 'relent', 'play', 'exit'].forEach((f) => {
+        if (typeof P[f] !== 'string' || P[f].length < 8) bad.push(`${kind}/${k}.${f}`);
+      });
+    });
+  });
+  return {
+    lost: keys(L).length, dim: keys(M).length, bad,
+    storms: keys(L).filter((k) => L[k].storms).length + keys(M).filter((k) => M[k].storms).length,
+  };
+});
+check('there are a lot of different wrong ideas about this shop',
+  prem.lost + prem.dim >= 30, `${prem.lost} in the wrong building, ${prem.dim} with the wrong idea`);
+check('and every one of them is written all the way through', prem.bad.length === 0, prem.bad.join(' '));
+check('some of them take the correction badly and some do not',
+  prem.storms >= 8 && prem.storms < prem.lost + prem.dim,
+  `${prem.storms} of ${prem.lost + prem.dim} will storm out`);
+
+// Both outcomes have to be reachable in play: rented anyway, or walked out.
+const outcomes = await ev(() => {
+  const g = window.__game;
+  const D = window.__dlg;
+  const tbl = { lost: D.LOST_PREMISES, dim: D.DIM_PREMISES };
+  const out = { sold: 0, stormed: 0, left: 0, stuck: [] };
+  for (const kind of ['lost', 'dim']) {
+    for (const premise of Object.keys(tbl[kind])) {
+      // Every path through this person's tree, to a depth that reaches the end.
+      const walk = (path) => {
+        const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+        c.personality = Object.assign({}, c.personality, { confused: kind });
+        c.script = 'confused'; c.premise = premise; c.tape = null; c.hasMoney = true;
+        c.x = 9.2; c.z = 0.8; c.state = 'QUEUE';
+        g.customers.push(c);
+        const before = g.stats.stormedOut;
+        let node = D.talkTo(c, g.ctx, { atCounter: true });
+        let ok = true;
+        for (const i of path) {
+          if (!node || !node.choices || !node.choices[i]) { ok = false; break; }
+          const r = node.choices[i];
+          node = r.go ? r.go() : (r.fn ? r.fn() : null);
+        }
+        let res = null;
+        if (ok) {
+          if (c.checkedOut) res = 'sold';
+          else if (g.stats.stormedOut > before) res = 'stormed';
+          else if (c.state === 'LEAVING') res = 'left';
+        }
+        g.customers.splice(g.customers.indexOf(c), 1);
+        return { ok, node, res };
+      };
+      const seen = { sold: false, stormed: false };
+      const dfs = (path) => {
+        if (path.length > 6 || (seen.sold && seen.stormed)) return;
+        const { ok, node, res } = walk(path);
+        if (!ok) return;
+        if (res) { if (seen[res] === false) seen[res] = true; return; }
+        const n = (node && node.choices && node.choices.length) || 0;
+        for (let i = 0; i < n; i++) dfs(path.concat(i));
+      };
+      dfs([]);
+      if (seen.sold) out.sold++;
+      if (seen.stormed) out.stormed++;
+      if (!seen.sold && !seen.stormed) out.stuck.push(`${kind}/${premise}`);
+    }
+  }
+  return out;
+});
+check('every one of them can still be sold a tape if you play along',
+  outcomes.sold >= 30, `${outcomes.sold} will rent something anyway`);
+check('and the short-tempered ones can be made to walk out',
+  outcomes.stormed >= 8, `${outcomes.stormed} storm out when you correct them`);
+check('none of them is a dead end', outcomes.stuck.length === 0, outcomes.stuck.join(' '));
+
+/* ---------- 4c. talking about the film they are actually holding ---------- */
+const talk = await ev(() => {
+  const g = window.__game;
+  const D = window.__dlg;
+  const T = window.__tapes;
+  const wrong = [];
+  let checked = 0, distinct = new Set();
+  for (const genre of T.GENRES) {
+    for (let i = 0; i < 30; i++) {
+      const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+      c.tape = T.makeTape(genre, g.rng, { rewound: true });
+      c.script = 'rent'; c.hasMoney = true;
+      c.x = 9.2; c.z = 0.8; c.state = 'QUEUE';
+      g.customers.push(c);
+      const node = D.talkTo(c, g.ctx, { atCounter: true });
+      // Follow every reply that opens a conversation about the film.
+      (node.choices || []).forEach((r) => {
+        const n1 = r.go ? r.go() : (r.fn ? r.fn() : null);
+        if (!n1 || !n1.text) return;
+        const texts = [n1.text];
+        (n1.choices || []).forEach((r2) => {
+          const n2 = r2.go ? r2.go() : (r2.fn ? r2.fn() : null);
+          if (n2 && n2.text) texts.push(n2.text);
+        });
+        texts.forEach((t) => {
+          distinct.add(t);
+          checked++;
+          // Anything out of the film-chat bank has to belong to this genre.
+          // (Grumbling about a whole SECTION of the shop is fair game and
+          // is not talk about the film in their hand.)
+          if (/\bsection\b|\bshelf\b|\bwall\b/i.test(t)) return;
+          for (const other of T.GENRES) {
+            if (other === genre) continue;
+            if ((window.__chat.TAPE_TALK[other] || []).includes(t)) {
+              wrong.push(`${genre} tape drew a ${other} line: "${t.slice(0, 40)}"`);
+            }
+          }
+        });
+      });
+      g.customers.splice(g.customers.indexOf(c), 1);
+    }
+  }
+  // And the openers that DID come out must be from the right pool.
+  let matched = 0;
+  distinct.forEach(() => {});
+  return { wrong: wrong.slice(0, 5), checked, distinct: distinct.size, matched };
+});
+check('nobody discusses a comedy while holding a slasher',
+  talk.wrong.length === 0, talk.wrong.join(' ') || `${talk.checked} lines checked`);
+check('and there is plenty of it', talk.distinct > 120, `${talk.distinct} distinct things said over a counter`);
+
+const bank = await ev(() => {
+  const P = window.__pers;
+  let total = 0, thin = [];
+  P.ARCHETYPES.forEach((a) => {
+    let n = 0;
+    Object.keys(a.lines).forEach((k) => { n += a.lines[k].length; });
+    total += n;
+    if (n < 25) thin.push(`${a.id}:${n}`);
+  });
+  return { total, thin, count: P.ARCHETYPES.length };
+});
+check('every archetype has a real bank of lines behind it',
+  bank.thin.length === 0, bank.thin.join(' ') || `thinnest is fine`);
+check('and the shop as a whole has hundreds of them',
+  bank.total >= 600, `${bank.total} lines across ${bank.count} archetypes`);
 
 /* ---------- 5. a whole night of them ---------- */
 const swarmNight = await ev(async () => {

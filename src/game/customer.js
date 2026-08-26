@@ -181,8 +181,15 @@ export function updateCustomer(c, dt, ctx) {
 
   switch (c.state) {
     case CS.ARRIVING: {
-      if (!c.path) setDest(c, SPOTS.outsideDoor.x + (c.id % 3 - 1) * 0.25, SPOTS.outsideDoor.z, ctx);
-      if (step(c, dt, ctx)) {
+      // Spread along the pavement rather than stacking on one flagstone --
+      // on a busy night the queue outside jams itself before the door does.
+      if (!c.path) {
+        setDest(c, SPOTS.outsideDoor.x + (c.id % 5 - 2) * 0.34,
+          SPOTS.outsideDoor.z - (c.id % 3) * 0.28, ctx);
+      }
+      c.arriveT = (c.arriveT || 0) + dt;
+      // If somebody is standing where they were headed, close enough.
+      if (step(c, dt, ctx) || (c.arriveT > 6 && !ctx.doorLocked)) {
         if (ctx.doorLocked) {
           c.timer += dt;
           c.yaw = angleTowards(c.yaw, 0, dt * 4);

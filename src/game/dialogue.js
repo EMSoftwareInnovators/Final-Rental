@@ -8,7 +8,8 @@
    are.
    ============================================================ */
 import { line } from './personality.js';
-import { GENRE_LABEL, tapeLabel, lateFee, mediaWord } from './tapes.js';
+import { TAPE_TALK, SEEN_IT } from './chatter.js';
+import { GENRE_LABEL, GENRES, tapeLabel, lateFee, mediaWord } from './tapes.js';
 
 const money = (v) => `$${v.toFixed(2)}`;
 
@@ -419,6 +420,26 @@ function handOver(c, ctx) {
 }
 
 /* ---------------- RENTALS ---------------- */
+/**
+ * What they say about the thing in their hand.
+ *
+ * The rule the whole file obeys: if somebody is going to talk about a
+ * film, it is the film they are actually holding. Nobody discusses a
+ * comedy while clutching a slasher.
+ */
+function tapeOpener(tape, rng) {
+  const pool = (tape && TAPE_TALK[tape.genre]) || TAPE_TALK.DRAMA;
+  return rng.pick(pool);
+}
+
+/** Have they seen it? Honest people say so; the rest have an opinion. */
+function seenIt(c, rng) {
+  const roll = rng();
+  if (roll < 0.34) return rng.pick(SEEN_IT.yes);
+  if (roll < 0.72) return rng.pick(SEEN_IT.no);
+  return rng.pick(SEEN_IT.opinion);
+}
+
 function rentRoot(c, ctx) {
   const rng = ctx.rng;
   const tape = c.tape;
@@ -474,14 +495,31 @@ function rentRoot(c, ctx) {
 
   const cs = [
     reply(`${tapeLabel(tape)}. That's ${money(price)} for two nights.`, () => ring()),
-    reply(`Good pick. Ever seen it?`, () => {
+    reply(`${tapeLabel(tape)}. Good pick — seen it before?`, () => {
       ctx.mood(c, +8);
-      return say(c, rng.pick([
-        `Not yet. That's rather the point.`,
-        `Three times. I keep renting it anyway.`,
-        `My brother says it's the worst thing ever made. So.`,
-        `...No.`,
-      ]), [reply(`${money(price)}, then.`, () => ring())]);
+      return say(c, seenIt(c, rng), [
+        reply(`${money(price)}, then.`, () => ring()),
+        reply(`What made you pick this one?`, () => {
+          ctx.mood(c, +10);
+          return say(c, tapeOpener(tape, rng), [
+            reply(`You'll be fine. ${money(price)}.`, () => { ctx.mood(c, +6); return ring(); }),
+            reply(`Honestly? Put it back and take something else.`, () => {
+              ctx.mood(c, -6); ctx.returnToShelf(c);
+              return say(c, rng.pick([
+                `...Now I have to start again.`,
+                `That's the first honest thing anybody's said to me today.`,
+                `Fine. Fine! I'll look again.`,
+              ]), [reply(`Take your time.`, () => null)]);
+            }, { risk: true }),
+          ]);
+        }),
+      ]);
+    }),
+    reply(`(say nothing, and let them fill the silence)`, () => {
+      return say(c, tapeOpener(tape, rng), [
+        reply(`Couldn't tell you. ${money(price)}.`, () => ring()),
+        reply(`It's better than it looks. Most of them are.`, () => { ctx.mood(c, +10); return ring(); }),
+      ]);
     }),
   ];
   if (tape.genre === 'HORROR') {
@@ -561,6 +599,97 @@ export const LOST_PREMISES = {
     play: `Do the pretty ones cost extra? They always cost extra.`,
     exit: `Nobody in this town knows what their own job is.`,
   },
+  barber: {
+    open: `Just a trim. Off the ears, leave the top. I'm not fussy and I don't want a conversation.`,
+    push: `There's a chair right there. I can see the chair.`,
+    relent: `That is not a barber's chair. That is a stool with a videotape on it.`,
+    play: `And no talc. Last fella covered me in talc.`,
+    exit: `I'll go to the one by the bank and he does it CROOKED.`,
+    storms: true,
+  },
+  vet: {
+    open: `(sets a cat carrier on the counter) He's been making a noise. Like a hinge. Listen — there. That noise.`,
+    push: `You're the eight o'clock, aren't you? They said there'd be somebody at eight.`,
+    relent: `...I have brought a cat into a video shop.\n\nHe's going to be insufferable about this.`,
+    play: `Should I take him out of the box? He bites when he's out of the box.`,
+    exit: `Come on, Duchess. Nobody here is a professional.`,
+  },
+  photo: {
+    open: `Pickup for Ruiz. One hour. It's been about nine.`,
+    push: `Doubles. I always order doubles. It'll say doubles on the envelope.`,
+    relent: `Those aren't envelopes, are they. Those are little boxes with films in them.`,
+    play: `If any came out dark I'm not paying for the dark ones.`,
+    exit: `That is a roll of my daughter's christening and somebody has LOST it.`,
+    storms: true,
+  },
+  taxes: {
+    open: `I've got the four o'clock with Denise. I brought everything. I brought the shoebox.`,
+    push: `Denise. Short woman. Does the returns. She's got a little jar of pens.`,
+    relent: `Oh, this is the video shop. Denise is TWO DOORS DOWN.`,
+    play: `Can I still write off the boat? I want to write off the boat.`,
+    exit: `I have taken a half day for this.`,
+    storms: true,
+  },
+  bowling: {
+    open: `Eleven and a half. And is lane six still hooking? Because I'm not paying for lane six again.`,
+    push: `Shoes. The rack of shoes. Behind you, with all the little numbers on the heels.`,
+    relent: `Those have got film titles on them. Shoes don't have film titles on them.`,
+    play: `Half size up if you're out. I'd rather swim than pinch.`,
+    exit: `League starts in ten minutes. TEN MINUTES.`,
+    storms: true,
+  },
+  jury: {
+    open: `(holds up a summons) It says report to the annex. Is this the annex? Nobody's at the annex.`,
+    push: `I'm not trying to get out of it. I want to be here. That's the whole point.`,
+    relent: `...The annex is the grey building. This is the one with the neon sign of a filmstrip.`,
+    play: `Do I sit, or do they call me? I've never done one of these.`,
+    exit: `I am going to be fined and it is going to be somebody's fault.`,
+  },
+  optical: {
+    open: `Two-fifteen with the eye doctor. And I want the ones that go dark outside, but not the ones that STAY dark.`,
+    push: `You've got a whole wall of frames back there, I can see them from here.`,
+    relent: `(squints hard) ...Those are video cassettes.\n\nWell. That rather makes the appointment's case.`,
+    play: `Read the bottom line? Certainly. E. F. ...P? Is it a P?`,
+    exit: `And I still can't see.`,
+  },
+  travel: {
+    open: `Two to Orlando, the week of the twelfth, and I do not want a layover in Atlanta. Anywhere but Atlanta.`,
+    push: `You've got the brochures right there. The shiny ones with the beaches.`,
+    relent: `Those are film cases. Those are — that's a shark on that one. That's not a beach.`,
+    play: `Aisle seats. And a hire car, something with air conditioning.`,
+    exit: `Fine. FINE. We'll drive, and I'll hate every mile of it.`,
+    storms: true,
+  },
+  bail: {
+    open: `My nephew's in county. They said forty percent down and somebody signs. I'm somebody.`,
+    push: `The sign outside said open twenty-four hours. That's a bail sign. Nobody else is open twenty-four hours.`,
+    relent: `...The sign says NEW RELEASES.\n\nHe's going to be in there all weekend.`,
+    play: `Does he have to come back here, or does he go to the court? He never comes back.`,
+    exit: `That boy is going to sit in a cell because of a NEON SIGN.`,
+    storms: true,
+  },
+  church: {
+    open: `Is this where they do the Tuesday group? The one in the basement, with the coffee?`,
+    push: `Somebody said the old shop unit on the parade. This is the old shop unit on the parade.`,
+    relent: `That's a lot of horror films for a church basement. I did wonder.`,
+    play: `Am I early? I'm always early. It's a nervous thing.`,
+    exit: `I actually needed that tonight.`,
+  },
+  bar: {
+    open: `Bud. Bottle, not the tap, the tap here's always warm. And whatever the man behind me is having.`,
+    push: `You've got a counter, and a till, and it's dark in here. What else would this be?`,
+    relent: `...There's no taps. There's no taps and there's a cardboard alien over there.`,
+    play: `Start a tab. I'm good for it, ask anyone.`,
+    exit: `I'll drink at home like a normal person.`,
+  },
+  employ: {
+    open: `I'm here about the job. I've got a resumé, it's a bit creased, I had it in the car.`,
+    push: `The card in the window. "HELP WANTED." Right there in the window.`,
+    relent: `..."HELD OVER." It says HELD OVER.\n\nI have been rehearsing in a parking lot for forty minutes.`,
+    play: `My greatest weakness is that I care too much. Honestly? Too much.`,
+    exit: `Nobody is hiring. Nobody in this whole town is hiring.`,
+    storms: true,
+  },
 };
 
 export const DIM_PREMISES = {
@@ -620,6 +749,97 @@ export const DIM_PREMISES = {
     play: `Fantastic. I'll start a shelf.`,
     exit: `I'm going to go sit in my car for a minute.`,
   },
+  subtitles: {
+    open: `I want this one, but with the words at the bottom. Can you put the words on before I take it?`,
+    push: `You've got the machine right there. The rewinder. Same principle.`,
+    relent: `So the words are either on it or they aren't, and I can't change that, and neither can you.`,
+    play: `Big words, if you can. My eyes aren't what they were.`,
+    exit: `Then what's the point of any of it.`,
+  },
+  ending: {
+    open: `Before I rent it — how does it end? I'm not asking to be difficult. I just don't like a surprise.`,
+    push: `You work here. You've seen all of them. That's the job.`,
+    relent: `You genuinely aren't going to tell me. You're going to make me watch it.`,
+    play: `Does the dog live? Just tell me about the dog.`,
+    exit: `I'll wait for it to be on television and someone will spoil it for free.`,
+  },
+  record: {
+    open: `There's a thing on channel nine at eleven. Can you tape it for me here and I'll pick it up Sunday?`,
+    push: `You've got a machine and I don't. I'd say that settles it.`,
+    relent: `So I have to set the timer myself. On my own machine. Which flashes twelve.`,
+    play: `Get the whole thing, not just the start. Last time somebody got just the start.`,
+    exit: `Everyone in my life has failed me on this exact matter.`,
+    storms: true,
+  },
+  overnight: {
+    open: `Two nights is no good to me. I'm a slow watcher. I do about twenty minutes and then I've got to lie down.`,
+    push: `A fast watcher gets the whole film for three dollars. I get a third of it. That's discrimination.`,
+    relent: `...I suppose I could rent it twice.\n\nI don't like that I've talked myself into that.`,
+    play: `Put me down for a fortnight. And no phone calls about it.`,
+    exit: `Three dollars for twenty minutes of a film. Highway robbery.`,
+    storms: true,
+  },
+  colorize: {
+    open: `Have you got this one in colour? The one I watched was all grey and I thought my set was going.`,
+    push: `They do it. I've seen them do it. Ted Turner does it.`,
+    relent: `So this is just how it IS. Forever. Nobody's going to fix it.`,
+    play: `Nothing garish. Just — natural colours. Skin, sky, that sort of thing.`,
+    exit: `Grey film. Grey town. Grey everything.`,
+  },
+  commercials: {
+    open: `There were eleven minutes of adverts before the film. I timed them. I want eleven minutes back.`,
+    push: `I pay for a film. I don't pay for adverts for other films. That's their business, not mine.`,
+    relent: `You can't fast-forward for me in advance. I do see that. I didn't, but I do now.`,
+    play: `Eleven minutes at three dollars for two hours is — well. It's about twenty-seven cents.`,
+    exit: `Twenty-seven cents of my life, and nobody cares.`,
+    storms: true,
+  },
+  speed: {
+    open: `Can you run it through quick and just tell me if it's any good? Save us both the trouble.`,
+    push: `Put it in the rewinder and watch it going backwards. You'd get the gist.`,
+    relent: `You'd genuinely have to sit down and watch the whole thing. Like a person.`,
+    play: `Right, and what happens in the middle? Roughly.`,
+    exit: `Nobody wants to work.`,
+    storms: true,
+  },
+  membership: {
+    open: `I paid the membership in eighty-nine. Twelve dollars. So these are free now, is my understanding.`,
+    push: `A membership is a membership. That's what the word means.`,
+    relent: `So the twelve dollars bought me... the right to give you more dollars.`,
+    play: `Just put it on the membership. That's what it's there for.`,
+    exit: `That is a racket and you know it's a racket.`,
+    storms: true,
+  },
+  tvguide: {
+    open: `What's on tonight? After the news. Is it the one with the helicopter?`,
+    push: `You're the video place. Video. It's all the same thing.`,
+    relent: `You're not the television. You're the... other thing. The one you have to choose.`,
+    play: `Nine o'clock, then. Is it a two-parter? I hate a two-parter.`,
+    exit: `I'll just have it on and see what happens.`,
+  },
+  swap: {
+    open: `I've brought four of mine. I'll leave these, I'll take four of yours, we're square.`,
+    push: `They're good ones. Two of them are still in the wrappers.`,
+    relent: `...You don't want my tapes.\n\nNobody wants my tapes.`,
+    play: `Fair trade. I'll take a horror and three of whatever's popular.`,
+    exit: `I'll put them back in the loft with the rest.`,
+  },
+  reserve: {
+    open: `I want to put a hold on everything with a submarine in it. Standing order. Just call me when one comes in.`,
+    push: `You've got a phone. You've got my number. I don't see the difficulty.`,
+    relent: `So there's no list. There's no list at all, is there. It's just... whoever gets here first.`,
+    play: `Submarines, and anything with a lighthouse. I'll be by on Thursdays.`,
+    exit: `A business with no system. Marvellous.`,
+    storms: true,
+  },
+  damage: {
+    open: `Now, this was chewed when I got it. I want that noted before we go any further.`,
+    push: `My machine doesn't chew tapes. It's a good machine. It's a Sanyo.`,
+    relent: `...There's a bit of it here, in my pocket. That's probably not ideal for my case.`,
+    play: `So we'll say it was chewed already and no more about it.`,
+    exit: `I have been coming here for six years and this is how it goes.`,
+    storms: true,
+  },
 };
 
 function confusedRoot(c, ctx) {
@@ -652,10 +872,31 @@ function confusedRoot(c, ctx) {
     return rentRoot(c, ctx);
   };
 
+  // How they take it when the penny drops. The ones with a temper on them
+  // do not simply wander off -- they go loudly, and it costs you.
+  const walkOut = (text) => say(c, text, [
+    reply(rng.pick([`Mm-hm.`, `Right you are.`, `Goodnight.`]), () => {
+      if (P.storms) ctx.storm(c); else ctx.leave(c);
+      return null;
+    }),
+    ...(P.storms ? [
+      reply(rng.pick([
+        `Hang on. Let me at least send you home with something.`,
+        `Before you go — one film. On the house of my patience.`,
+        `Wait. You came all this way.`,
+      ]), () => { ctx.mood(c, +22); return sell(); }),
+    ] : []),
+  ]);
+
   const relented = () => say(c, P.relent, [
     reply(`Happens more than you'd think.`, () => { ctx.mood(c, +12); return sell(); }),
     reply(`It's been a long night for both of us.`, () => { ctx.mood(c, +16); return sell(); }),
-    reply(`Yeah. Have a good one.`, () => { ctx.mood(c, -2); return done(); }),
+    // The placid ones just go. The others take the correction badly.
+    reply(`Yeah. Have a good one.`, () => {
+      ctx.mood(c, -2);
+      if (!P.storms) return done();
+      return walkOut(P.exit);
+    }),
   ]);
 
   const pushed = () => say(c, P.push, [
@@ -682,7 +923,7 @@ function confusedRoot(c, ctx) {
     reply(`...Go on.`, () => pushed()),
     reply(lost ? `The place you want is two doors down.` : `That's not how any of this works.`, () => {
       ctx.mood(c, -10);
-      return say(c, P.exit, [reply(`Mm-hm.`, () => done())]);
+      return walkOut(P.exit);
     }, { risk: true }),
   ]);
 }
@@ -763,17 +1004,20 @@ function idleRoot(c, ctx) {
   const was = c._prevState || c.state;
   if (was === 'BROWSING' || was === 'PICKING') {
     const holding = c.tape;
+    // If they are holding something, they talk about that -- not a film
+    // chosen at random from a shelf they are not standing at.
     const lines = holding ? [
-      `Is this the one with the boat in it? The box makes it look like there's a boat.`,
-      `Have you seen this? Is it any good? Be honest with me.`,
-      `Two hours and six minutes. That's a lot of movie for a Tuesday.`,
-      `It says "unrated." Unrated by who?`,
-      `...I'm going to put this back. I'm sorry.`,
+      tapeOpener(holding, rng),
+      `${tapeLabel(holding)}. Have you seen it? Be honest with me.`,
+      `Two hours and six minutes. That's a lot of ${mediaWord(holding)} for a Tuesday.`,
+      `It says "unrated" on the back. Unrated by who?`,
+      `...I'm going to put this one back. I'm sorry.`,
     ] : [
       `Still looking. I'll come to you.`,
       `Do you have anything with a dog in it? Not a sad dog.`,
-      `Where'd you move the ${GENRE_LABEL[rng.pick(['HORROR', 'COMEDY', 'ACTION', 'SCIFI'])]} section?`,
+      `Where'd you move the ${GENRE_LABEL[rng.pick(GENRES)] || 'HORROR'} section?`,
       `I'll know it when I see it.`,
+      `Everything on this wall looks like everything else on this wall.`,
       `...`,
     ];
     return say(c, rng.pick(lines), [

@@ -6,6 +6,8 @@
    appearance, name and quirk are rolled separately.
    ============================================================ */
 
+import { EXTRA_LINES } from './chatter.js';
+
 const P = (id, o) => ({ id, ...o });
 
 export const ARCHETYPES = [
@@ -419,6 +421,16 @@ export const OFFICER = P('OFFICER', {
   wealth: 1, speed: 1.05, browse: 0,
   lines: {},
 });
+
+/* The bulk of the writing lives in chatter.js. Fold it on here so the
+   table above stays a table of behaviour rather than a wall of dialogue. */
+for (const a of ARCHETYPES) {
+  const extra = EXTRA_LINES[a.id];
+  if (!extra) continue;
+  for (const key of Object.keys(extra)) {
+    a.lines[key] = (a.lines[key] || []).concat(extra[key]);
+  }
+}
 
 export function pickPersonality(rng, exclude = []) {
   const pool = ARCHETYPES.filter((a) => !exclude.includes(a.id));

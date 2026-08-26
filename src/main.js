@@ -14,6 +14,7 @@ import * as uimod from './game/ui.js';
 import * as tapes from './game/tapes.js';
 import * as specials from './game/specials.js';
 import * as catalog from './game/catalog.js';
+import * as chatter from './game/chatter.js';
 
 const start = async () => {
   const game = new Game();
@@ -30,6 +31,7 @@ const start = async () => {
   window.__tapes = tapes;
   window.__specials = specials;
   window.__catalog = catalog;
+  window.__chat = chatter;
   try {
     await game.boot();
     game.applyOptions();
