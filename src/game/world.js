@@ -127,7 +127,8 @@ export const PROPS = {
   bin: { x0: 9.10, x1: 9.74, y0: COUNTER.y, y1: COUNTER.y + 0.42, z0: 1.30, z1: 1.86, label: 'RETURN BIN' },
   rewinder: { x0: 11.72, x1: 12.28, y0: COUNTER.y, y1: COUNTER.y + 0.20, z0: 1.34, z1: 1.82, label: 'REWINDER' },
   register: { x0: 12.36, x1: 12.88, y0: COUNTER.y, y1: COUNTER.y + 0.34, z0: 1.32, z1: 1.84, label: 'REGISTER' },
-  phone: { x0: 12.82, x1: 13.0, y0: 1.15, y1: 1.62, z0: 2.90, z1: 3.34, label: 'PHONE' },
+  // Sitting on the back counter (top at y 0.92), within the clerk's reach.
+  phone: { x0: 12.44, x1: 12.86, y0: 0.92, y1: 1.10, z0: 4.16, z1: 4.62, label: 'PHONE' },
   door: { x0: DOOR_X0, x1: DOOR_X1, y0: 0, y1: DOOR_H, z0: -0.09, z1: 0.09, label: 'FRONT DOOR' },
   storageDoor: { x0: SDOOR_X0, x1: SDOOR_X1, y0: 0, y1: SDOOR_H, z0: D - 0.12, z1: D + 0.12, label: 'BACK ROOM' },
 };
@@ -194,11 +195,15 @@ export function buildWorld(T) {
   mb.plate(10.25, 0.44, C.z0 - 0.012, 0.66, 0.33, 0, T.rewindSign, [0, 0, 64, 32], 0);
   mb.plate(11.75, 0.44, C.z0 - 0.012, 0.64, 0.32, 0, T.lateFeeSign, [0, 0, 64, 32], 0);
 
-  // back counter behind the clerk
+  /* Back counter behind the clerk. Only the face against the wall is
+     skipped: the short end by the popcorn cart was being skipped too, and
+     from the shop floor that read as a hole in the side of the counter. */
   mb.box(12.30, 0, 3.70, 12.98, 0.92, 5.60, {
     all: { tex: T.counterFront, uv: [0, 0, 64, 64], sub: [3, 1, true] },
     py: { tex: T.counterTop, uv: [0, 0, 64, 64], sub: [4, 1, true] },
-    px: null, nz: null,
+    nz: { tex: T.counterFront, uv: [0, 0, 48, 64], sub: [2, 1, true] },
+    pz: { tex: T.counterFront, uv: [0, 0, 48, 64], sub: [2, 1, true] },
+    px: null,
   });
 
   /* ---------------- counter props ---------------- */
@@ -211,7 +216,7 @@ export function buildWorld(T) {
     all: { tex: T.rewinder, uv: [0, 0, 64, 64] },
   });
   buildRegister(mb, T, P.register);
-  buildWallPhone(mb, T, P.phone);
+  buildDeskPhone(mb, T, P.phone);
 
   /* ---------------- dressing ---------------- */
   /* Candy rack. It used to stand square in the only lane between the aisles
@@ -547,25 +552,49 @@ function buildRegister(mb, T, P) {
   });
 }
 
-function buildWallPhone(mb, T, P) {
-  const back = W - 0.02, front = back - 0.11;
-  const z0 = P.z0, z1 = P.z1, y0 = P.y0 - 0.05, y1 = P.y1 + 0.22;
-  mb.box(front, y0, z0, back, y1, z1, {
-    all: { tex: T.phoneBody, uv: [0, 0, 64, 64] },
-    nx: { tex: T.phoneKeys, uv: [0, 0, 64, 64] },
-    px: null,
+/**
+ * The telephone.
+ *
+ * It used to hang on the wall behind the clerk, which put it nowhere near
+ * anything and left the back counter with nothing on it. It is a desk set
+ * now, sitting on that counter: base, keypad on the top face, handset
+ * across the cradle, and the cord running off the back.
+ */
+function buildDeskPhone(mb, T, P) {
+  const { x0, x1, z0, z1 } = P;
+  const y0 = P.y0;                       // the countertop it stands on
+  const BODY = 0.085;                    // the shell
+  const CRADLE = x1 - 0.17;              // the raised strip along the wall side
+
+  /* The shell. The keypad faces the ceiling on the half nearest the clerk;
+     the wall half is the raised cradle, built separately above. */
+  mb.box(x0, y0, z0, x1, y0 + BODY, z1, {
+    all: { tex: T.phoneBody, uv: [0, 0, 64, 26] },
+    py: { tex: T.phoneKeys, uv: [0, 0, 64, 64], sub: [2, 2, false] },
+    ny: null,
   });
-  // handset lying across its cradle, proud of the keypad
-  const hz0 = z0 + 0.02, hz1 = z1 - 0.02;
-  mb.box(front - 0.075, y1 - 0.15, hz0 + 0.07, front, y1 - 0.04, hz1 - 0.07,
-    { all: { tex: T.phoneHandset, uv: [0, 0, 64, 20] } });
-  mb.box(front - 0.095, y1 - 0.18, hz0, front, y1 - 0.01, hz0 + 0.10,
-    { all: { tex: T.phoneHandset, uv: [0, 0, 26, 40] } });
-  mb.box(front - 0.095, y1 - 0.18, hz1 - 0.10, front, y1 - 0.01, hz1,
-    { all: { tex: T.phoneHandset, uv: [0, 0, 26, 40] } });
-  // coiled cord hanging off the bottom, a flat card so it reads from anywhere
-  mb.plate(front + 0.01, y0 - 0.38, (z0 + z1) / 2, 0.17, 0.40, Math.PI / 2,
-    T.phoneCord, [0, 0, 32, 64], F_BLEND);
+
+  // Raised cradle along the wall side, with the hooks moulded into its top.
+  mb.box(CRADLE, y0 + BODY, z0, x1, y0 + 0.135, z1, {
+    all: { tex: T.phoneBody, uv: [0, 0, 24, 16] },
+    py: { tex: T.phoneCradle, uv: [0, 0, 32, 64] },
+    ny: null,
+  });
+
+  /* Handset lying in the cradle, long axis running along the counter:
+     mouthpiece, bar, earpiece, with the ends proud of the middle. */
+  const hx0 = CRADLE + 0.012, hx1 = x1 - 0.012;
+  const hy = y0 + 0.135;
+  mb.box(hx0, hy, z0 + 0.085, hx1, hy + 0.042, z1 - 0.085,
+    { all: { tex: T.phoneHandset, uv: [0, 0, 64, 18] }, ny: null });
+  mb.box(hx0 - 0.008, hy - 0.010, z0 + 0.012, hx1 + 0.008, hy + 0.052, z0 + 0.098,
+    { all: { tex: T.phoneHandset, uv: [0, 0, 30, 40] } });
+  mb.box(hx0 - 0.008, hy - 0.010, z1 - 0.098, hx1 + 0.008, hy + 0.052, z1 - 0.012,
+    { all: { tex: T.phoneHandset, uv: [0, 0, 30, 40] } });
+
+  // Coiled cord, a flat card off the wall side, heading for the skirting.
+  mb.plate(x1 + 0.005, y0 + 0.035, (z0 + z1) / 2 - 0.02, 0.22, 0.14, Math.PI / 2,
+    T.phoneCord, [0, 0, 32, 40], F_BLEND);
 }
 
 function buildCandyRack(mb, T, x0, z0, x1, z1) {

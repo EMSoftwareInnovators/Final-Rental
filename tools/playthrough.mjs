@@ -196,8 +196,10 @@ await wait(200);
 check('shelved and scored',
   await ev(() => window.__game.stats.shelvedRight === 1 && window.__game.player.held.length === 0));
 
-// the phone and the door are both reachable from the clerk's side
-await look(12.2, 3.1, Math.PI / 2, -0.05);
+/* The phone and the door are both reachable from the clerk's side. The
+   phone is a desk set on the back counter now rather than a box on the
+   wall, so this looks down at the counter instead of straight ahead. */
+await look(11.95, 3.95, 1.01, -0.64);
 await wait(250);
 check('phone is reachable', /Pick up the phone/.test(await prompt()), (await prompt()).slice(0, 40));
 await look(6.0, 1.3, Math.PI, -0.15);
