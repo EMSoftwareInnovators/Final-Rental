@@ -179,6 +179,18 @@ function step(c, dt, ctx) {
 export function updateCustomer(c, dt, ctx) {
   const rng = ctx.rng;
 
+  /* Somebody who is owed change goes to the window and stays there. It used
+     to be handled inside the queue state alone, which meant anyone paid
+     anywhere else -- a special, mid-floor -- was owed money in a state that
+     had no idea what to do about it, and simply wandered off with it. */
+  if (c.awaitingChange && c.changeDue > 0.001
+    && c.state !== CS.WAITING && c.state !== CS.TALKING && c.state !== CS.TO_COUNTER
+    && c.state !== CS.LEAVING && c.state !== CS.GONE) {
+    // Only if they are not already on their way. Redirecting somebody who
+    // is already walking there tears up their route every frame.
+    c.state = CS.TO_COUNTER; c.path = null; c.timer = 0;
+  }
+
   switch (c.state) {
     case CS.ARRIVING: {
       // Spread along the pavement rather than stacking on one flagstone --

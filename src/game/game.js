@@ -1275,9 +1275,14 @@ export class Game {
       return;
     }
     if (c.isKiller && this.killer.phase !== KP.CUSTOMER) { this.sound.error(); return; }
+    /* Read the gate BEFORE putting them into a conversation. cannotServe()
+       waves through anyone already talking -- so that an open conversation
+       is not re-gated line by line -- which meant asking it after setting
+       TALKING always answered "yes, serve them", from anywhere in the shop. */
+    const servable = !this.cannotServe(c);
     c._prevState = c.state;
     c.state = CS.TALKING;
-    this.beginDialogue(c, talkTo(c, this.ctx, { atCounter: !this.cannotServe(c) }));
+    this.beginDialogue(c, talkTo(c, this.ctx, { atCounter: servable }));
   }
 
   updateConversation() {
@@ -1925,6 +1930,16 @@ export class Game {
         g.ui.toast(`${c.name} walked out.`, 'bad');
       },
       leave: (c) => {
+        // Not while you are holding their change. They go and stand at the
+        // window until the drawer opens, and get angry about it in their
+        // own time -- which is the player's failure to make, not a line of
+        // dialogue's. This is how a special could be paid in the middle of
+        // the floor and then walk out on the change she was owed.
+        if (c.awaitingChange && c.changeDue > 0.001) {
+          c.state = CS.TO_COUNTER; c.path = null; c.timer = 0;
+          c.act = null; c.script = c.script === 'special' ? 'rent' : c.script;
+          return;
+        }
         c.leaving = true;
         c.state = CS.LEAVING; c.path = null;
         g.releaseCounterSpot(c);
@@ -1972,17 +1987,34 @@ export class Game {
         g.sound.pickup();
       },
       binTape: (tape, c) => { g.bin.push(tape); c.tape = null; g.sound.drop(); },
-      checkout: (tape, c, unpaid) => {
+      checkout: (tape, c, unpaid, price) => {
         g.stats.rentalsRung++;
         if (unpaid) { g.sound.registerBeep(); return null; }
-        return g.takeCashFrom(tape.price, c, 'rental');
+        return g.takeCashFrom(price != null ? price : tape.price, c, 'rental');
       },
       returnToShelf: (c) => { c.tape = null; g.ui.toast(`Tape goes back on the shelf.`, ''); },
-      /** You pick something out for someone who cannot pick for themselves. */
-      giveShelfPick: (c) => {
-        const t = makeTape(g.rng.pick(GENRES), g.rng, { rewound: true });
-        t.heldBy = c.id;
-        return t;
+
+      /**
+       * They came in to do something else and have talked themselves into
+       * renting. Nobody is served where they stand: this stops whatever
+       * they were doing, sends them off to pick something off an actual
+       * shelf, and puts them in the queue like anybody else. The money and
+       * the change then happen at the window, under the ordinary rules.
+       */
+      sendToShop: (c, opts = {}) => {
+        c.script = 'rent';
+        c.act = null; c.actSpot = null; c.parked = false;
+        c.nuisance = null;              // a shopper is not a nuisance any more
+        c.asked = 0;
+        c.tape = null; c.browse = null;
+        c.confusionResolved = true;
+        if (opts.genre) c.wantGenre = opts.genre;
+        // A price agreed in conversation travels with them to the counter.
+        if (opts.price != null) c.priceAgreed = opts.price;
+        else if (opts.discount) c.priceDiscount = opts.discount;
+        c.state = CS.BROWSING; c.path = null; c.timer = 0;
+        g.releaseCounterSpot(c);
+        g.ui.toast(`${c.name} goes to find something.`, '');
       },
 
       /* --- suspect --- */

@@ -200,7 +200,7 @@ const trees = await ev(() => {
         if (node && node.text) lines.add(node.text);
         const ch = (node && node.choices) || [];
         ch.forEach((r) => replies.add(r.label || r.text || ''));
-        if (c.checkedOut) sales++;
+        if (c.checkedOut || (c.script === 'rent' && c.state === 'BROWSING')) sales++;
         if (c.state === 'LEAVING' || c.gone) exits++;
         else if (!node) deadEnds++;
         else if (path.length < 6) {
@@ -257,9 +257,11 @@ check('and most of them can be turned into a sale if you handle them right',
 check('the player gets real choices, not one button',
   trees.every((t) => t.replies >= 5),
   `fewest ${Math.min(...trees.map((t) => t.replies))} replies (${trees.reduce((a, t) => a + t.replies, 0)} across the roster)`);
+// Their own trees, not counting the ordinary counter conversation they now
+// hand off to once they agree to rent.
 check('and they have plenty to say',
-  trees.every((t) => t.lines >= 4) && trees.reduce((a, t) => a + t.lines, 0) >= 120,
-  `${trees.reduce((a, t) => a + t.lines, 0)} distinct lines`);
+  trees.every((t) => t.lines >= 4) && trees.reduce((a, t) => a + t.lines, 0) >= 75,
+  `${trees.reduce((a, t) => a + t.lines, 0)} distinct lines before they even reach the till`);
 console.log(trees.map((t) => `        ${t.id.padEnd(10)} ${String(t.lines).padStart(3)} lines  ${String(t.replies).padStart(3)} replies  ${t.exits} exits  ${t.sales ? 'sells' : '-'}`).join('\n'));
 
 // These people never join the queue, so you can deal with them where they
@@ -342,32 +344,39 @@ const outcomes = await ev(() => {
         }
         let res = null;
         if (ok) {
-          if (c.checkedOut) res = 'sold';
+          // A sale is no longer rung up in the conversation: agreeing to
+          // rent sends them off to the shelves to pick one out.
+          if (c.checkedOut) res = 'rangUpOnTheSpot';
+          else if (c.script === 'rent' && c.state === 'BROWSING') res = 'sold';
           else if (g.stats.stormedOut > before) res = 'stormed';
           else if (c.state === 'LEAVING') res = 'left';
         }
         g.customers.splice(g.customers.indexOf(c), 1);
         return { ok, node, res };
       };
-      const seen = { sold: false, stormed: false };
+      const seen = { sold: false, stormed: false, rangUpOnTheSpot: false };
       const dfs = (path) => {
         if (path.length > 6 || (seen.sold && seen.stormed)) return;
         const { ok, node, res } = walk(path);
         if (!ok) return;
-        if (res) { if (seen[res] === false) seen[res] = true; return; }
+        if (res) { if (seen[res] === false) seen[res] = true; if (res !== 'rangUpOnTheSpot') return; return; }
         const n = (node && node.choices && node.choices.length) || 0;
         for (let i = 0; i < n; i++) dfs(path.concat(i));
       };
       dfs([]);
       if (seen.sold) out.sold++;
       if (seen.stormed) out.stormed++;
+      if (seen.rangUpOnTheSpot) out.onSpot = (out.onSpot || 0) + 1;
       if (!seen.sold && !seen.stormed) out.stuck.push(`${kind}/${premise}`);
     }
   }
+  out.onSpot = out.onSpot || 0;
   return out;
 });
-check('every one of them can still be sold a tape if you play along',
-  outcomes.sold >= 30, `${outcomes.sold} will rent something anyway`);
+check('every one of them can still be talked into renting something',
+  outcomes.sold >= 30, `${outcomes.sold} go off to the shelves anyway`);
+check('and none of them is served in the middle of the floor',
+  outcomes.onSpot === 0, `${outcomes.onSpot} rung up where they stood`);
 check('and the short-tempered ones can be made to walk out',
   outcomes.stormed >= 8, `${outcomes.stormed} storm out when you correct them`);
 check('none of them is a dead end', outcomes.stuck.length === 0, outcomes.stuck.join(' '));
@@ -439,6 +448,139 @@ check('every archetype has a real bank of lines behind it',
 check('and the shop as a whole has hundreds of them',
   bank.total >= 600, `${bank.total} lines across ${bank.count} archetypes`);
 
+/* ---------- 4d. business happens at the counter, or not at all ---------- */
+const gate = await ev(() => {
+  const g = window.__game;
+  const T = window.__tapes;
+  const out = {};
+  const place = (c, x, z, state) => { c.x = x; c.z = z; c.state = state; g.customers.push(c); };
+  const drop = (c) => { const i = g.customers.indexOf(c); if (i >= 0) g.customers.splice(i, 1); };
+
+  // Somebody holding a tape in the middle of an aisle is not servable...
+  const far = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+  far.tape = T.makeTape('HORROR', g.rng, { rewound: true });
+  far.script = 'rent'; far.hasMoney = true; far.queueIndex = -1;
+  place(far, 2.0, 6.5, 'BROWSING');
+  out.farWhy = g.cannotServe(far);
+  // ...and talking to them there must not open a till.
+  g.talkToPerson(far);
+  const node = g.dlg.node;
+  out.farText = (node && node.text) || '';
+  out.farSells = !!(node && (node.choices || []).some((r) => /\$\d/.test(r.label || '')));
+  g.dlg.node = null; g.speaking = null;
+  drop(far);
+
+  // The same person at the front of the line is.
+  const near = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+  near.tape = T.makeTape('HORROR', g.rng, { rewound: true });
+  near.script = 'rent'; near.hasMoney = true; near.queueIndex = 0;
+  place(near, 10.75, 0.80, 'WAITING');
+  out.nearWhy = g.cannotServe(near);
+  g.talkToPerson(near);
+  const n2 = g.dlg.node;
+  out.nearText = (n2 && n2.text) || '';
+  // rentRoot opens by naming the tape and its price; idleRoot never does.
+  out.nearSells = !!(n2 && (n2.choices || []).some((r) => /\$\d/.test(r.label || '')));
+  g.dlg.node = null; g.speaking = null;
+  drop(near);
+
+  // And second in line is not, however close they are standing.
+  const queued = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+  queued.tape = T.makeTape('HORROR', g.rng, { rewound: true });
+  queued.script = 'rent'; queued.hasMoney = true; queued.queueIndex = 1;
+  place(queued, 9.35, 0.78, 'WAITING');
+  out.queuedWhy = g.cannotServe(queued);
+  drop(queued);
+  return out;
+});
+check('somebody out in the aisles cannot be rung up',
+  gate.farWhy === 'not at the counter' && !gate.farSells,
+  `"${gate.farWhy}" / "${gate.farText.slice(0, 38)}"`);
+check('and talking to them there gets you a conversation, not a till',
+  gate.farText !== gate.nearText);
+check('at the window, at the front of the line, they can be',
+  gate.nearWhy === '' && gate.nearSells, `"${gate.nearText.slice(0, 38)}"`);
+check('second in line still waits their turn', gate.queuedWhy === 'waiting in line', gate.queuedWhy);
+
+/* ---------- 4e. a special who buys goes and shops for it ---------- */
+const shopping = await ev(() => {
+  const g = window.__game;
+  const D = window.__dlg;
+  const out = [];
+  for (const sp of window.__specials.specialRoster()) {
+    // Walk this special's tree looking for the branch that ends in a sale.
+    let found = null;
+    const walk = (path) => {
+      if (found || path.length > 7) return;
+      const c = window.__cust.makeSpecial(g.rng, sp);
+      c.x = 5.4; c.z = 3.0; c.state = 'ACTING';
+      g.customers.push(c);
+      let node = D.talkTo(c, g.ctx, { atCounter: true });
+      let ok = true;
+      for (const i of path) {
+        if (!node || !node.choices || !node.choices[i]) { ok = false; break; }
+        const r = node.choices[i];
+        node = r.go ? r.go() : (r.fn ? r.fn() : null);
+      }
+      if (ok) {
+        // A sale must never happen here: no tape conjured, no money taken.
+        if (c.checkedOut) found = { bad: 'rang up on the spot' };
+        else if (c.script === 'rent' && c.state === 'BROWSING') {
+          found = { shops: true, tape: !!c.tape, act: c.act, genre: c.wantGenre || null };
+        } else if (node && node.choices) {
+          for (let i = 0; i < node.choices.length && !found; i++) walk(path.concat(i));
+        }
+      }
+      const k = g.customers.indexOf(c);
+      if (k >= 0) g.customers.splice(k, 1);
+    };
+    walk([]);
+    out.push({ id: sp.id, ...(found || { none: true }) });
+  }
+  return out;
+});
+const rangUp = shopping.filter((r) => r.bad);
+const shops = shopping.filter((r) => r.shops);
+check('no special is ever rung up where they stand', rangUp.length === 0,
+  rangUp.map((r) => r.id).join(' ') || `${shopping.length} trees walked`);
+check('the ones who agree to rent go off and shop for it instead',
+  shops.length >= 9, `${shops.length} of ${shopping.length} head for the shelves`);
+check('and they arrive at the shelf empty-handed, with their act dropped',
+  shops.every((r) => !r.tape && !r.act), shops.filter((r) => r.tape || r.act).map((r) => r.id).join(' '));
+console.log(`        sent shopping: ${shops.map((r) => r.id + (r.genre ? `(${r.genre})` : '')).join(', ')}`);
+
+/* ---------- 4f. and nobody walks out on their own change ---------- */
+const changeHeld = await ev(() => {
+  const g = window.__game;
+  // Clear the line first, so she is the one at the window rather than
+  // fourth behind whoever an earlier check left standing there.
+  g.queue.length = 0;
+  const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById('PHONECALL'));
+  c.x = 8.4; c.z = 4.6; c.state = 'ACTING';
+  g.customers.push(c);
+  c.awaitingChange = true; c.changeDue = 2.01;
+  g.ctx.leave(c);
+  const afterLeave = c.state;
+  // Run the shop for a moment: she should be making her way to the window.
+  const before = { x: c.x, z: c.z };
+  for (let i = 0; i < 2400; i++) window.__cust.updateCustomer(c, 1 / 60, g.ctx);
+  const at = { state: c.state, x: +c.x.toFixed(2), z: +c.z.toFixed(2) };
+  const d = Math.hypot(c.x - 10.75, c.z - 0.80);
+  // Once paid, she can go.
+  g.ctx.giveChange(c);
+  g.ctx.leave(c);
+  const afterPaid = c.state;
+  g.customers.splice(g.customers.indexOf(c), 1);
+  return { afterLeave, at, d: +d.toFixed(2), afterPaid, moved: Math.hypot(c.x - before.x, c.z - before.z) > 1 };
+});
+check('a special owed change cannot be sent away by the dialogue',
+  changeHeld.afterLeave !== 'LEAVING', changeHeld.afterLeave);
+check('she walks to the window and waits there instead',
+  changeHeld.moved && changeHeld.d < 1.6 && changeHeld.at.state === 'WAITING',
+  `${changeHeld.at.state} at ${changeHeld.at.x},${changeHeld.at.z} (${changeHeld.d}m from the window)`);
+check('and once you have paid her she leaves like anyone else',
+  changeHeld.afterPaid === 'LEAVING', changeHeld.afterPaid);
+
 /* ---------- 5. a whole night of them ---------- */
 const swarmNight = await ev(async () => {
   const g = window.__game;
@@ -458,7 +600,7 @@ await ev(() => { window.__game.timeScale = 30; });
 await wait(4000);
 await ev(() => { window.__game.timeScale = 1; });
 check('the shop survives a room full of them',
-  await ev(() => window.__game.state === 'PLAY' || window.__game.state === 'REPORT'),
+  ['PLAY', 'REPORT', 'PAUSE'].includes(await ev(() => window.__game.state)),
   await ev(() => window.__game.state));
 
 console.log('\n--- errors ---');

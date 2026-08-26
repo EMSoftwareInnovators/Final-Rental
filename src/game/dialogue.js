@@ -12,6 +12,7 @@ import { TAPE_TALK, SEEN_IT } from './chatter.js';
 import { GENRE_LABEL, GENRES, tapeLabel, lateFee, mediaWord } from './tapes.js';
 
 const money = (v) => `$${v.toFixed(2)}`;
+const round2 = (v) => Math.round(v * 100) / 100;
 
 export class DialogueRunner {
   constructor() { this.node = null; this.sel = 0; this.person = null; this.onEnd = null; }
@@ -427,6 +428,20 @@ function handOver(c, ctx) {
  * film, it is the film they are actually holding. Nobody discusses a
  * comedy while clutching a slasher.
  */
+/**
+ * They have talked themselves into renting something.
+ *
+ * Nobody is served where they stand. The shop conjuring a tape into
+ * somebody's hands mid-conversation is how a special ended up paid for in
+ * the middle of the floor and then walked out on her own change. So the
+ * sale is not made here: they go and pick something off a shelf like
+ * everyone else, walk it to the counter, and join the back of the line.
+ */
+function goShopping(c, ctx, said, opts = {}) {
+  ctx.sendToShop(c, opts);
+  return say(c, said, [reply(opts.close || `The counter's over there.`, () => null)]);
+}
+
 function tapeOpener(tape, rng) {
   const pool = (tape && TAPE_TALK[tape.genre]) || TAPE_TALK.DRAMA;
   return rng.pick(pool);
@@ -444,12 +459,18 @@ function rentRoot(c, ctx) {
   const rng = ctx.rng;
   const tape = c.tape;
   if (!tape) return idleRoot(c, ctx);
-  const price = tape.price;
+  /* A price settled earlier -- the coupon man's free one, his thirty cents
+     off -- travels with him to the counter rather than being rung up on the
+     spot in the middle of an argument. */
+  const price = c.priceAgreed != null ? c.priceAgreed
+    : Math.max(0, Math.round((tape.price - (c.priceDiscount || 0)) * 100) / 100);
   const finish = () => farewell(c, ctx);
 
   const complete = () => {
     c.checkedOut = true;
-    const t = ctx.checkout(tape, c);
+    const off = round2(tape.price - price);
+    if (off > 0.001) ctx.waive(off);
+    const t = ctx.checkout(tape, c, price <= 0.001, price);
     const sign = tape.game ? `Three nights. Cartridge back in the box.` : `Two nights. Be kind, rewind.`;
     return say(c, t && t.change > 0
       ? rng.pick([`Out of ${money(t.tendered)}, sorry.`, `${money(t.tendered)}. It's all I've got on me.`,
@@ -854,18 +875,14 @@ function confusedRoot(c, ctx) {
     if (!c.tape) {
       return say(c, rng.pick([
         `...Fine. Fine! What have you got that's short.`,
-        `Alright. Pick one for me. Something with a dog.`,
+        `Alright. Point me at something. Something with a dog.`,
         `You know what? Yes. I'm owed something today.`,
       ]), [
-        reply(`Two ninety-nine. Two nights.`, () => {
+        reply(`Have a look round. I'll ring it up at the counter.`, () => {
           if (!c.hasMoney) { ctx.mood(c, -6); return say(c, `...Naturally I have no money.`, [reply('...', () => done())]); }
-          c.tape = ctx.giveShelfPick(c);
-          c.checkedOut = true;
-          const t = ctx.checkout(c.tape, c);
           ctx.mood(c, +14);
-          return say(c, t && t.change > 0 ? `Out of ${money(t.tendered)}.` : `There. That was easy.`,
-            [reply(`Be kind, rewind.`, () => done())]);
-        }, { good: '$2.99' }),
+          return goShopping(c, ctx, `Right. Right! A video. From a video shop.`);
+        }),
         reply(`We're closing soon, honestly.`, () => { ctx.mood(c, -8); return done(); }),
       ]);
     }
@@ -1129,14 +1146,10 @@ export function specialRoot(c, ctx) {
       ], {
         takes: 3,
         andSell: () => say(c, `...Actually yeah. You got anything with a real soundtrack?`, [
-          reply(`Two ninety-nine. It has a soundtrack.`, () => {
-            const t = ctx.giveShelfPick(c);
-            c.tape = t; c.checkedOut = true;
-            const p = ctx.checkout(t, c);
+          reply(`Go and find one. Bring it to the counter.`, () => {
             ctx.mood(c, +20);
-            return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Respect.`,
-              [reply(`Two nights.`, () => { ctx.leave(c); return null; })]);
-          }, { good: '$2.99' }),
+            return goShopping(c, ctx, `Say no more. Say NO more.`, { close: `And turn that off.` });
+          }),
           reply(`We're closing. Another night.`, () => { ctx.leave(c); return null; }),
         ]),
       });
@@ -1160,15 +1173,12 @@ export function specialRoot(c, ctx) {
       ], {
         takes: 4,
         andSell: () => say(c, `Do you have the one where nothing happens?`, [
-          reply(`I'll pick you something. Two ninety-nine.`, () => {
+          reply(`Comedy section. Off you go.`, () => {
             if (!c.hasMoney) { return say(c, `Ah. Yeah. Money.`, [reply('...', () => { ctx.leave(c); return null; })]); }
-            const t = ctx.giveShelfPick(c);
-            c.tape = t; c.checkedOut = true;
-            ctx.checkout(t, c);
             ctx.mood(c, +16);
-            return say(c, `You're a good person. I said that already.`,
-              [reply(`Goodnight.`, () => { ctx.leave(c); return null; })]);
-          }, { good: '$2.99' }),
+            return goShopping(c, ctx, `You're a good person. I said that already.`,
+              { genre: 'COMEDY', close: `The counter. When you're ready.` });
+          }),
           reply(`Just go home.`, () => { ctx.leave(c); return null; }),
         ]),
       });
@@ -1199,13 +1209,8 @@ export function specialRoot(c, ctx) {
         reply(`Wait — let me find you something for tonight.`, () => { ctx.mood(c, +22); return sell(); }),
       ]);
       const sell = () => say(c, `Something for tonight, then. Nothing with subtitles.`, [
-        reply(`Two ninety-nine.`, () => {
-          const t = ctx.giveShelfPick(c);
-          c.tape = t; c.checkedOut = true;
-          const p = ctx.checkout(t, c);
-          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Fine.`,
-            [reply(`Two nights.`, () => done())]);
-        }, { good: '$2.99' }),
+        reply(`Pick something out and I'll ring it up.`,
+          () => goShopping(c, ctx, `Fine. But I want it noted that I asked for the other one.`)),
         reply(`We're closing, honestly.`, () => { ctx.mood(c, -10); return done(); }),
       ]);
       return say(c, `Do you have ${title}? It's new. It's very new.`, [
@@ -1229,12 +1234,10 @@ export function specialRoot(c, ctx) {
             : `So you're calling me a liar. In front of people.`,
         [
           reply(`It's a napkin. It's a napkin with a biro on it.`, () => (n >= 2 ? end() : push(n + 1)), { risk: true }),
-          reply(`Tell you what. One free rental. Once.`, () => {
-            ctx.waive(2.99); ctx.mood(c, +34);
-            const t = ctx.giveShelfPick(c);
-            c.tape = t; c.checkedOut = true; ctx.checkout(t, c, true);
-            return say(c, `See? SEE? The coupon works.`,
-              [reply(`It does not work. Goodnight.`, () => { ctx.leave(c); return null; })]);
+          reply(`Tell you what. One free rental. Go and pick it.`, () => {
+            ctx.mood(c, +34);
+            return goShopping(c, ctx, `See? SEE? The coupon works.`,
+              { price: 0, close: `It does not work. Go on.` });
           }, { cost: '-$2.99' }),
           reply(`I can do ten percent. That's what I can do.`, () => {
             ctx.mood(c, +14);
@@ -1243,15 +1246,9 @@ export function specialRoot(c, ctx) {
             ]);
           }),
         ]);
-      const sellHim = () => say(c, `Alright. Ring it. Two sixty-nine, then.`, [
-        reply(`Two sixty-nine.`, () => {
-          const t = ctx.giveShelfPick(c);
-          c.tape = t; c.checkedOut = true;
-          ctx.waive(0.3);
-          const p = ctx.checkout(t, c);
-          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `That's more like it.`,
-            [reply(`Two nights.`, () => done())]);
-        }, { good: '$2.69' }),
+      const sellHim = () => say(c, `Alright. Thirty cents. I'll go and find something worth it.`, [
+        reply(`Do that. Two sixty-nine at the counter.`,
+          () => goShopping(c, ctx, `Two sixty-nine. Under the coupon.`, { discount: 0.3 })),
       ]);
       const end = () => say(c, `Unbelievable. I'll bring the laminated one.`, [
         reply(`Please don't.`, () => { ctx.storm(c); return null; }),
@@ -1294,14 +1291,10 @@ export function specialRoot(c, ctx) {
         reply(`Goodnight.`, () => { ctx.storm(c); return null; }),
       ]);
       const finish = () => say(c, `...Fine. Three dollars. Under protest, and I want that noted.`, [
-        reply(`It's noted.`, () => {
-          const t = ctx.giveShelfPick(c);
-          c.tape = t; c.checkedOut = true;
-          const p = ctx.checkout(t, c);
+        reply(`It's noted. Go and choose one.`, () => {
           ctx.mood(c, +18);
-          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}. Under protest.` : `Under protest.`,
-            [reply(`Two nights. Under protest.`, () => farewell(c, ctx))]);
-        }, { good: '$2.99' }),
+          return goShopping(c, ctx, `Under protest.`, { close: `Under protest. The counter's there.` });
+        }),
         reply(`Actually, I'd rather you left.`, () => { ctx.leave(c); return null; }, { risk: true }),
       ]);
       return beat(0);
@@ -1326,13 +1319,9 @@ export function specialRoot(c, ctx) {
       ]);
       function offer() {
         return say(c, `I'll take something. Nothing loud.`, [
-          reply(`Two forty-nine.`, () => {
-            const t = ctx.giveShelfPick(c);
-            c.tape = t; c.checkedOut = true;
-            const p = ctx.checkout(t, c);
-            return say(c, p && p.change > 0 ? `I have exact change, dear. I always do.` : `Thank you, dear.`,
-              [reply(`Two nights.`, () => done())]);
-          }, { good: '$2.49' }),
+          reply(`Have a look. I'll be at the till.`,
+            () => goShopping(c, ctx, `I know where everything is, dear. Better than you do.`,
+              { genre: 'DRAMA', close: `I don't doubt it.` })),
           reply(`We're closing shortly.`, () => { ctx.mood(c, -4); return done(); }),
         ]);
       }
@@ -1355,13 +1344,8 @@ export function specialRoot(c, ctx) {
       ]);
       function sell() {
         return say(c, `Appreciate you. I'll take one of yours while I'm here.`, [
-          reply(`Two ninety-nine.`, () => {
-            const t = ctx.giveShelfPick(c);
-            c.tape = t; c.checkedOut = true;
-            const p = ctx.checkout(t, c);
-            return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Good man.`,
-              [reply(`Two nights.`, () => done())]);
-          }, { good: '$2.99' }),
+          reply(`Help yourself. Bring it over when you've got it.`,
+            () => goShopping(c, ctx, `Good man.`)),
           reply(`Another time.`, () => done()),
         ]);
       }
@@ -1385,13 +1369,14 @@ export function specialRoot(c, ctx) {
         ]);
       };
       const buy = () => say(c, `I'll take it anyway. Obviously I'll take it.`, [
-        reply(`Two ninety-nine.`, () => {
-          const t = ctx.giveShelfPick(c);
-          c.tape = t; c.checkedOut = true;
-          const p = ctx.checkout(t, c);
-          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Thank you.`,
-            [reply(`Two nights.`, () => done())]);
-        }, { good: '$2.99' }),
+        reply(`Then go and get it off the shelf.`,
+          () => goShopping(c, ctx, `I know exactly where it is. That is rather my whole problem.`,
+            { close: `Bring it to the counter.` })),
+        reply(`We're closing. Come back when you like it less.`, () => {
+          ctx.mood(c, -12);
+          return say(c, `That is the single best thing anyone in this shop has ever said to me.`,
+            [reply(`Goodnight.`, () => { ctx.leave(c); return null; })]);
+        }, { risk: true }),
       ]);
       return rant(0);
     }
@@ -1422,14 +1407,15 @@ export function specialRoot(c, ctx) {
         ]);
       }
       function buy() {
-        return say(c, `Fine. This one. And I'm holding you to the dog.`, [
-          reply(`Two forty-nine.`, () => {
-            const t = ctx.giveShelfPick(c);
-            c.tape = t; c.checkedOut = true;
-            const p = ctx.checkout(t, c);
-            return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Thank you.`,
-              [reply(`Two nights.`, () => done())]);
-          }, { good: '$2.49' }),
+        return say(c, `Fine. Family section. And I'm holding you to the dog.`, [
+          reply(`Family's the far wall. I'll be at the till.`,
+            () => goShopping(c, ctx, `If there's a single frightening moment in it, I'm coming back.`,
+              { genre: 'FAMILY', close: `Understood.` })),
+          reply(`Honestly? Try the library. They vet things.`, () => {
+            ctx.mood(c, -6);
+            return say(c, `...That is either very rude or very honest.`,
+              [reply(`Bit of both.`, () => { ctx.leave(c); return null; })]);
+          }, { risk: true }),
         ]);
       }
     }
@@ -1452,13 +1438,8 @@ export function specialRoot(c, ctx) {
         ]);
       };
       const end = () => say(c, `Card's on the counter. I'll take one of these while I'm here.`, [
-        reply(`Two ninety-nine.`, () => {
-          const t = ctx.giveShelfPick(c);
-          c.tape = t; c.checkedOut = true;
-          const p = ctx.checkout(t, c);
-          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}. Keep the card.` : `Keep the card.`,
-            [reply(`Two nights.`, () => done())]);
-        }, { good: '$2.99' }),
+        reply(`Go on then. Pick one.`,
+          () => goShopping(c, ctx, `Keep the card. Seriously. Keep it.`)),
         reply(`Just take the card and go.`, () => { ctx.mood(c, -8); ctx.leave(c); return null; }),
       ]);
       return pitch(0);
@@ -1473,14 +1454,11 @@ export function specialRoot(c, ctx) {
       ], {
         takes: 3,
         andSell: () => say(c, `Right. Sorry. What have you got that's funny?`, [
-          reply(`Two ninety-nine.`, () => {
-            const t = ctx.giveShelfPick(c);
-            c.tape = t; c.checkedOut = true;
-            const p = ctx.checkout(t, c);
+          reply(`Comedy's the middle run. Bring me one.`, () => {
             ctx.mood(c, +16);
-            return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `You're a love.`,
-              [reply(`Two nights.`, () => { ctx.leave(c); return null; })]);
-          }, { good: '$2.99' }),
+            return goShopping(c, ctx, `You're a love.`,
+              { genre: 'COMEDY', close: `I'll be at the till.` });
+          }),
           reply(`Another night.`, () => { ctx.leave(c); return null; }),
         ]),
       });

@@ -250,6 +250,15 @@ await ev(() => {
   k.ent.script = 'rent';
   k.ent.saidSmallTalk = false;
   k.intel = 0;
+  // He queues like everybody else -- and business only happens at the front
+  // of the line, so put him there rather than just standing him on the spot.
+  g.queue.length = 0;
+  g.claimCounterSpot(k.ent);
+  // Before we open a conversation: the counter rule applies to him too.
+  const was = k.ent.queueIndex;
+  k.ent.queueIndex = 2;
+  window.__gateOnKiller = g.cannotServe(k.ent);
+  k.ent.queueIndex = was;
   g.player.x = 10.75; g.player.z = 3.05; g.player.yaw = Math.PI;
   g.talkToPerson(k.ent);
 });
@@ -260,6 +269,9 @@ const mask = await ev(() => {
     text: g.dlg.node.text, choices: (g.dlg.node.choices || []).map((c) => c.label) };
 });
 check('the killer can be served like anyone else', !!mask.text, `${mask.name} - ${mask.tag}`);
+check('and the counter rule applies to him too',
+  await ev(() => window.__gateOnKiller) === 'waiting in line',
+  await ev(() => window.__gateOnKiller));
 console.log('      him: "' + mask.text + '"');
 
 // walk into his small talk and answer badly
@@ -616,20 +628,39 @@ check('pulling it to without bolting is not hiding',
 await ev(() => { const g = window.__game; g.lockStorage(); });
 const bolted = await ev(() => ({ hiding: window.__game.hiding, killerCanPass: window.__game.ctx.storagePassable() }));
 check('and throwing the bolt is', bolted.hiding && !bolted.killerCanPass);
-await ev(() => { window.__game.timeScale = 6; });
+/* Watch the door from inside the frame loop rather than by polling from
+   out here. At six times speed it goes from sound to broken inside a
+   couple of wall-clock seconds, so a poll every 150ms can easily see
+   nothing, then splinters -- which is a flaky test, not a broken door. */
+await ev(() => {
+  const g = window.__game;
+  window.__siege = { first: null, sawSiege: false };
+  const tick = () => {
+    const s = window.__siege;
+    if (g.killer.phase === 'SIEGE') s.sawSiege = true;
+    if (!s.first && g.storage.damage > 0.05) {
+      s.first = { phase: g.killer.phase, dmg: +g.storage.damage.toFixed(2), broken: g.storage.broken };
+    }
+    s.raf = requestAnimationFrame(tick);
+  };
+  tick();
+  g.timeScale = 6;
+});
 let siege = null;
 for (let i = 0; i < 80; i++) {
   siege = await ev(() => {
     const g = window.__game;
-    return { phase: g.killer.phase, dmg: +g.storage.damage.toFixed(2), broken: g.storage.broken,
+    return { ...window.__siege, dmgNow: +g.storage.damage.toFixed(2), broken: g.storage.broken,
       state: g.state, end: g.endKind };
   });
-  if (siege.phase === 'SIEGE' && siege.dmg > 0.05) break;
+  if (siege.first) break;
   if (siege.state === 'ENDING') break;
   await wait(150);
 }
+await ev(() => { if (window.__siege.raf) cancelAnimationFrame(window.__siege.raf); });
 check('and he comes and works on the door instead of giving up',
-  siege.phase === 'SIEGE', `phase ${siege.phase}, damage ${siege.dmg}`);
+  !!siege.first && !siege.first.broken && siege.sawSiege,
+  siege.first ? `first damage ${siege.first.dmg} in phase ${siege.first.phase}` : 'never touched it');
 let broke = null;
 for (let i = 0; i < 90; i++) {
   broke = await ev(() => ({ broken: window.__game.storage.broken, state: window.__game.state,
