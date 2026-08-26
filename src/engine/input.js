@@ -10,31 +10,43 @@
    ============================================================ */
 
 /**
- * Standard-mapping button index -> the keys it stands in for.
+ * The things a pad can be asked to do, and the keys each one stands in for.
  *
- * The bottom face button confirms and the right one goes back, which is
- * the same physical button on both families: A / cross to select, B /
- * circle to back out. Both sit at indices 0 and 1 under the standard
- * mapping, so one table serves both.
+ * Pad buttons are folded into the same key set the rest of the game already
+ * tests, so every existing `hit('KeyE')` works with a controller without
+ * knowing a controller exists.
+ *
+ * `def` is where the button sits under the standard mapping -- the bottom
+ * face button confirms and the right one goes back, which is the same
+ * physical button on both families: A / cross to select, B / circle to back
+ * out. Pads that do not follow the standard mapping put them somewhere else
+ * entirely, which is what the binding table below is for.
  */
-const PAD_KEYS = {
-  0: ['PadA', 'KeyE', 'Enter', 'Space'], // A / cross      -- interact, confirm
-  1: ['PadB', 'Escape'],                 // B / circle     -- back, pause
-  2: ['PadX', 'KeyG'],                   // X / square     -- put it down
-  3: ['PadY', 'Tab'],                    // Y / triangle   -- the notepad
-  4: ['PadLB', 'ShiftLeft'],             // LB / L1        -- hurry
-  5: ['PadRB', 'KeyF'],                  // RB / R1        -- throw the bolt
-  6: ['PadLT'],
-  7: ['PadRT', 'KeyE'],
-  8: ['PadBack'],
-  9: ['PadStart', 'Escape'],             // start / options
-  10: ['PadL3', 'ShiftLeft'],
-  11: ['PadR3'],
-  12: ['PadUp', 'ArrowUp'],
-  13: ['PadDown', 'ArrowDown'],
-  14: ['PadLeft', 'ArrowLeft'],
-  15: ['PadRight', 'ArrowRight'],
+export const PAD_ACTIONS = {
+  confirm: { label: 'Select / interact', keys: ['PadA', 'KeyE', 'Enter', 'Space'], def: [0, 7] },
+  back: { label: 'Back / cancel', keys: ['PadB', 'Escape'], def: [1] },
+  drop: { label: 'Put it down', keys: ['PadX', 'KeyG'], def: [2] },
+  notes: { label: 'Notepad', keys: ['PadY', 'Tab'], def: [3] },
+  run: { label: 'Hurry', keys: ['PadLB', 'ShiftLeft'], def: [4, 10] },
+  bolt: { label: 'Throw the bolt', keys: ['PadRB', 'KeyF'], def: [5] },
+  pause: { label: 'Pause', keys: ['PadStart', 'Escape'], def: [9] },
+  up: { label: 'Up', keys: ['PadUp', 'ArrowUp'], def: [12] },
+  down: { label: 'Down', keys: ['PadDown', 'ArrowDown'], def: [13] },
+  left: { label: 'Left', keys: ['PadLeft', 'ArrowLeft'], def: [14] },
+  right: { label: 'Right', keys: ['PadRight', 'ArrowRight'], def: [15] },
 };
+
+/** The actions worth putting in front of a player, in a sensible order. */
+export const BINDABLE = ['confirm', 'back', 'drop', 'notes', 'run', 'bolt', 'pause'];
+
+/** button index -> action id, as the standard mapping lays it out. */
+export function defaultBinds() {
+  const out = {};
+  for (const id of Object.keys(PAD_ACTIONS)) {
+    for (const i of PAD_ACTIONS[id].def) out[i] = id;
+  }
+  return out;
+}
 
 const DEAD = 0.22;
 
@@ -91,6 +103,20 @@ export class Input {
     this._nav = { u: 0, d: 0, l: 0, r: 0 };
     /** What the pad calls itself and how it says it is laid out. */
     this.padMapping = '';
+    /** button index -> action id. Rebindable, because not every pad agrees. */
+    this.binds = defaultBinds();
+    /** True once the player has bound something, or we loaded their layout. */
+    this.bindsAreUser = false;
+    /** False when the browser will not vouch for the pad's layout. */
+    this.padTrusted = true;
+    this._laidOutFor = null;
+    /** Live state, for the controller screen: which indices are down now. */
+    this.padDownIndices = [];
+    this.padAxes = [];
+    this.padButtonCount = 0;
+    /** When set, the next button pressed is bound to this action instead. */
+    this.capturing = null;
+    this.onCaptured = null;
     this._bind();
   }
 
@@ -161,6 +187,25 @@ export class Input {
     }
     if (!pad) { this._padDown.clear(); return; }
 
+    /* Decide what this pad's buttons mean, once per pad.
+
+       If the browser reports the standard mapping, the indices are the
+       standard ones and the default table is right. If it does not -- and
+       Safari and Chrome on macOS routinely do not, even for a first-party
+       Xbox pad -- then the indices are whatever the driver felt like, and
+       laying the standard table over them is worse than laying nothing over
+       them: it does not merely fail to select, it does the wrong thing,
+       putting A on Escape and X on the notepad. So a pad we cannot vouch
+       for starts with nothing bound. Every button then reads as PadAny,
+       which works any menu, and the player is pointed at the controller
+       screen to say which button is which. */
+    if (this._laidOutFor !== pad.id) {
+      this._laidOutFor = pad.id;
+      this.padTrusted = pad.mapping === 'standard';
+      if (!this.bindsAreUser) this.binds = this.padTrusted ? defaultBinds() : {};
+      this._padDown.clear();
+    }
+
     let used = false;
     const ax = pad.axes || [];
     const curve = (v) => {
@@ -180,17 +225,32 @@ export class Input {
     if (this._stickNav(rawX, rawY)) used = true;
 
     const btns = pad.buttons || [];
+    this.padButtonCount = btns.length;
+    this.padAxes = Array.prototype.slice.call(ax);
+    const live = [];
     for (let i = 0; i < btns.length; i++) {
       const b = btns[i];
       const on = typeof b === 'object' ? (b.pressed || b.value > 0.5) : b > 0.5;
-      const keys = PAD_KEYS[i];
-      if (!keys) continue;
-      const id = keys[0];
+      if (on) live.push(i);
+      const action = this.binds[i];
+      // Every button announces its own index whether it is bound or not, so
+      // the controller screen can show a pad the standard mapping does not
+      // describe -- and so an unbound button can still work a menu.
+      const keys = action ? PAD_ACTIONS[action].keys.concat('Pad#' + i) : ['Pad#' + i, 'PadAny'];
+      const id = 'Btn' + i;
       if (on) {
         used = true;
         if (!this._padDown.has(id)) {
           this._padDown.add(id);
-          for (const k of keys) this.pressed.add(k);
+          if (this.capturing) {
+            // A rebind swallows the press rather than acting on it.
+            const act = this.capturing;
+            this.capturing = null;
+            this.bindButton(i, act);
+            if (this.onCaptured) this.onCaptured(act, i);
+          } else {
+            for (const k of keys) this.pressed.add(k);
+          }
         }
         for (const k of keys) this.down.add(k);
       } else if (this._padDown.has(id)) {
@@ -198,20 +258,21 @@ export class Input {
         for (const k of keys) this.down.delete(k);
       }
     }
+    this.padDownIndices = live;
     if (this._padDown.has('PadLB') || this._padDown.has('PadL3')) this.run = true;
     /* Some pads report the D-pad as a hat switch on a ninth axis instead of
        as four buttons. Fold that in so those pads can drive a menu too. */
     if (ax.length > 9) {
       const hat = ax[9];
       if (hat >= -1.2 && hat <= 1.2) {
-        const HAT = [['PadUp', 'ArrowUp'], ['PadRight', 'ArrowRight'],
-          ['PadDown', 'ArrowDown'], ['PadLeft', 'ArrowLeft']];
+        const HAT = [PAD_ACTIONS.up.keys, PAD_ACTIONS.right.keys,
+          PAD_ACTIONS.down.keys, PAD_ACTIONS.left.keys];
         // -1 is up, and it sweeps clockwise through the eight positions.
         const oct = Math.round((hat + 1) * 3.5);
         const live = hat > 1.05 ? -1 : oct;
         HAT.forEach((keys, q) => {
           const on = live >= 0 && (live === q * 2 || live === (q * 2 + 7) % 8 || live === (q * 2 + 1) % 8);
-          const id = 'Hat' + keys[0];
+          const id = 'Hat' + keys[1];
           if (on) {
             used = true;
             if (!this._padDown.has(id)) { this._padDown.add(id); for (const k of keys) this.pressed.add(k); }
@@ -251,6 +312,34 @@ export class Input {
       }
     }
     return any;
+  }
+
+  /** Bind one button index to one action, taking it off whatever had it. */
+  bindButton(index, action) {
+    if (!PAD_ACTIONS[action]) return;
+    for (const k of Object.keys(this.binds)) {
+      if (this.binds[k] === action) delete this.binds[k];
+    }
+    this.binds[index] = action;
+    this.bindsAreUser = true;
+    this._padDown.clear();
+  }
+
+  /** The indices currently standing for an action, for the settings screen. */
+  bindsFor(action) {
+    return Object.keys(this.binds).filter((k) => this.binds[k] === action).map(Number).sort((a, b) => a - b);
+  }
+
+  /** The next button pressed is bound to `action` rather than acting. */
+  capture(action) { this.capturing = action; this._padDown.clear(); }
+  cancelCapture() { this.capturing = null; }
+
+  /** Back to whatever this pad's layout deserves: the standard table if the
+      browser vouched for it, nothing if it did not. */
+  resetBinds() {
+    this.bindsAreUser = false;
+    this.binds = this.padTrusted ? defaultBinds() : {};
+    this._padDown.clear();
   }
 
   requestLock() { if (!this.locked && this.target.requestPointerLock) this.target.requestPointerLock(); }

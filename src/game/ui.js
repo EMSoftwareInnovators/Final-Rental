@@ -346,10 +346,51 @@ export function optionsHtml(o) {
     <li class="opt">Polygon jitter &nbsp; ${o.snap ? 'PS1 (ON)' : 'SMOOTH'}</li>
     <li class="opt">VHS tape &nbsp; ${o.vhs ? 'ON' : 'OFF &mdash; clean PS1'}</li>
     <li class="opt">Tape damage &nbsp; ${bar(o.grain)}${o.vhs ? '' : ' <span class="quiet">(tape off)</span>'}</li>
+    <li class="opt">Controller${o.pad ? '' : ' <span class="quiet">(none connected)</span>'}</li>
     <li class="opt">Back</li>
   </ul>
   <p class="pad-foot">${glyph('left')}${glyph('right')} adjust &nbsp;&middot;&nbsp; ${glyph('confirm')} select &nbsp;&middot;&nbsp; ${glyph('back')} back</p>
-  <p class="pad-foot quiet">${o.pad ? `Controller: ${escape(o.pad)}` : 'No controller detected'}</p>`;
+  <p class="pad-foot quiet">${o.pad
+    ? `Controller: ${escape(o.pad)}${o.padNeedsSetup ? ' &mdash; layout not recognised, set it up below' : ''}`
+    : 'No controller detected'}</p>`;
+}
+
+/**
+ * The controller screen.
+ *
+ * Deliberately usable with a pad that has no working buttons at all: the
+ * stick moves the highlight, and pressing ANY button while an action is
+ * highlighted binds it to that action. Nothing here needs a button that
+ * already works, which is the entire point of the screen.
+ */
+export function padHtml(p) {
+  const row = (r) => {
+    const on = r.capturing;
+    const val = on ? '<span class="k">press a button&hellip;</span>'
+      : r.buttons.length ? r.buttons.map((b) => `<span class="key btn">${b}</span>`).join(' ')
+        : '<span class="quiet">unbound</span>';
+    return `<li class="opt">${escape(r.label)} &nbsp; ${val}</li>`;
+  };
+  const live = p.down.length
+    ? p.down.map((i) => `<span class="key btn">${i}</span>`).join(' ')
+    : '<span class="quiet">nothing pressed</span>';
+  const warn = p.name && !p.trusted && !p.custom
+    ? `<p class="pad-foot k">This browser does not recognise your controller's layout, so
+       nothing is bound yet &mdash; any button will work a menu until you set it up here.</p>`
+    : '';
+  return `<h2>CONTROLLER</h2>
+  <p class="pad-foot">${p.name ? escape(p.name) : 'Nothing connected'}${
+  p.name ? ` &nbsp;&middot;&nbsp; ${escape(p.mapping || 'non-standard')} mapping &nbsp;&middot;&nbsp; ${p.count} buttons` : ''}</p>
+  ${warn}
+  <ul>
+    ${p.rows.map(row).join('\n    ')}
+    <li class="opt">Reset to defaults</li>
+    <li class="opt">Back</li>
+  </ul>
+  <p class="pad-foot">Held down now: ${live}</p>
+  <p class="pad-foot quiet">Move with the stick or ${glyphText('up')}${glyphText('down')}.
+  Highlight a line and press the button you want for it.
+  ESC on the keyboard leaves at any time.</p>`;
 }
 
 export function reportHtml(night, stats, grade, next) {

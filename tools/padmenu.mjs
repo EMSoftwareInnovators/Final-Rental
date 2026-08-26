@@ -19,11 +19,11 @@ const check = (label, ok, extra = '') => {
 };
 
 /* A fake pad, installed before any of the game's code runs. */
-const padScript = (id) => `
-  const st = { buttons: new Array(17).fill(0), axes: [0, 0, 0, 0], id: ${JSON.stringify(id)} };
+const padScript = (id, mapping = 'standard', count = 17) => `
+  const st = { buttons: new Array(${count}).fill(0), axes: [0, 0, 0, 0], id: ${JSON.stringify(id)} };
   window.__pad = st;
   navigator.getGamepads = () => [{
-    index: 0, connected: true, id: st.id, mapping: 'standard',
+    index: 0, connected: true, id: st.id, mapping: ${JSON.stringify(mapping)},
     axes: st.axes.slice(),
     buttons: st.buttons.map((v) => ({ pressed: v > 0.5, value: v })),
   }];
@@ -144,6 +144,124 @@ async function session(id, expectScheme, expectSelect) {
 
 await session('Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e)', 'xbox', 'A');
 await session('DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c)', 'playstation', 'cross');
+
+/* ============================================================
+   A pad that does not follow the standard mapping.
+
+   Its face buttons are at 11, 12, 13, 14 rather than 0-3, so every
+   binding the standard table hands out is pointing at the wrong thing:
+   'A' does nothing at all, and what the table thinks is the d-pad is
+   somewhere else. This is a pad the player has to be able to fix, and
+   fix without any working button to fix it with.
+   ============================================================ */
+async function oddPad() {
+  const id = 'Generic USB Gamepad (Vendor: 0079 Product: 0006)';
+  const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
+  page.on('pageerror', (e) => errors.push(`[odd] ${e.message}`));
+  page.on('console', (m) => { if (m.type() === 'error' && !m.text().includes('404')) errors.push('[console] ' + m.text()); });
+  await page.addInitScript(padScript(id, '', 15));
+  await page.goto('http://localhost:8080/', { waitUntil: 'load' });
+  await page.waitForTimeout(1800);
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  const wait = (ms) => page.waitForTimeout(ms);
+  await ev(() => {
+    window.__game.sound.muted = true;
+    window.__game.input._padIndex = 0;
+    try { localStorage.removeItem('finalrental.padbinds'); } catch (e) { /* fine */ }
+    window.__game.input.resetBinds();
+  });
+  const tap = async (i) => {
+    await ev((b) => { window.__pad.buttons[b] = 1; }, i);
+    await wait(140);
+    await ev((b) => { window.__pad.buttons[b] = 0; }, i);
+    await wait(180);
+  };
+  const flick = async (axis, v) => {
+    await ev(([a, x]) => { window.__pad.axes[a] = x; }, [axis, v]);
+    await wait(140);
+    await ev(([a]) => { window.__pad.axes[a] = 0; }, [axis, 0]);
+    await wait(180);
+  };
+  const st = () => ev(() => ({
+    state: window.__game.state, menu: window.__game.menuSel,
+    opt: window.__game.optSel, padSel: window.__game.padSel,
+    confirm: window.__game.input.bindsFor('confirm'),
+    back: window.__game.input.bindsFor('back'),
+  }));
+
+  console.log(`\n  -- ${id} (face buttons at 11-14) --`);
+
+  // The stick still navigates: axes are axes on any pad.
+  await flick(1, 1);
+  check('odd pad: the stick still moves the cursor', (await st()).menu === 1, `item ${(await st()).menu}`);
+
+  // Nothing is bound, because the browser would not vouch for the layout.
+  // Laying the standard table over a pad that does not follow it is how A
+  // ends up on Escape and X on the notepad.
+  check('odd pad: a layout the browser will not vouch for starts unbound',
+    (await st()).confirm.length === 0 && (await st()).back.length === 0
+    && await ev(() => window.__game.input.padTrusted) === false,
+    `select ${JSON.stringify((await st()).confirm)}, back ${JSON.stringify((await st()).back)}`);
+  check('odd pad: and the game says so rather than misbehaving quietly',
+    await ev(() => window.__game.optView().padNeedsSetup) === true);
+
+  // An unbound button is let through as a confirm rather than doing nothing.
+  await ev(() => { window.__game.menuSel = 3; });
+  await tap(11);
+  check('odd pad: a button the standard table does not know still works a menu',
+    (await st()).state === 'OPTIONS', (await st()).state);
+
+  // Down to the Controller row and into it.
+  await ev(() => { window.__game.optSel = 7; window.__ui && 0; });
+  await ev(() => { window.__game.ui.panelSelect(7); });
+  await tap(11);
+  check('odd pad: the controller screen opens', (await st()).state === 'PADCFG', (await st()).state);
+
+  const seen = await ev(() => {
+    const v = window.__game.padView();
+    return { name: v.name, mapping: v.mapping, count: v.count, rows: v.rows.map((r) => r.id) };
+  });
+  check('odd pad: and it reports what the pad actually says about itself',
+    seen.name === id && seen.count === 15, `${seen.count} buttons, "${seen.mapping || 'non-standard'}" mapping`);
+
+  // Bind select to 11 and back to 12, with nothing but the stick and those buttons.
+  check('odd pad: select is armed as soon as its line is highlighted',
+    await ev(() => window.__game.input.capturing === 'confirm'),
+    await ev(() => String(window.__game.input.capturing)));
+  await tap(11);
+  check('odd pad: pressing a button on that line binds it',
+    (await st()).confirm.join(',') === '11', `select = ${(await st()).confirm.join(',')}`);
+  await flick(1, 1);
+  await tap(12);
+  check('odd pad: and the next line takes the next button',
+    (await st()).back.join(',') === '12', `back = ${(await st()).back.join(',')}`);
+
+  // Down to Back and out, on the pad alone. Walk it one line at a time and
+  // stop on the last row rather than counting -- stepping onto "Reset to
+  // defaults" and pressing a button does exactly what it says on the tin.
+  for (let k = 0; k < 12 && (await st()).padSel !== 8; k++) await flick(1, 1);
+  check('odd pad: the stick reaches the bottom of the screen', (await st()).padSel === 8, `row ${(await st()).padSel}`);
+  await tap(11);
+  check('odd pad: and the newly bound select gets you out', (await st()).state === 'OPTIONS', (await st()).state);
+
+  // Now the bindings should behave like any other pad's.
+  await tap(12);
+  check('odd pad: the newly bound back button leaves options', (await st()).state === 'TITLE', (await st()).state);
+  await ev(() => { window.__game.menuSel = 0; });
+  await tap(11);
+  check('odd pad: and select starts a run', (await st()).state === 'ESTABLISH', (await st()).state);
+
+  // And it is remembered.
+  const saved = await ev(() => {
+    try { return JSON.parse(localStorage.getItem('finalrental.padbinds') || 'null'); } catch (e) { return null; }
+  });
+  check('odd pad: the binding is written down for next time',
+    saved && saved['11'] === 'confirm' && saved['12'] === 'back',
+    saved ? JSON.stringify(saved).slice(0, 60) : 'nothing saved');
+
+  await page.close();
+}
+await oddPad();
 
 console.log('\n--- errors ---');
 console.log(errors.length ? errors.join('\n') : '(none)');

@@ -5,7 +5,7 @@
    ============================================================ */
 import { Raster } from '../engine/raster.js';
 import { PostFX } from '../engine/postfx.js';
-import { Input } from '../engine/input.js';
+import { Input, PAD_ACTIONS, BINDABLE } from '../engine/input.js';
 import { Sound } from '../engine/audio.js';
 import { buildTextures } from '../engine/texture.js';
 import { mat, mul, setPosYaw, setRotX, setRotY, setTranslate, invertRigid, clamp } from '../engine/mathx.js';
@@ -20,13 +20,13 @@ import { specialById } from './specials.js';
 import { createKiller, updateKiller, KP, killerActive, killerInside, killerInView, addIntel } from './killer.js';
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
 import { DialogueRunner, buildOfficerIntro, talkTo, buildPhoneCall } from './dialogue.js';
-import { UI, howToHtml, optionsHtml, reportHtml, endingHtml, glyph, glyphText, setScheme } from './ui.js';
+import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme } from './ui.js';
 import { randomAppearance, paintSkin, voicePitchOf, pronounOf } from './appearance.js';
 import { OFFICER } from './personality.js';
 import { GENRE_LABEL, GENRES, makeTape } from './tapes.js';
 
 const ST = {
-  BOOT: 'BOOT', TITLE: 'TITLE', HOWTO: 'HOWTO', OPTIONS: 'OPTIONS',
+  BOOT: 'BOOT', TITLE: 'TITLE', HOWTO: 'HOWTO', OPTIONS: 'OPTIONS', PADCFG: 'PADCFG',
   ESTABLISH: 'ESTABLISH', PLAY: 'PLAY', REPORT: 'REPORT', ENDING: 'ENDING', PAUSE: 'PAUSE',
 };
 
@@ -49,6 +49,7 @@ export class Game {
     };
     this.menuSel = 0;
     this.optSel = 0;
+    this.padSel = 0;
     this.dlg = new DialogueRunner();
     this.phone = new DialogueRunner();
     this.notesOpen = false;
@@ -236,6 +237,7 @@ export class Game {
     switch (this.state) {
       case ST.TITLE: this.updateTitle(dt); break;
       case ST.HOWTO: case ST.OPTIONS: this.updatePanelMenu(dt); break;
+      case ST.PADCFG: this.updatePadMenu(dt); break;
       case ST.ESTABLISH: this.updateEstablish(dt); break;
       case ST.PLAY: this.updatePlay(dt); break;
       case ST.PAUSE: this.updatePause(dt); break;
@@ -260,6 +262,25 @@ export class Game {
     requestAnimationFrame(this.frame);
   }
 
+  /**
+   * A menu confirm.
+   *
+   * 'PadAny' is any pad button that is not bound to anything. On a pad the
+   * standard mapping does not describe, that may well be the button under
+   * the player's thumb -- and a menu is a safe place to let it through,
+   * where nothing worse can happen than selecting the thing you were
+   * already looking at.
+   */
+  confirmHit() {
+    return this.input.hit('Enter', 'KeyE', 'Space', 'PadAny');
+  }
+
+  /** The same, for the screens where clicking has always been allowed.
+      The pause menu is deliberately not one of them. */
+  confirmOrClick() {
+    return this.confirmHit() || this.input.mousePressed[0];
+  }
+
   /** Run something for its noise only. If it fails, the game carries on. */
   quietly(fn) {
     try { fn(); } catch (err) { this._audioDead = err; }
@@ -269,6 +290,7 @@ export class Game {
   onSchemeChanged() {
     if (this.state === ST.HOWTO) this.ui.showPanel(howToHtml());
     else if (this.state === ST.OPTIONS) { this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel); }
+    else if (this.state === ST.PADCFG) this.showPadMenu();
     else if (this.state === ST.PAUSE) this.showPauseMenu();
     this._promptCache = null;
   }
@@ -308,7 +330,7 @@ export class Game {
     if (i.hit('ArrowUp', 'KeyW')) { this.menuSel = (this.menuSel + n - 1) % n; this.quietly(() => { this.sound.init(); this.sound.uiMove(); }); }
     if (i.hit('ArrowDown', 'KeyS')) { this.menuSel = (this.menuSel + 1) % n; this.quietly(() => { this.sound.init(); this.sound.uiMove(); }); }
     this.ui.titleSelect(this.menuSel);
-    if (i.hit('Enter', 'KeyE', 'Space') || i.mousePressed[0]) {
+    if (this.confirmOrClick()) {
       // Bringing the mixer up is the first thing a menu press does, and on a
       // pad there has been no click or keystroke to unlock audio with. If the
       // browser refuses, that is a silent title screen -- not a dead one.
@@ -324,13 +346,14 @@ export class Game {
       vhs: this.opts.vhs,
       // Named here so a pad that behaves oddly can at least be identified.
       pad: this.input.padId,
+      padNeedsSetup: !!this.input.padId && !this.input.padTrusted && !this.input.bindsAreUser,
     };
   }
 
   updatePanelMenu() {
     const i = this.input;
     if (this.state === ST.HOWTO) {
-      if (i.hit('Enter', 'KeyE', 'Escape', 'Space')) {
+      if (this.confirmHit() || i.hit('Escape')) {
         this.sound.uiBack();
         this.ui.hidePanel();
         if (this._fromPause) { this._fromPause = false; this.showPauseMenu(); }
@@ -338,8 +361,9 @@ export class Game {
       }
       return;
     }
-    const N = 8;
+    const N = 9;
     const BACK = N - 1;
+    const PADROW = N - 2;
     const TOGGLES = { 1: 'invert', 4: 'snap', 5: 'vhs' };
     if (i.hit('ArrowUp', 'KeyW')) { this.optSel = (this.optSel + N - 1) % N; this.sound.uiMove(); }
     if (i.hit('ArrowDown', 'KeyS')) { this.optSel = (this.optSel + 1) % N; this.sound.uiMove(); }
@@ -359,11 +383,16 @@ export class Game {
       this.ui.showPanel(optionsHtml(this.optView()));
     }
     this.ui.panelSelect(this.optSel);
-    if (i.hit('Enter', 'KeyE', 'Escape')) {
+    if (this.confirmHit() || i.hit('Escape')) {
       if (this.optSel === BACK || i.hit('Escape')) {
         this.sound.uiBack();
         if (this._fromPause) { this._fromPause = false; this.showPauseMenu(); }
         else { this.ui.hidePanel(); this.state = ST.TITLE; }
+      } else if (this.optSel === PADROW) {
+        this.quietly(() => this.sound.uiSelect());
+        this.state = ST.PADCFG; this.padSel = 0;
+        this.input.cancelCapture();
+        this.showPadMenu();
       } else if (TOGGLES[this.optSel]) {
         this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
         this.applyOptions(); this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel);
@@ -371,7 +400,103 @@ export class Game {
     }
   }
 
+  /* ---------------- the controller screen ----------------
+     Built so that it works with a pad whose buttons all do nothing, which
+     is the only situation in which anybody needs it: the stick moves the
+     highlight, and any button press binds itself to the highlighted line. */
+  padView() {
+    const i = this.input;
+    return {
+      name: i.padId, mapping: i.padMapping, count: i.padButtonCount,
+      trusted: i.padTrusted, custom: i.bindsAreUser,
+      down: i.padDownIndices.slice(),
+      rows: BINDABLE.map((id) => ({
+        id, label: PAD_ACTIONS[id].label,
+        buttons: i.bindsFor(id),
+        capturing: i.capturing === id,
+      })),
+    };
+  }
+
+  showPadMenu() {
+    this.ui.showPanel(padHtml(this.padView()));
+    this.ui.panelSelect(this.padSel);
+  }
+
+  updatePadMenu() {
+    const i = this.input;
+    const N = BINDABLE.length + 2;          // the actions, plus reset and back
+    const RESET = N - 2;
+    const BACK = N - 1;
+    const leave = () => {
+      i.cancelCapture();
+      this.quietly(() => this.sound.uiBack());
+      this.state = ST.OPTIONS;
+      this.ui.showPanel(optionsHtml(this.optView()));
+      this.ui.panelSelect(this.optSel);
+    };
+
+    // The keyboard always works, whatever the pad is doing.
+    if (i.hit('Escape')) { leave(); return; }
+
+    let moved = false;
+    if (i.hit('ArrowUp', 'KeyW')) { this.padSel = (this.padSel + N - 1) % N; moved = true; }
+    if (i.hit('ArrowDown', 'KeyS')) { this.padSel = (this.padSel + 1) % N; moved = true; }
+    if (moved) {
+      i.cancelCapture();
+      this.quietly(() => this.sound.uiMove());
+      this.showPadMenu();
+      return;
+    }
+
+    if (this.padSel === RESET || this.padSel === BACK) {
+      // Any button at all, plus the keyboard, works these two.
+      if (this.confirmHit() || i.hit('PadAny') || i.hit('Enter')) {
+        if (this.padSel === BACK) { leave(); return; }
+        i.resetBinds();
+        this.savePadBinds();
+        this.quietly(() => this.sound.uiSelect());
+        this.showPadMenu();
+      }
+      return;
+    }
+
+    /* An action line. Arm the capture, and the next button pressed becomes
+       that action -- no working button required to get there. */
+    const action = BINDABLE[this.padSel];
+    if (i.capturing !== action) {
+      i.capture(action);
+      i.onCaptured = () => {
+        i.onCaptured = null;
+        this.savePadBinds();
+        this.quietly(() => this.sound.uiSelect());
+        if (this.state === ST.PADCFG) this.showPadMenu();
+        this.onSchemeChanged();
+      };
+      this.showPadMenu();
+    }
+  }
+
+  /** Bindings are the one setting worth remembering between sessions. */
+  savePadBinds() {
+    try { localStorage.setItem('finalrental.padbinds', JSON.stringify(this.input.binds)); }
+    catch (err) { /* private browsing, or no storage at all. Not fatal. */ }
+  }
+
+  loadPadBinds() {
+    try {
+      const raw = localStorage.getItem('finalrental.padbinds');
+      if (!raw) return;
+      const b = JSON.parse(raw);
+      if (b && typeof b === 'object' && Object.keys(b).length) {
+        this.input.binds = b;
+        this.input.bindsAreUser = true;
+      }
+    } catch (err) { /* a corrupt entry just means the defaults */ }
+  }
+
   applyOptions() {
+    this.loadPadBinds();
     this.input.sensitivity = 0.0009 + this.opts.sens * 0.0032;
     this.input.invertY = this.opts.invert;
     this.sound.masterVol = this.opts.vol;
@@ -565,7 +690,7 @@ export class Game {
     if (i.hit('ArrowDown', 'KeyS')) { this.pauseSel = (this.pauseSel + 1) % N; this.sound.uiMove(); }
     this.ui.panelSelect(this.pauseSel);
     if (i.hit('Escape')) { this.resume(); return; }
-    if (i.hit('Enter', 'KeyE', 'Space')) {
+    if (this.confirmHit()) {
       this.quietly(() => this.sound.uiSelect());
       if (this.pauseSel === 0) this.resume();
       else if (this.pauseSel === 1) { this.state = ST.OPTIONS; this.optSel = 0; this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(0); this._fromPause = true; }
@@ -1604,7 +1729,7 @@ export class Game {
       this.distress = 1;
     }
     const gate = this.endKind === 'ATTACKED' ? 4.4 : 2.6;
-    if (this.endTimer > gate && (this.input.hit('KeyE', 'Enter', 'Space') || this.input.mousePressed[0])) {
+    if (this.endTimer > gate && this.confirmOrClick()) {
       this.ui.hidePanel(); this.ui.cinema(false);
       this.ui.showTitle(true); this.state = ST.TITLE; this.menuSel = 0; this.titleT = 0;
       this.death = null; this.shake = 0;
@@ -1650,7 +1775,7 @@ export class Game {
 
   updateReport(dt) {
     this.reportTimer += dt;
-    if (this.reportTimer > 1.0 && (this.input.hit('KeyE', 'Enter', 'Space') || this.input.mousePressed[0])) {
+    if (this.reportTimer > 1.0 && this.confirmOrClick()) {
       this.ui.hidePanel();
       this.startNight(this.nightNo + 1);
     }
