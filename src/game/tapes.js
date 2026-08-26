@@ -1,8 +1,12 @@
 /* ============================================================
-   tapes.js -- the rental catalogue. Six genres, six shelves.
-   A tape knows its genre (where it must go back), whether it was
-   rewound, and how overdue it is.
+   tapes.js -- the rental counter's rules. Seven runs, seven
+   shelves. A tape knows its genre (where it must go back),
+   whether it was rewound, and how overdue it is. The titles
+   themselves live in catalog.js.
    ============================================================ */
+import { CATALOG } from './catalog.js';
+
+export { CATALOG };
 
 export const GENRES = ['HORROR', 'COMEDY', 'ACTION', 'SCIFI', 'DRAMA', 'FAMILY', 'GAMES'];
 
@@ -28,51 +32,6 @@ export const PRICE = {
   DRAMA: 2.49, FAMILY: 2.49, GAMES: 4.99,
 };
 export const LATE_PER_DAY = { GAMES: 2 };
-
-export const CATALOG = {
-  HORROR: [
-    'THE CRAWL', 'BLOOD ORCHARD', 'NIGHT CLERK', 'SLAUGHTER MOTEL', 'THE REWIND',
-    'CHILDREN OF THE STATIC', 'MEAT LOCKER 3', 'HER TEETH', 'CABIN 14',
-    'THE MAN IN THE HALL', 'SPLICE OF LIFE', 'GRAVEYARD SHIFT', 'FEEDING TIME',
-    'THE WEEPING WALL', 'BLACK FRIDAY VHS',
-  ],
-  COMEDY: [
-    'DOUBLE SHIFT', 'MY OTHER DAD', 'PIZZA WARS', 'THE INTERN FROM MARS',
-    'HONEY, I QUIT', 'THREE GUYS ONE VAN', 'SUMMER OF LARRY', 'OFFICE PARTY 2',
-    'THE GREAT LAWN FEUD', 'BOWLING FOR RENT', 'MY BOSS IS A GHOST',
-    'CAMP LOOSE ENDS', 'DENTIST ON THE RUN',
-  ],
-  ACTION: [
-    'HARD EXIT', 'MAXIMUM VELOCITY', 'THE LAST PRECINCT', 'STEEL RAIN',
-    'CODENAME: MAGPIE', 'DEEP HARBOR', 'BLACK ICE PATROL', 'FIST OF THE DELTA',
-    'RUNAWAY FREIGHT', 'DOUBLE CROSSFIRE', 'THE COURIER', 'NITRO CITY',
-    'SIEGE AT PIER 9',
-  ],
-  SCIFI: [
-    'ORBIT ZERO', 'THE QUIET SIGNAL', 'ANDROID SUMMER', 'GRAVITY WELL',
-    'CHRONOFAULT', 'THE LAST TRANSMISSION', 'STARFALL 88', 'MIND OF GLASS',
-    'THE COLONY BELOW', 'ECHO PROTOCOL', 'TERMINAL VELOCITY 9', 'DUST OF EUROPA',
-  ],
-  DRAMA: [
-    'A QUIET COUNTY', 'THE LONG DRIVE HOME', 'FATHERS AND FIRES', 'LETTERS FROM ELM',
-    'THE SEASON AFTER', 'PAPER ANNIVERSARY', 'WHAT THE RIVER TOOK', 'SALT AND HONEY',
-    'THE UNDERSTUDY', 'NINE DAYS IN OCTOBER', 'THE WEIGHT OF SUNDAY',
-  ],
-  FAMILY: [
-    'BUSTER GOES TO CAMP', 'THE LOST PUPPY PATROL', 'SKATEBOARD SUMMER',
-    'PRINCESS OF THE PINES', 'MY PET DINOSAUR', 'THE HOMEWORK MACHINE',
-    'GRANDMA VS THE MALL', 'HOOPS AND DREAMS JR', 'THE SNOW FORT',
-    'TOBY AND THE TALKING TRUCK',
-  ],
-  GAMES: [
-    'GRAVEL MERCHANTS', 'HYPER TURBO GRAND PRIX', 'CASTLE OF THE SEVENTH KEY',
-    'MEGA PUNCH TOURNAMENT', 'SEWER RESCUE SQUAD', 'STARFIGHTER OMEGA',
-    'BLOCK BUSTER DELUXE', 'NINJA COURIER 2', 'DIRT TRACK DYNASTY',
-    'ROBO-DOG ADVENTURE', 'THE PIXEL DUNGEON', 'SLAM CITY BASKETBALL',
-    'SPACE HAULER 3000', 'KUNG-FU ISLAND', 'WIZARD OF THE NINE GATES',
-    'MONSTER TRUCK MAYHEM', 'FROG QUEST', 'TURBO GOLF CHALLENGE',
-  ],
-};
 
 let nextId = 1;
 

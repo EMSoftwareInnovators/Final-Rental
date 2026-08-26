@@ -15,7 +15,8 @@ import {
 } from './world.js';
 import { buildActorMeshes, drawActor, ACTOR_HEIGHT, makeAnim, updateAnim } from './actor.js';
 import { createPlayer, updatePlayer, buildCamera, castInteract, canCarry, takeTape, topTape, heldTapeMatrix, heldCashMatrix, forwardOf } from './player.js';
-import { createCustomer, updateCustomer, CS, observeVisible, moodLabel } from './customer.js';
+import { createCustomer, updateCustomer, CS, observeVisible, moodLabel, makeSpecial } from './customer.js';
+import { specialById } from './specials.js';
 import { createKiller, updateKiller, KP, killerActive, killerInside, killerInView, addIntel } from './killer.js';
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
 import { DialogueRunner, buildOfficerIntro, talkTo, buildPhoneCall } from './dialogue.js';
@@ -775,6 +776,10 @@ export class Game {
       s.spawned = true;
       if (this.customers.length > 5) { s.t = this.sim + 12; s.spawned = false; continue; }
       const rng = this.rng;
+      if (s.special) {
+        const sp = specialById(s.special);
+        if (sp) { this.customers.push(makeSpecial(rng, sp)); continue; }
+      }
       let app;
       if (s.decoy) app = makeDecoyAppearance(rng, this.night.suspect, this.night.bulletin.keys, s.forced);
       else app = sanitizeInnocent(rng, randomAppearance(rng), this.night.suspect, this.night.bulletin.keys);
@@ -1873,6 +1878,25 @@ export class Game {
         c.speed *= 1.12;
       },
 
+      /* The rest of the room reacting to whoever is ruining it. Only people
+         who are actually in the shop and can actually perceive it. */
+      nuisanceGripe: (c) => {
+        const near = g.customers.filter((o) => o !== c && !o.hidden
+          && o.state !== CS.ARRIVING && o.state !== CS.GONE
+          && Math.hypot(o.x - c.x, o.z - c.z) < 7.5);
+        const lines = c.complaints || [];
+        if (!lines.length) return;
+        if (near.length) {
+          const who = g.rng.pick(near);
+          who.mood = Math.max(0, who.mood - 7);
+          g.ui.toast(`${who.name}: "${g.rng.pick(lines)}"`, '');
+          g.sound.blip(voicePitchOf(who.app), who.app.voice.rough);
+        } else if (g.rng.chance(0.4)) {
+          // nobody else in: the player gets it straight
+          g.ui.toast(g.rng.pick(NUISANCE_SOLO[c.nuisance] || ['...']), '');
+        }
+      },
+
       grumble: (c) => {
         g.sound.blip(voicePitchOf(c.app), c.app.voice.rough);
         g.ui.toast(`${c.name}: "${pickGrumble(c, g.rng)}"`, '');
@@ -2081,6 +2105,25 @@ function angleDelta(a, b) {
   while (d < -Math.PI) d += Math.PI * 2;
   return d;
 }
+
+/* With nobody else in the shop, the nuisance is just yours to sit with. */
+const NUISANCE_SOLO = {
+  noise: [
+    `The bass is coming up through the counter.`,
+    `You can feel it in the tape racks.`,
+    `Something on the shelf behind you is buzzing in sympathy.`,
+  ],
+  stench: [
+    `It has reached the counter.`,
+    `You breathe through your mouth for a while.`,
+    `The smell has found the corner you are standing in.`,
+  ],
+  skunk: [
+    `The whole front of the shop smells like a greenhouse fire.`,
+    `That is going to be in the carpet tomorrow.`,
+    `Your eyes water a little.`,
+  ],
+};
 
 /* What he says while he is standing at your counter and you are not. */
 const OFFICER_NAGS = [

@@ -19,6 +19,8 @@ const DESPAWN_X = 11.5;
 export const CS = {
   ARRIVING: 'ARRIVING', ENTERING: 'ENTERING', BROWSING: 'BROWSING', PICKING: 'PICKING',
   TO_COUNTER: 'TO_COUNTER', WAITING: 'WAITING', TALKING: 'TALKING',
+  /** doing whatever they came in to do instead of shopping */
+  ACTING: 'ACTING',
   LEAVING: 'LEAVING', GONE: 'GONE',
 };
 
@@ -97,6 +99,47 @@ export function createCustomer(rng, opts = {}) {
   return c;
 }
 
+/**
+ * One of the regulars nobody wants.
+ *
+ * Same face, same coat, same problem, every time they turn up -- so the
+ * appearance and personality come straight off the roster rather than
+ * being rolled, and they carry an `act`: a thing they do in the shop
+ * instead of queueing politely.
+ */
+export function makeSpecial(rng, sp) {
+  const c = createCustomer(rng, {
+    app: sp.app,
+    personality: sp.personality,
+    name: sp.name,
+    intent: sp.script === 'WRONGSTORE' ? 'RETURN' : 'RENT',
+    hasMoney: sp.wealth > 0.5,
+  });
+  c.special = sp.id;
+  c.act = sp.act || null;
+  c.specialScript = sp.script || null;
+  c.nuisance = sp.nuisance || null;
+  c.complaints = sp.complaints || null;
+  c.blocksLine = !!sp.blocksLine;
+  c.asked = 0;                 // how many times you have asked them to go
+  c.actTimer = 0;
+  // All of them run their own tree rather than the ordinary rent/return one.
+  c.script = 'special';
+  // Only the man who wandered in with somebody else's tape is carrying
+  // anything; the rest are not here to rent and never browse for one.
+  if (sp.script !== 'WRONGSTORE') c.tape = null;
+  return c;
+}
+
+/* Where each act happens. */
+const ACT_SPOT = {
+  DANCE: { x: 6.6, z: 3.4, yaw: Math.PI },
+  TV: { x: 2.3, z: 2.8, yaw: -0.9 },
+  LINGER: null,          // wanders the shelves
+  AUDIT: null,           // wanders the shelves, slowly, tutting
+  PHONE: { x: 8.4, z: 4.6, yaw: 0.4 },
+};
+
 /* ---------------- movement ---------------- */
 function setDest(c, x, z, ctx) {
   c.path = navPath(c.x, c.z, x, z, ctx.solids, c.r + 0.06);
@@ -154,11 +197,60 @@ export function updateCustomer(c, dt, ctx) {
     }
 
     case CS.ENTERING: {
-      if (!c.path) setDest(c, SPOTS.door.x, SPOTS.door.z + 0.9, ctx);
-      if (step(c, dt, ctx)) {
-        const browses = c.script === 'rent' || c.browsesFirst;
-        if (browses) { c.state = CS.BROWSING; c.path = null; c.timer = 0; }
-        else { c.state = CS.TO_COUNTER; c.path = null; }
+      // Fan out a little on the way in. On a busy night a dozen people all
+      // aiming at the same tile inside the door simply wedge there.
+      if (!c.path) {
+        setDest(c, SPOTS.door.x + (c.id % 5 - 2) * 0.22, SPOTS.door.z + 0.9 + (c.id % 3) * 0.2, ctx);
+      }
+      c.timer += dt;
+      // Wherever they got to, they are inside now.
+      if (step(c, dt, ctx) || c.timer > 5) {
+        c.path = null; c.timer = 0;
+        if (c.act) { c.state = CS.ACTING; }
+        else if (c.script === 'rent' || c.browsesFirst) c.state = CS.BROWSING;
+        else c.state = CS.TO_COUNTER;
+      }
+      break;
+    }
+
+    /* ---- the ones who came in to do something else ---- */
+    case CS.ACTING: {
+      c.actTimer += dt;
+      const spot = ACT_SPOT[c.act];
+      if (spot) {
+        if (!c.path && !c.parked && dist(c.x, c.z, spot.x, spot.z) > 0.4) {
+          setDest(c, spot.x, spot.z, ctx);
+          c.walkT = 0;
+        }
+        if (c.path) {
+          c.walkT = (c.walkT || 0) + dt;
+          // Somebody is in the way and is not moving. Near enough is near enough.
+          if (step(c, dt, ctx) || c.walkT > 12) { c.path = null; c.parked = true; }
+          else break;
+        }
+        c.yaw = angleTowards(c.yaw, spot.yaw, dt * 3);
+        c.moveSpeed = 0;
+      } else {
+        // no fixed spot: drift along the shelves indefinitely
+        if (!c.path) {
+          const sh = SHELVES[rng.int(SHELVES.length)];
+          const b = sh.browse[rng.int(sh.browse.length)];
+          setDest(c, b.x, b.z, ctx);
+          c.actSpot = b;
+        }
+        if (step(c, dt, ctx)) { c.path = null; c.dwell = 3 + rng() * 6; }
+        if (c.actSpot && !c.path) {
+          c.yaw = angleTowards(c.yaw, c.actSpot.yaw, dt * 3);
+          c.dwell -= dt;
+          if (c.dwell <= 0) c.actSpot = null;
+        }
+      }
+      // the performance itself, in the animation
+      performAct(c, dt);
+      // they are a nuisance, and the room notices
+      if (c.nuisance) {
+        c.gripeT = (c.gripeT || 6 + rng() * 6) - dt;
+        if (c.gripeT <= 0) { c.gripeT = 9 + rng() * 10; ctx.nuisanceGripe(c); }
       }
       break;
     }
@@ -329,6 +421,16 @@ export function updateCustomer(c, dt, ctx) {
     default: break;
   }
 
+  if (c.state === CS.ACTING && !c.path) {
+    // performAct() owns the rig this frame; only the feet get the usual pass
+    updateAnim(c.anim, dt, 0, c.app, { keep: true });
+    c.reading = false;
+    if (!c.smelled && dist(c.x, c.z, ctx.player.x, ctx.player.z) < 1.9) {
+      c.smelled = true; c.observed.add('smell');
+    }
+    return;
+  }
+
   const talking = c.state === CS.TALKING && ctx.speaking === c;
   const reading = c.state === CS.BROWSING && c.browse
     && (c.browse.phase === 'READ' || c.browse.phase === 'PULL' || c.browse.phase === 'PUTBACK');
@@ -343,6 +445,52 @@ export function updateCustomer(c, dt, ctx) {
   // proximity reveals what you cannot see from across the room
   if (!c.smelled && dist(c.x, c.z, ctx.player.x, ctx.player.z) < 1.9) {
     c.smelled = true; c.observed.add('smell');
+  }
+}
+
+/**
+ * What an act looks like from across the shop.
+ *
+ * These are the only customers you can identify by silhouette alone,
+ * which is the point of them: the dancing is visible from the counter.
+ */
+function performAct(c, dt) {
+  const a = c.anim;
+  c.actPhase = (c.actPhase || 0) + dt;
+  const t = c.actPhase;
+  switch (c.act) {
+    case 'DANCE':
+      a.bob = Math.abs(Math.sin(t * 5.2)) * 0.09;
+      a.lean = Math.sin(t * 2.6) * 0.16;
+      a.armL = -1.5 + Math.sin(t * 5.2) * 1.1;
+      a.armR = -1.5 + Math.sin(t * 5.2 + 2.1) * 1.1;
+      a.armLz = Math.sin(t * 3.1) * 0.7;
+      a.armRz = -Math.sin(t * 3.1) * 0.7;
+      a.headYaw = Math.sin(t * 2.6) * 0.5;
+      a.headPitch = Math.sin(t * 5.2) * 0.18;
+      c.yaw += Math.sin(t * 0.9) * dt * 1.6;
+      break;
+    case 'TV':
+      // absolutely still, head tipped back at the screen
+      a.headPitch = -0.34 + Math.sin(t * 0.5) * 0.03;
+      a.armL = -0.42 + Math.sin(t * 0.35) * 0.06;   // the hand comes up now and then
+      a.armR = 0;
+      a.bob = Math.sin(t * 0.6) * 0.006;
+      break;
+    case 'PHONE':
+      a.armL = -2.3;                                 // handset clamped to the ear
+      a.armLz = 0.5;
+      a.headYaw = Math.sin(t * 0.8) * 0.35;
+      a.lean = Math.sin(t * 0.5) * 0.06;
+      break;
+    case 'AUDIT':
+      a.headPitch = 0.22 + Math.sin(t * 0.7) * 0.12;
+      a.headYaw = Math.sin(t * 0.4) * 0.5;
+      break;
+    case 'LINGER':
+    default:
+      a.headPitch = 0.1 + Math.sin(t * 0.4) * 0.1;
+      break;
   }
 }
 

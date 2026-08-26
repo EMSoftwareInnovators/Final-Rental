@@ -381,6 +381,15 @@ export function makeAnim() {
 }
 
 export function updateAnim(an, dt, moveSpeed, app, opts = {}) {
+  /* `keep` means somebody else is driving the rig this frame -- a special
+     customer performing whatever it is they came in to perform -- so the
+     idle and walk cycles stay out of it and only the legs settle. */
+  if (opts.keep) {
+    an.phase += dt * 1.4;
+    an.legSwing += (0 - an.legSwing) * Math.min(1, dt * 8);
+    an.crouch = 0;
+    return;
+  }
   an.limp = app.gait.id === 'limp';
   const stiff = app.gait.id === 'stiff';
   const shuffle = app.gait.id === 'shuffle';

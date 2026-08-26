@@ -11,6 +11,7 @@ import {
 } from './appearance.js';
 import { planKiller, KILLER_FIRST_NIGHT, killerChance } from './killer.js';
 import { GENRES } from './tapes.js';
+import { planSpecials } from './specials.js';
 
 export { KILLER_FIRST_NIGHT, killerChance };
 
@@ -118,9 +119,22 @@ export function makeNight(seed, n, mode = MODE.HORROR) {
   }
   schedule.sort((a, b) => a.t - b.t);
 
+  /* The people who are not here to rent anything.
+     They take an ordinary customer's slot rather than adding to the rota,
+     so a night with four of them is a night with four fewer normal ones --
+     which is exactly what makes it feel like a bad night. Decoy slots are
+     left alone: they are load-bearing for the identification game. */
+  const specials = planSpecials(rng, n, count);
+  // Read the flag, not the index: the rota was sorted by arrival time above,
+  // so the decoys are no longer the first few entries.
+  const open = [];
+  schedule.forEach((e, i) => { if (!e.decoy) open.push(i); });
+  const slots = rng.shuffle(open).slice(0, specials.picks.length);
+  slots.forEach((slot, i) => { schedule[slot].special = specials.picks[i]; });
+
   return {
     n, seed, rng, mode, length, bulletin, suspect, plan, schedule, caseFile,
-    deputy, deputyAt,
+    deputy, deputyAt, swarm: specials.swarm,
     officerApp: makeOfficerApp(rng),
     officerName: `Deputy ${randomName(rng).split(' ')[1]}`,
     overlap,

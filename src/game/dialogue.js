@@ -163,6 +163,7 @@ export function talkTo(c, ctx, opts = {}) {
   }
   /* Business is done at the window, at the front of the line. Anywhere
      else you can talk to somebody, but you cannot take their money. */
+  if (c.special && c.script === 'special' && !c.checkedOut) return specialRoot(c, ctx);
   if (opts.atCounter === false) return idleRoot(c, ctx);
   /* Everything below here reads c.tape and its price or its due date.
      Two people never have one: a shopper still working down the shelves,
@@ -838,4 +839,409 @@ export function buildPhoneCall(ctx) {
       .concat([reply(`Never mind. Sorry.`, () => hang())]));
 
   return choose();
+}
+
+/* ============================================================
+   THE REGULARS NOBODY WANTS
+
+   Each of these is a situation rather than a transaction. Some can
+   be talked round, some can be sold something, and some have to be
+   asked to leave more than once -- which costs you the time of
+   everybody standing in the line behind them.
+   ============================================================ */
+
+/** Shared shape: ask them to go, and they do not go the first time. */
+function eject(c, ctx, texts, opts = {}) {
+  const rng = ctx.rng;
+  c.asked = (c.asked || 0) + 1;
+  const n = Math.min(c.asked, texts.length) - 1;
+  if (c.asked >= (opts.takes || texts.length)) {
+    return say(c, texts[texts.length - 1], [
+      reply(`Thank you.`, () => { ctx.leave(c); return null; }),
+      ...(opts.andSell ? [reply(`...Before you go. Do you want to rent something?`, () => {
+        ctx.mood(c, +12);
+        return opts.andSell();
+      })] : []),
+    ]);
+  }
+  return say(c, texts[n], [
+    reply(rng.pick([`I'm not asking again.`, `I'd like you to leave. Now.`, `Out. Please.`]),
+      () => eject(c, ctx, texts, opts), { risk: true }),
+    reply(rng.pick([`I'm serious. Other people are trying to shop.`, `You're going to have to stop.`]),
+      () => eject(c, ctx, texts, opts)),
+    reply(`...Fine. Carry on, I suppose.`, () => { ctx.mood(c, +6); return null; }),
+  ]);
+}
+
+export function specialRoot(c, ctx) {
+  const rng = ctx.rng;
+  switch (c.special) {
+    /* ---------------- the boombox ---------------- */
+    case 'BOOMBOX':
+      return eject(c, ctx, [
+        `WHAT? Nah — nah, this is the GOOD part. Listen. LISTEN.`,
+        `Man, you got a whole store and no music in it. I'm IMPROVING this place.`,
+        `Alright. ALRIGHT. Y'all don't deserve me anyway.`,
+      ], {
+        takes: 3,
+        andSell: () => say(c, `...Actually yeah. You got anything with a real soundtrack?`, [
+          reply(`Two ninety-nine. It has a soundtrack.`, () => {
+            const t = ctx.giveShelfPick(c);
+            c.tape = t; c.checkedOut = true;
+            const p = ctx.checkout(t, c);
+            ctx.mood(c, +20);
+            return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Respect.`,
+              [reply(`Two nights.`, () => { ctx.leave(c); return null; })]);
+          }, { good: '$2.99' }),
+          reply(`We're closing. Another night.`, () => { ctx.leave(c); return null; }),
+        ]),
+      });
+
+    /* ---------------- the smell ---------------- */
+    case 'REEKER':
+      return eject(c, ctx, [
+        `I'm looking. A man's allowed to look.`,
+        `I haven't touched anything. Have I touched anything?`,
+        `You people. You're all the same. I was going to rent something.`,
+        `Fine! FINE. I'm going. I'm going.`,
+      ], { takes: 4 });
+
+    /* ---------------- the television ---------------- */
+    case 'SMOKER':
+      return eject(c, ctx, [
+        `(he does not look away from the screen) ...Yeah.`,
+        `There's a pattern in it. If you watch long enough there's a pattern.`,
+        `Whoa. Hey. You don't have to be like that about it.`,
+        `Yeah, no, I hear you. I'm going. This has been really nice, though.`,
+      ], {
+        takes: 4,
+        andSell: () => say(c, `Do you have the one where nothing happens?`, [
+          reply(`I'll pick you something. Two ninety-nine.`, () => {
+            if (!c.hasMoney) { return say(c, `Ah. Yeah. Money.`, [reply('...', () => { ctx.leave(c); return null; })]); }
+            const t = ctx.giveShelfPick(c);
+            c.tape = t; c.checkedOut = true;
+            ctx.checkout(t, c);
+            ctx.mood(c, +16);
+            return say(c, `You're a good person. I said that already.`,
+              [reply(`Goodnight.`, () => { ctx.leave(c); return null; })]);
+          }, { good: '$2.99' }),
+          reply(`Just go home.`, () => { ctx.leave(c); return null; }),
+        ]),
+      });
+
+    /* ---------------- a film that does not exist ---------------- */
+    case 'PREORDER': {
+      const title = rng.pick([
+        `SUMMER OF THE SHARK 4`, `THE ONE WITH THE TWO TRAINS`, `MIDNIGHT IN VERONA`,
+        `CAPTAIN ATLANTIC`, `THE PRESIDENT'S DAUGHTER'S PLANE`,
+      ]);
+      const done = () => farewell(c, ctx);
+      const insist = (n) => say(c,
+        n === 0 ? `My nephew has SEEN it. He works in the industry.`
+          : n === 1 ? `Then order it. You have a phone. I can see the phone.`
+            : `This is the worst run store on this side of the river and I have been to all of them.`,
+        [
+          reply(`It isn't out. It isn't out anywhere. It's not finished.`, () => (n >= 2 ? storm() : insist(n + 1))),
+          reply(`I can put your name down for when it comes in.`, () => {
+            ctx.mood(c, +26);
+            return say(c, `...Well. That's something. Put it down properly. In pen.`, [
+              reply(`In pen.`, () => sell()),
+            ]);
+          }),
+          reply(`Your nephew is lying to you.`, () => { ctx.mood(c, -30); return storm(); }, { risk: true }),
+        ]);
+      const storm = () => say(c, `I'll be writing to somebody about this.`, [
+        reply(`You do that.`, () => { ctx.storm(c); return null; }),
+        reply(`Wait — let me find you something for tonight.`, () => { ctx.mood(c, +22); return sell(); }),
+      ]);
+      const sell = () => say(c, `Something for tonight, then. Nothing with subtitles.`, [
+        reply(`Two ninety-nine.`, () => {
+          const t = ctx.giveShelfPick(c);
+          c.tape = t; c.checkedOut = true;
+          const p = ctx.checkout(t, c);
+          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Fine.`,
+            [reply(`Two nights.`, () => done())]);
+        }, { good: '$2.99' }),
+        reply(`We're closing, honestly.`, () => { ctx.mood(c, -10); return done(); }),
+      ]);
+      return say(c, `Do you have ${title}? It's new. It's very new.`, [
+        reply(`That isn't out yet. It isn't even in theatres.`, () => insist(0)),
+        reply(`I've never heard of it.`, () => insist(1)),
+        reply(`Let me check the back.`, () => {
+          ctx.mood(c, +10);
+          return say(c, `Thank you. Somebody who tries.`, [
+            reply(`...It isn't there. It doesn't exist.`, () => insist(0)),
+          ]);
+        }),
+      ]);
+    }
+
+    /* ---------------- the coupon ---------------- */
+    case 'COUPON': {
+      const done = () => farewell(c, ctx);
+      const push = (n) => say(c,
+        n === 0 ? `It's a coupon. It says COUPON on it. In my handwriting, sure, but it says it.`
+          : n === 1 ? `I've been coming here eleven years. Eleven.`
+            : `So you're calling me a liar. In front of people.`,
+        [
+          reply(`It's a napkin. It's a napkin with a biro on it.`, () => (n >= 2 ? end() : push(n + 1)), { risk: true }),
+          reply(`Tell you what. One free rental. Once.`, () => {
+            ctx.waive(2.99); ctx.mood(c, +34);
+            const t = ctx.giveShelfPick(c);
+            c.tape = t; c.checkedOut = true; ctx.checkout(t, c, true);
+            return say(c, `See? SEE? The coupon works.`,
+              [reply(`It does not work. Goodnight.`, () => { ctx.leave(c); return null; })]);
+          }, { cost: '-$2.99' }),
+          reply(`I can do ten percent. That's what I can do.`, () => {
+            ctx.mood(c, +14);
+            return say(c, `Ten percent. Off a three dollar rental. Thirty cents.`, [
+              reply(`Thirty cents.`, () => sellHim()),
+            ]);
+          }),
+        ]);
+      const sellHim = () => say(c, `Alright. Ring it. Two sixty-nine, then.`, [
+        reply(`Two sixty-nine.`, () => {
+          const t = ctx.giveShelfPick(c);
+          c.tape = t; c.checkedOut = true;
+          ctx.waive(0.3);
+          const p = ctx.checkout(t, c);
+          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `That's more like it.`,
+            [reply(`Two nights.`, () => done())]);
+        }, { good: '$2.69' }),
+      ]);
+      const end = () => say(c, `Unbelievable. I'll bring the laminated one.`, [
+        reply(`Please don't.`, () => { ctx.storm(c); return null; }),
+        reply(`Bring it. I'll look at it.`, () => { ctx.mood(c, +12); ctx.leave(c); return null; }),
+      ]);
+      return say(c, `Before you scan anything. I've got a coupon.`, [
+        reply(`Let me see it.`, () => push(0)),
+        reply(`We don't take coupons.`, () => push(1)),
+        reply(`...Where did you get that.`, () => push(0)),
+      ]);
+    }
+
+    /* ---------------- the sovereign citizen ---------------- */
+    case 'SOVEREIGN': {
+      const beat = (n) => {
+        const LINES = [
+          `Before we proceed. Am I being detained?`,
+          `I'm not a customer. I'm a man. There's a difference and it's a legal one.`,
+          `I never signed anything. Did I sign anything? You can't produce it, can you.`,
+          `The card in your machine has my name in capital letters. That's not me. That's a corporate fiction.`,
+          `I don't have a licence because I'm not engaged in commerce. I'm travelling.`,
+          `Under common law — and I'd ask you to look this up — a late fee is a penalty, and penalties require a court.`,
+        ];
+        if (n >= LINES.length) return finish();
+        return say(c, LINES[n], [
+          reply(rng.pick([`You're in a video shop.`, `Sir. This is a video shop.`, `None of that is a thing.`]),
+            () => beat(n + 1)),
+          reply(rng.pick([`Mm-hm. And the tape is three dollars.`, `Right. Three dollars.`, `Sure. Three dollars.`]),
+            () => beat(n + 1)),
+          reply(`I need you to step aside. There are people waiting.`, () => {
+            ctx.mood(c, -12);
+            return say(c, `They can wait. This is more important than a Tuesday.`, [
+              reply(`...`, () => beat(n + 1)),
+            ]);
+          }, { risk: true }),
+          reply(`Get out of my shop.`, () => { ctx.mood(c, -40); return out(); }, { risk: true }),
+        ]);
+      };
+      const out = () => say(c, `Noted. Recorded. You'll be hearing from a court that you do not recognise either.`, [
+        reply(`Goodnight.`, () => { ctx.storm(c); return null; }),
+      ]);
+      const finish = () => say(c, `...Fine. Three dollars. Under protest, and I want that noted.`, [
+        reply(`It's noted.`, () => {
+          const t = ctx.giveShelfPick(c);
+          c.tape = t; c.checkedOut = true;
+          const p = ctx.checkout(t, c);
+          ctx.mood(c, +18);
+          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}. Under protest.` : `Under protest.`,
+            [reply(`Two nights. Under protest.`, () => farewell(c, ctx))]);
+        }, { good: '$2.99' }),
+        reply(`Actually, I'd rather you left.`, () => { ctx.leave(c); return null; }, { risk: true }),
+      ]);
+      return beat(0);
+    }
+
+    /* ---------------- the shelf auditor ---------------- */
+    case 'AUDITOR': {
+      const g = rng.pick(['HORROR', 'COMEDY', 'ACTION', 'SCIFI', 'DRAMA', 'FAMILY']);
+      const done = () => farewell(c, ctx);
+      return say(c, `Dear, your ${GENRE_LABEL[g]} run is not in order. I've been through it twice.`, [
+        reply(`It's alphabetical by title.`, () => say(c,
+          `It is alphabetical by SOME title. Whoever did it ignored "THE".`, [
+          reply(`...That's a fair point, actually.`, () => { ctx.mood(c, +24); return offer(); }),
+          reply(`Nobody has ever complained about that before.`, () => { ctx.mood(c, -8); return offer(); }),
+        ])),
+        reply(`I'll get to it.`, () => { ctx.mood(c, -6); return offer(); }),
+        reply(`Would you like a job?`, () => {
+          ctx.mood(c, +30);
+          return say(c, `Oh! Oh, no. No. But thank you for asking, that's very — no.`,
+            [reply(`Worth a try.`, () => offer())]);
+        }),
+      ]);
+      function offer() {
+        return say(c, `I'll take something. Nothing loud.`, [
+          reply(`Two forty-nine.`, () => {
+            const t = ctx.giveShelfPick(c);
+            c.tape = t; c.checkedOut = true;
+            const p = ctx.checkout(t, c);
+            return say(c, p && p.change > 0 ? `I have exact change, dear. I always do.` : `Thank you, dear.`,
+              [reply(`Two nights.`, () => done())]);
+          }, { good: '$2.49' }),
+          reply(`We're closing shortly.`, () => { ctx.mood(c, -4); return done(); }),
+        ]);
+      }
+    }
+
+    /* ---------------- the wrong shop's tape ---------------- */
+    case 'RETURNS': {
+      const done = () => farewell(c, ctx);
+      return say(c, `Returning. Now — before you look at it — hear me out.`, [
+        reply(`It's got another shop's sticker on it.`, () => say(c,
+          `It does. And they're closed. And they've BEEN closed. Since March.`, [
+          reply(`Then it's not my problem, and it's not my tape.`, () => say(c,
+            `So what happens to it? Who takes it? Somebody has to take it.`, [
+            reply(`Leave it. I'll deal with it.`, () => { ctx.binTape(c.tape, c); c.gaveTape = true; ctx.mood(c, +26); return sell(); }),
+            reply(`You take it. It's yours now.`, () => { ctx.mood(c, -14); return done(); }, { risk: true }),
+          ])),
+          reply(`...Give it here. I'll put it in the bin.`, () => { ctx.binTape(c.tape, c); c.gaveTape = true; ctx.mood(c, +20); return sell(); }),
+        ])),
+        reply(`I'll take it, whatever it is.`, () => { ctx.binTape(c.tape, c); c.gaveTape = true; ctx.mood(c, +18); return sell(); }),
+      ]);
+      function sell() {
+        return say(c, `Appreciate you. I'll take one of yours while I'm here.`, [
+          reply(`Two ninety-nine.`, () => {
+            const t = ctx.giveShelfPick(c);
+            c.tape = t; c.checkedOut = true;
+            const p = ctx.checkout(t, c);
+            return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Good man.`,
+              [reply(`Two nights.`, () => done())]);
+          }, { good: '$2.99' }),
+          reply(`Another time.`, () => done()),
+        ]);
+      }
+    }
+
+    /* ---------------- the critic ---------------- */
+    case 'CRITIC': {
+      const done = () => farewell(c, ctx);
+      const rant = (n) => {
+        const L = [
+          `You've got it in the wrong section, first of all. It isn't horror. It's a chamber piece.`,
+          `The version you're renting is the American cut. Eleven minutes shorter. Eleven.`,
+          `The director disowned it. Publicly. In print. And people still rent it and think they've seen it.`,
+        ];
+        if (n >= L.length) return buy();
+        return say(c, L[n], [
+          reply(`I'll move it to DRAMA.`, () => { ctx.mood(c, +18); return rant(n + 1); }),
+          reply(`People like it. That's what a video shop is for.`, () => { ctx.mood(c, -10); return rant(n + 1); }),
+          reply(`Do you want it or not?`, () => { ctx.mood(c, -16); return buy(); }, { risk: true }),
+          reply(`Tell me more, genuinely.`, () => { ctx.mood(c, +22); return rant(n + 1); }),
+        ]);
+      };
+      const buy = () => say(c, `I'll take it anyway. Obviously I'll take it.`, [
+        reply(`Two ninety-nine.`, () => {
+          const t = ctx.giveShelfPick(c);
+          c.tape = t; c.checkedOut = true;
+          const p = ctx.checkout(t, c);
+          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Thank you.`,
+            [reply(`Two nights.`, () => done())]);
+        }, { good: '$2.99' }),
+      ]);
+      return rant(0);
+    }
+
+    /* ---------------- the parent ---------------- */
+    case 'PARENT': {
+      const done = () => farewell(c, ctx);
+      return say(c, `Before you ring anything up. Is there anything in it.`, [
+        reply(`Anything like what?`, () => say(c,
+          `You know what. Language. The other thing. A dog that dies.`, [
+          reply(`There is a dog. The dog is fine.`, () => { ctx.mood(c, +22); return buy(); }),
+          reply(`I haven't seen it. I can't tell you.`, () => { ctx.mood(c, -12); return push(); }),
+          reply(`It's rated for children. That's what the rating is for.`, () => { ctx.mood(c, -6); return push(); }),
+        ])),
+        reply(`It's a family film. It's on the FAMILY run.`, () => { ctx.mood(c, -4); return push(); }),
+        reply(`Give me a second — I'll read the back for you.`, () => { ctx.mood(c, +26); return buy(); }),
+      ]);
+      function push() {
+        return say(c, `That is not an answer. I asked a simple question.`, [
+          reply(`Then pick a different one. I'll help you.`, () => { ctx.mood(c, +20); return buy(); }),
+          reply(`Ma'am, I run a till. I don't screen the films.`, () => {
+            ctx.mood(c, -18);
+            return say(c, `Then what exactly is the point of you.`, [
+              reply(`Some nights I ask myself that.`, () => { ctx.mood(c, +26); return buy(); }),
+              reply(`We'll try the library, then. Yes?`, () => { ctx.storm(c); return null; }, { risk: true }),
+            ]);
+          }, { risk: true }),
+        ]);
+      }
+      function buy() {
+        return say(c, `Fine. This one. And I'm holding you to the dog.`, [
+          reply(`Two forty-nine.`, () => {
+            const t = ctx.giveShelfPick(c);
+            c.tape = t; c.checkedOut = true;
+            const p = ctx.checkout(t, c);
+            return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `Thank you.`,
+              [reply(`Two nights.`, () => done())]);
+          }, { good: '$2.49' }),
+        ]);
+      }
+    }
+
+    /* ---------------- the salesman ---------------- */
+    case 'CLOSER': {
+      const done = () => farewell(c, ctx);
+      const pitch = (n) => {
+        const L = [
+          `Five minutes. That's all. Who handles your overstock?`,
+          `Because I can move it. Whatever's dead on your shelves, I can move it, and you'd see money on it.`,
+          `I'm not asking you to sign. I'm asking you to think. Thinking is free.`,
+        ];
+        if (n >= L.length) return end();
+        return say(c, L[n], [
+          reply(`Not interested.`, () => (n >= 1 ? end() : pitch(n + 1))),
+          reply(`The owner handles that. He's not here.`, () => { ctx.killerIntel(-1); return pitch(n + 1); }),
+          reply(`Go on then. Five minutes.`, () => { ctx.mood(c, +18); return pitch(n + 1); }),
+          reply(`You're holding up the line.`, () => { ctx.mood(c, -14); return end(); }, { risk: true }),
+        ]);
+      };
+      const end = () => say(c, `Card's on the counter. I'll take one of these while I'm here.`, [
+        reply(`Two ninety-nine.`, () => {
+          const t = ctx.giveShelfPick(c);
+          c.tape = t; c.checkedOut = true;
+          const p = ctx.checkout(t, c);
+          return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}. Keep the card.` : `Keep the card.`,
+            [reply(`Two nights.`, () => done())]);
+        }, { good: '$2.99' }),
+        reply(`Just take the card and go.`, () => { ctx.mood(c, -8); ctx.leave(c); return null; }),
+      ]);
+      return pitch(0);
+    }
+
+    /* ---------------- the telephone ---------------- */
+    case 'PHONECALL':
+      return eject(c, ctx, [
+        `(covers the receiver) — sorry, WHAT? (uncovers) No, not you, Denise.`,
+        `I'm ALLOWED to be on the phone. It's a phone. In a shop.`,
+        `Denise, I'll call you back. No — no, because this MAN — yes. Yes. Bye. Bye. BYE.`,
+      ], {
+        takes: 3,
+        andSell: () => say(c, `Right. Sorry. What have you got that's funny?`, [
+          reply(`Two ninety-nine.`, () => {
+            const t = ctx.giveShelfPick(c);
+            c.tape = t; c.checkedOut = true;
+            const p = ctx.checkout(t, c);
+            ctx.mood(c, +16);
+            return say(c, p && p.change > 0 ? `Out of ${money(p.tendered)}.` : `You're a love.`,
+              [reply(`Two nights.`, () => { ctx.leave(c); return null; })]);
+          }, { good: '$2.99' }),
+          reply(`Another night.`, () => { ctx.leave(c); return null; }),
+        ]),
+      });
+
+    default:
+      return idleRoot(c, ctx);
+  }
 }

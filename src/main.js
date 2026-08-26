@@ -12,6 +12,8 @@ import * as night from './game/night.js';
 import * as world from './game/world.js';
 import * as uimod from './game/ui.js';
 import * as tapes from './game/tapes.js';
+import * as specials from './game/specials.js';
+import * as catalog from './game/catalog.js';
 
 const start = async () => {
   const game = new Game();
@@ -26,6 +28,8 @@ const start = async () => {
   window.__world = world;
   window.__ui = uimod;
   window.__tapes = tapes;
+  window.__specials = specials;
+  window.__catalog = catalog;
   try {
     await game.boot();
     game.applyOptions();
