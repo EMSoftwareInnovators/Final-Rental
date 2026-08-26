@@ -118,10 +118,16 @@ await ev(() => { window.__game.timeScale = 1; });
 check('the night runs to a report', (await state()).state === 'REPORT', (await state()).state);
 
 const asksBefore = (await state()).asks;
-await page.keyboard.press('Enter');          // next night
+// Clear the report panel and be sure the next night actually started before
+// timing anything against it.
+for (let i = 0; i < 12 && (await state()).state === 'REPORT'; i++) {
+  await page.keyboard.press('Enter');
+  await wait(250);
+}
+check('the report advances to the next night', (await state()).state !== 'REPORT', (await state()).state);
 // Sit through the shot properly. This is the case that was broken: by the
 // time it ends, the keystroke that started the night is ancient history.
-await wait(2200);
+await wait(2400);
 await ev(() => { window.__game.estT = 99; });
 await wait(900);
 s = await state();

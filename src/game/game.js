@@ -8,7 +8,7 @@ import { PostFX } from '../engine/postfx.js';
 import { Input, PAD_ACTIONS, BINDABLE } from '../engine/input.js';
 import { Sound } from '../engine/audio.js';
 import { buildTextures } from '../engine/texture.js';
-import { mat, mul, setPosYaw, setRotX, setRotY, setTranslate, invertRigid, clamp } from '../engine/mathx.js';
+import { mat, mul, setPosYaw, setRotX, setRotY, setTranslate, invertRigid, clamp, angleTowards } from '../engine/mathx.js';
 import {
   buildWorld, collide, SHELVES, SPOTS, COUNTER, COUNTER_SLOTS, PROPS, lightAt, outdoorLightAt,
   DOOR_X0, DOOR_X1, D, W, EYE, STORAGE, SDOOR_X0, SDOOR_X1,
@@ -160,6 +160,7 @@ export class Game {
     this.closingT = 0;
     this.walkInAt = 0;
     this.boombox = null;
+    this.arrest = null;
     this.sound.boomboxStop();
     this.player = createPlayer();
     this.player.frozen = true;
@@ -666,6 +667,7 @@ export class Game {
       this.swingForKiller();
       this.checkKillerProximity();
     }
+    this.updateArrest(dt);
     // Once a frame, not once a sub-step: this decides whether somebody new
     // walks in, which is not something to integrate thirty times over.
     this.spawnDue();
@@ -1196,6 +1198,7 @@ export class Game {
     const out = this.customers.slice();
     if (this.officer && this.officer.state !== 'DONE') out.push(this.officer);
     if (this.killer && !this.killer.ent.hidden) out.push(this.killer.ent);
+    if (this.arrest && this.arrest.deputy && !this.arrest.deputy.hidden) out.push(this.arrest.deputy);
     return out;
   }
 
@@ -1647,17 +1650,207 @@ export class Game {
     if (before > 18 && P.eta <= 18) {
       this.sound.siren();
       this.ui.toast(`Sirens, somewhere east of here.`, 'good');
+      this.killerHearsSirens();
     }
     if (P.eta <= 0) {
       P.eta = 0;
-      this.ending('CAUGHT', {
-        name: P.target.name,
-        nights: this.nightNo,
-        hid: this.hiding,
-        broke: this.storage.broken,
-        caseFile: this.night.caseFile,
-      });
+      if (P.fled) {
+        /* Nothing to arrest. A man who walks out before the cruiser turns
+           the corner is a man the county cannot do anything about, and the
+           shift carries on with the door shut behind him. */
+        this.police = null;
+        this.ui.setObjective('');
+        this.ui.toast(`The unit swept the parade and found nobody.`, '');
+        this.ui.toast(`Whoever that was is somebody else's problem now.`, '');
+        return;
+      }
+      this.beginArrest(P.target);
     }
+  }
+
+  /**
+   * He hears the sirens too.
+   *
+   * Somebody who is already coming for you does not stop for a siren -- if
+   * anything it puts a clock on him. Everybody else takes a view: walk out
+   * now while there is still a street to walk out into, go still somewhere
+   * in the building and let them sweep past, or decide there is no point in
+   * being careful any more.
+   */
+  killerHearsSirens() {
+    const k = this.killer;
+    const P = this.police;
+    if (!k || !P || P.reacted) return;
+    P.reacted = true;
+    if (!k.plan.appears || k.phase === KP.ABSENT) return;
+
+    // Already in the building and working: he finishes what he started.
+    if (k.phase === KP.HUNT || k.phase === KP.SIEGE || k.phase === KP.ATTACK) {
+      this.ui.toast(`Something in the back gets faster, not quieter.`, 'bad');
+      return;
+    }
+
+    const roll = this.rng();
+    if (roll < 0.34) {
+      // Gone. Out the door and down the parade before the lights arrive.
+      P.fled = true;
+      k.phase = KP.ABSENT;
+      k.ent.hidden = true;
+      k.fled = true;
+      this.door.holdOpen = 1.1;
+      this.sound.doorChime();
+      this.ui.toast(`The chime goes. Whoever was in here just left.`, '');
+      this.ui.setObjective('');
+      return;
+    }
+    if (roll < 0.64) {
+      // Gone to ground. They will find him, but it takes them longer.
+      P.eta += 26 + this.rng.range(0, 10);
+      P.hidden = true;
+      k.phase = KP.GONE_QUIET;
+      this.ui.toast(`Everything goes quiet. Too quiet to be nobody.`, 'bad');
+      this.ui.setObjective('UNIT SEARCHING\nSTAY WHERE THEY CAN SEE YOU', true);
+      return;
+    }
+    // He decides there is no longer any reason to be careful.
+    k.phase = KP.HUNT;
+    if (k.ent) k.ent.hidden = false;
+    this.sound.impact();
+    this.ui.toast(`Something stops pretending.`, 'bad');
+    this.ui.setObjective('UNIT ON THE WAY\nSTAY ALIVE', true);
+  }
+
+  /* ============================================================
+     THE ARREST
+
+     The cruiser used to arrive as a line of text. It arrives as a man now:
+     a deputy comes through the front door, crosses the shop, puts him
+     against the nearest flat surface, cuffs him, and walks him out past
+     you. The clerk stands where he is and watches it happen, which is the
+     whole of his part in it.
+     ============================================================ */
+  beginArrest(target) {
+    if (this.arrest) return;
+    const k = this.killer;
+    const e = (k && k.ent && !k.ent.hidden) ? k.ent : target;
+    // If he is not physically in the shop, there is nobody to put cuffs on.
+    if (!e || e.hidden || e.z > D || e.z < -1) {
+      this.finishArrest(target, { offscreen: true });
+      return;
+    }
+    const app = this.night.officerApp || (this.officer && this.officer.app);
+    const deputy = {
+      id: -2, name: `Deputy ${this.night.officerName ? this.night.officerName.split(' ')[1] : 'Hollis'}`,
+      app, skin: paintSkin(app), personality: OFFICER,
+      x: SPOTS.door.x + 0.4, y: 0, z: -0.8, yaw: 0, r: 0.30,
+      anim: makeAnim(), speed: 1.9, moveSpeed: 0, observed: new Set(),
+      mood: 100, phoneLabel: 'The deputy', isKiller: false, hidden: false,
+    };
+    this.arrest = { phase: 'IN', t: 0, deputy, ent: e, target, path: null, pathI: 0 };
+    e.leaving = false;
+    e.rushing = false;
+    this.door.holdOpen = 2.4;
+    this.sound.doorChime();
+    this.sound.siren();
+    this.player.frozen = true;
+    this.ui.setPrompt('');
+    this.ui.setObjective('');
+    this.ui.toast(`${deputy.name} comes through the door.`, 'good');
+    if (k) { k.phase = KP.CAUGHT; k.frozen = true; }
+  }
+
+  updateArrest(dt) {
+    const A = this.arrest;
+    if (!A) return;
+    A.t += dt;
+    const d = A.deputy, e = A.ent;
+    const walk = (tx, tz, speed) => {
+      const dx = tx - d.x, dz = tz - d.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.12) { d.moveSpeed = 0; return true; }
+      const step = Math.min(dist, speed * dt);
+      d.x += (dx / dist) * step;
+      d.z += (dz / dist) * step;
+      d.moveSpeed = step / Math.max(dt, 0.0001);
+      d.yaw = angleTowards(d.yaw, Math.atan2(dx, dz), dt * 8);
+      return false;
+    };
+    updateAnim(d.anim, dt, d.moveSpeed, d.app);
+
+    switch (A.phase) {
+      case 'IN': {
+        /* Straight at him, at a pace that is not a stroll, stopping an
+           arm's length short. The stand-off point is measured along the
+           deputy's own approach rather than off the man's facing -- he
+           turns to face the deputy as he comes, so a point behind him
+           walks away around the circle and never gets stood on. */
+        const ax = d.x - e.x, az = d.z - e.z;
+        const ad = Math.hypot(ax, az) || 1;
+        if (walk(e.x + (ax / ad) * 0.62, e.z + (az / ad) * 0.62, 2.2)) {
+          A.phase = 'CUFF'; A.t = 0;
+          this.sound.impact(0.5);
+          this.ui.toast(`"Hands. HANDS."`, 'good');
+        }
+        e.moveSpeed = 0;
+        e.yaw = angleTowards(e.yaw, Math.atan2(d.x - e.x, d.z - e.z), dt * 4);
+        break;
+      }
+      case 'CUFF': {
+        // arms pulled back, head down, and the ratchet twice
+        const k = Math.min(1, A.t / 0.8);
+        e.moveSpeed = 0;
+        e.anim.armL = 0.95 * k; e.anim.armR = 0.95 * k;
+        e.anim.armLz = -0.55 * k; e.anim.armRz = 0.55 * k;
+        e.anim.lean = 0.30 * k;
+        e.anim.headPitch = 0.45 * k;
+        d.anim.armL = -0.85 * k; d.anim.armR = -0.85 * k;
+        if (!A.clicked && A.t > 0.9) { A.clicked = true; this.sound.registerBeep(); }
+        if (A.t > 1.9) {
+          A.phase = 'OUT'; A.t = 0;
+          e.cuffed = true;
+          this.ui.toast(`${A.target.name} does not resist.`, 'good');
+        }
+        break;
+      }
+      case 'OUT': {
+        // walked out in front of the deputy, still cuffed
+        const tx = SPOTS.door.x, tz = -2.2;
+        const ex = e.x, ez = e.z;
+        const dx = tx - ex, dz = tz - ez;
+        const dist = Math.hypot(dx, dz) || 1;
+        const step = Math.min(dist, 1.25 * dt);
+        e.x += (dx / dist) * step; e.z += (dz / dist) * step;
+        e.moveSpeed = step / Math.max(dt, 0.0001);
+        e.yaw = angleTowards(e.yaw, Math.atan2(dx, dz), dt * 4);
+        e.anim.armL = 0.95; e.anim.armR = 0.95;
+        e.anim.armLz = -0.55; e.anim.armRz = 0.55;
+        e.anim.lean = 0.22; e.anim.headPitch = 0.35;
+        updateAnim(e.anim, dt, e.moveSpeed, e.app, { keep: true });
+        walk(ex - Math.sin(e.yaw) * 0.55, ez - Math.cos(e.yaw) * 0.55, 1.5);
+        this.door.holdOpen = 1.2;
+        if (e.z < -1.9 || A.t > 14) {
+          A.phase = 'DONE';
+          e.hidden = true; d.hidden = true;
+          this.finishArrest(A.target, { hid: this.hiding, broke: this.storage.broken });
+        }
+        break;
+      }
+      default: break;
+    }
+  }
+
+  /** The paperwork: what it cost, what it bought, and whether you carry on. */
+  finishArrest(target, extra = {}) {
+    this.arrest = null;
+    this.player.frozen = false;
+    this.police = null;
+    this.ending('CAUGHT', Object.assign({
+      name: target.name,
+      nights: this.nightNo,
+      hid: this.hiding,
+      broke: this.storage.broken,
+      caseFile: this.night.caseFile,
+    }, extra));
   }
 
   /* ============================================================
@@ -1852,6 +2045,7 @@ export class Game {
     data.night = this.nightNo;
     this.endData = data;
     data.mode = this.mode;
+    this.endSel = 0;
     if (kind === 'CAUGHT') {
       this.sound.siren(); this.sound.chimeGood();
       /* An arrest buys the town a breather. The next few nights have nobody
@@ -1866,8 +2060,11 @@ export class Game {
     }
     if (kind === 'FIRED') { this.sound.siren(); this.sound.chimeBad(); }
     // ATTACKED runs its own soundtrack out of updateDeath()
-    setTimeout(() => { if (this.state === ST.ENDING) this.ui.showPanel(endingHtml(kind, data)); },
-      kind === 'ATTACKED' ? 4200 : 1600);
+    setTimeout(() => {
+      if (this.state !== ST.ENDING) return;
+      this.ui.showPanel(endingHtml(kind, data));
+      if (kind === 'CAUGHT') this.ui.panelSelect(0);
+    }, kind === 'ATTACKED' ? 4200 : 1600);
   }
 
   updateEnding(dt) {
@@ -1877,14 +2074,38 @@ export class Game {
       this.distress = 1;
     }
     const gate = this.endKind === 'ATTACKED' ? 4.4 : 2.6;
-    if (this.endTimer > gate && this.confirmOrClick()) {
-      this.ui.hidePanel(); this.ui.cinema(false);
-      this.ui.showTitle(true); this.state = ST.TITLE; this.menuSel = 0; this.titleT = 0;
-      this.death = null; this.shake = 0;
-      this.player = createPlayer(); this.player.x = 6.4; this.player.z = 6.2;
-      this.sound.setTension(0);
-      this.sound.restoreRoom();
+
+    /* An arrest is not the end of the run unless you want it to be. The
+       town gets a few quiet nights out of it and the job is still there
+       tomorrow, so the panel asks rather than dropping you at the title. */
+    if (this.endKind === 'CAUGHT' && this.endTimer > gate) {
+      const i = this.input;
+      if (i.hit('ArrowUp', 'KeyW')) { this.endSel = 0; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(0); }
+      if (i.hit('ArrowDown', 'KeyS')) { this.endSel = 1; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(1); }
+      if (this.confirmOrClick()) {
+        this.quietly(() => this.sound.uiSelect());
+        if (this.endSel === 1) { this.toTitle(); return; }
+        this.ui.hidePanel(); this.ui.cinema(false);
+        this.death = null; this.shake = 0;
+        this.startNight(this.nightNo + 1);
+        return;
+      }
+      return;
     }
+
+    if (this.endTimer > gate && this.confirmOrClick()) this.toTitle();
+  }
+
+  /** Back to the attract screen, with the world put back how it started. */
+  toTitle() {
+    this.ui.hidePanel(); this.ui.cinema(false);
+    this.ui.showTitle(true); this.state = ST.TITLE; this.menuSel = 0; this.titleT = 0;
+    this.death = null; this.shake = 0;
+    this.arrest = null;
+    this.sound.boomboxStop();
+    this.player = createPlayer(); this.player.x = 6.4; this.player.z = 6.2;
+    this.sound.setTension(0);
+    this.sound.restoreRoom();
   }
 
   endNight() {

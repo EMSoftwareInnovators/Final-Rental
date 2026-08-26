@@ -435,22 +435,29 @@ export function reportHtml(night, stats, grade, next) {
 export function endingHtml(kind, data) {
   switch (kind) {
     case 'CAUGHT': {
-      const where = data.broke
-        ? `<p>They came through the front while he was still working on the stock room door. You heard the hinge go and then you heard shouting that was not his.</p>`
-        : data.hid
-          ? `<p>You heard the doors, and the shouting, and a long minute of nothing. Then somebody knocked on the stock room door and said a name and a badge number, twice, before you would open it.</p>`
-          : `<p>Two cruisers took the alley behind the laundromat and boxed him in before he made the corner. They found the duffel. They will not tell you what was in it, and one day you will stop asking.</p>`;
+      const where = data.offscreen
+        ? `<p>They took him on the pavement outside, before he reached the corner.</p>`
+        : data.broke
+          ? `<p>They came through the front while he was still working on the stock room door.</p>`
+          : data.hid
+            ? `<p>You heard the doors, the shouting, then a knock on the stock room door and a badge number, twice, before you would open it.</p>`
+            : `<p>He was against the returns bin with his hands behind him before he had finished turning round.</p>`;
       const more = data.caseFile && data.caseFile.caughtLast
-        ? `<p class="quiet">The deputy said the same thing he said last night: that they had got him. You have started counting how many times a week somebody has got him.</p>`
+        ? `<p class="quiet">The deputy said what he said last night: that they had got him. You have started counting how many times a week somebody has got him.</p>`
+        : '';
+      const calm = data.calmNights
+        ? `<p class="quiet">Nobody will be working this parade for ${data.calmNights} night${data.calmNights > 1 ? 's' : ''}. Nobody they know about.</p>`
         : '';
       return `<h2>UNITS RESPONDING</h2>
         <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>
         ${where}
         <p><b>${escape(data.name || 'He')}</b> did not resist.</p>
-        ${more}
-        <p class="quiet">You survived ${data.nights} night${data.nights > 1 ? 's' : ''} on the counter at Sunset Video, and on the last one you got it right.</p>
-        <p class="big">GOOD ENDING &mdash; CASE CLOSED</p>
-        <p class="pad-foot">[E] new tape</p>`;
+        ${more}${calm}
+        <p class="big">CASE CLOSED &mdash; NIGHT ${data.night}</p>
+        <ul>
+          <li class="opt sel">Take tomorrow's shift</li>
+          <li class="opt">Hand in the keys</li>
+        </ul>`;
     }
     case 'ATTACKED':
       return `<h2>PLEASE REWIND BEFORE RETURNING</h2>

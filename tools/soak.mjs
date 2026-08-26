@@ -153,7 +153,11 @@ let served = null;
 for (let i = 0; i < 120; i++) {
   const r = await ev(() => {
     const g = window.__game;
-    const c = g.customers.find((x) => x.state === 'WAITING');
+    /* At the window, at the FRONT of the line. The shop keeps a queue now,
+       and talking to somebody second in it is a two-word exchange, not a
+       transaction -- which is the rule working, not a conversation ending
+       early. */
+    const c = g.customers.find((x) => x.state === 'WAITING' && x.queueIndex === 0 && !x.special);
     if (!c) return null;
     g.talkToPerson(c);
     return { name: c.name, script: c.script, tag: c.personality.tag, late: c.tape ? c.tape.daysLate : 0 };
@@ -479,7 +483,12 @@ await ev(() => {
 });
 let arrested = null;
 for (let i = 0; i < 70; i++) {
-  arrested = await ev(() => ({ end: window.__game.endKind, eta: +window.__game.police.eta.toFixed(1) }));
+  // The unit clears `police` when it gets here, so do not assume it is there.
+  arrested = await ev(() => ({
+    end: window.__game.endKind,
+    eta: window.__game.police ? +window.__game.police.eta.toFixed(1) : 0,
+    arresting: !!window.__game.arrest,
+  }));
   if (arrested.end === 'CAUGHT') break;
   await wait(200);
 }
