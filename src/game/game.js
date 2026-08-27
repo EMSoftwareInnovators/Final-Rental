@@ -21,7 +21,7 @@ import { createKiller, updateKiller, KP, killerActive, killerInside, killerInVie
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
 import { DialogueRunner, buildOfficerIntro, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme } from './ui.js';
-import { randomAppearance, paintSkin, voicePitchOf, pronounOf } from './appearance.js';
+import { randomAppearance, paintSkin, voicePitchOf, pronounOf, describeApart } from './appearance.js';
 import { OFFICER } from './personality.js';
 import { GENRE_LABEL, GENRES, makeTape, tapeLabel, mediaWord } from './tapes.js';
 
@@ -2890,10 +2890,25 @@ export class Game {
     if (this.mode === MODE.CASUAL) return [];
     const out = [];
     for (const c of this.customers) if (c.z > -0.5 && c.z < D) out.push(c);
+    /* Names are built against the room rather than fixed when somebody is
+       created. Two people in the same coat used to read as the same line
+       twice, so choosing between them was a coin toss rather than a look
+       at the pair of them -- and on a night whose bulletin is about a coat,
+       two of them in the same coat is exactly the night you get. */
+    describeApart(out).forEach((label, i) => { out[i].phoneLabel = label; });
+
     const k = this.killer;
     if (k && !k.ent.hidden) {
-      if (k.phase === KP.CUSTOMER) { if (!out.includes(k.ent)) out.push(k.ent); }
-      else if (killerActive(k)) {
+      if (k.phase === KP.CUSTOMER) {
+        /* He is working the floor as a customer. He was in the list above
+           and got named with everybody else -- unless he has slipped out
+           of the customer list, in which case he still needs a name. */
+        if (!out.includes(k.ent)) {
+          out.push(k.ent);
+          describeApart(out).forEach((label, i) => { out[i].phoneLabel = label; });
+        }
+      } else if (killerActive(k)) {
+        // Not a description any more. You are watching him come through it.
         const e = k.ent;
         e.phoneLabel = killerInside(k)
           ? `THE ONE WHO JUST CAME THROUGH THE DOOR`

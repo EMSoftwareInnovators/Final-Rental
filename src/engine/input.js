@@ -23,7 +23,10 @@
  * entirely, which is what the binding table below is for.
  */
 export const PAD_ACTIONS = {
-  confirm: { label: 'Select / interact', keys: ['PadA', 'KeyE', 'Enter', 'Space'], def: [0, 7] },
+  /* The bottom face button, and only that. It used to carry the right
+     trigger as well, which is where sprint now lives -- and a sprint that
+     also picks the highlighted reply is not a sprint. */
+  confirm: { label: 'Select / interact', keys: ['PadA', 'KeyE', 'Enter', 'Space'], def: [0] },
   /* B stands in for a back key of its own rather than for Escape. Escape
      both backs out of a menu and pauses the shift, so while B spoke as
      Escape it paused the game too -- there was no way for the play loop to
@@ -32,10 +35,11 @@ export const PAD_ACTIONS = {
   back: { label: 'Back / cancel', keys: ['PadB', 'UiBack'], def: [1] },
   drop: { label: 'Put it down', keys: ['PadX', 'KeyG'], def: [2] },
   notes: { label: 'Notepad', keys: ['PadY', 'Tab'], def: [3] },
-  /* On the left trigger. It used to be LB and L3; holding a stick click
-     down to run the length of the shop is hard on a thumb, and a trigger is
-     what a trigger is for. A trigger reads as pressed past halfway. */
-  run: { label: 'Hurry', keys: ['PadLT', 'ShiftLeft'], def: [6] },
+  /* On both triggers: either one, or both at once. It used to be LB and
+     L3; holding a stick click down to run the length of the shop is hard on
+     a thumb, and a trigger is what a trigger is for. Which hand you reach
+     with is nobody's business. A trigger reads as pressed past halfway. */
+  run: { label: 'Hurry', keys: ['PadLT', 'ShiftLeft'], def: [6, 7] },
   /* On the same button as interact by default, because that is how the
      keyboard behaves: E throws the bolt when you are looking at the door.
      RB keeps the from-anywhere version. */
@@ -245,8 +249,12 @@ export class Input {
     let kx = 0, kz = 0;
     if (this.down.has('KeyW') || this.down.has('ArrowUp')) kz += 1;
     if (this.down.has('KeyS') || this.down.has('ArrowDown')) kz -= 1;
-    if (this.down.has('KeyA')) kx -= 1;
-    if (this.down.has('KeyD')) kx += 1;
+    /* The arrows strafe as well as walk. The d-pad speaks arrow keys, so
+       left and right on it used to reach a fold that only listened for A
+       and D -- which is why up and down worked on a pad and the other two
+       did nothing at all. */
+    if (this.down.has('KeyA') || this.down.has('ArrowLeft')) kx -= 1;
+    if (this.down.has('KeyD') || this.down.has('ArrowRight')) kx += 1;
     if (kx || kz) { this.moveX = kx; this.moveZ = kz; }
     this.run = this.run || this.down.has('ShiftLeft') || this.down.has('ShiftRight');
   }

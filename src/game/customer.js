@@ -149,9 +149,15 @@ function repelled(c, ctx) {
 }
 
 /* Where each act happens. */
-const ACT_SPOT = {
+export const ACT_SPOT = {
   DANCE: { x: 6.6, z: 3.4, yaw: Math.PI },
-  TV: { x: 2.3, z: 2.8, yaw: -0.9 },
+  /* Squarely in front of the set, far enough back to take it in.
+     The monitor hangs at 1.30, 2.15 and is turned to face out across the
+     floor -- its screen points along (0.58, -0.81) -- and he used to stand
+     at 2.3, 2.8, which is nearly ninety degrees off that. He was beside
+     the thing, staring up past the side of the tube. This puts him on the
+     screen's axis, a couple of metres out, looking up at it. */
+  TV: { x: 3.00, z: 1.05, yaw: -1.00 },
   LINGER: null,          // wanders the shelves
   AUDIT: null,           // wanders the shelves, slowly, tutting
   PHONE: { x: 8.4, z: 4.6, yaw: 0.4 },

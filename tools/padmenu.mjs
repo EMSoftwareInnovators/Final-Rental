@@ -154,6 +154,46 @@ async function session(id, expectScheme, expectSelect) {
   check(`${label}: and in play the same stick is analog movement, not arrow keys`,
     moved.mz > 0.3 && moved.mz < 1.01, `moveZ ${moved.mz.toFixed(2)}`);
 
+  /* ---- the whole d-pad walks, not just half of it ---- */
+  /* Up and down worked and left and right did nothing: the d-pad speaks
+     arrow keys, and the movement fold only strafed on A and D. */
+  const dpad = {};
+  for (const [name, btn] of [['forward', 12], ['back', 13], ['left', 14], ['right', 15]]) {
+    await ev((b) => { window.__pad.buttons[b] = 1; }, btn);
+    await wait(160);
+    dpad[name] = await ev(() => ({ x: window.__game.input.moveX, z: window.__game.input.moveZ }));
+    await ev((b) => { window.__pad.buttons[b] = 0; }, btn);
+    await wait(140);
+  }
+  check(`${label}: the d-pad walks forwards and backwards`,
+    dpad.forward.z > 0.5 && dpad.back.z < -0.5,
+    `fwd ${dpad.forward.z}, back ${dpad.back.z}`);
+  check(`${label}: and strafes left and right`,
+    dpad.left.x < -0.5 && dpad.right.x > 0.5,
+    `left ${dpad.left.x}, right ${dpad.right.x}`);
+
+  /* ---- sprint is on either trigger, or both ---- */
+  const trig = async (list) => {
+    await ev((bs) => { bs.forEach((b) => { window.__pad.buttons[b] = 1; }); }, list);
+    await wait(160);
+    const r = await ev(() => window.__game.input.run);
+    await ev((bs) => { bs.forEach((b) => { window.__pad.buttons[b] = 0; }); }, list);
+    await wait(140);
+    return r;
+  };
+  const lt = await trig([6]), rt = await trig([7]), both = await trig([6, 7]);
+  check(`${label}: either trigger sprints, and so do both together`,
+    lt === true && rt === true && both === true, `LT ${lt}, RT ${rt}, both ${both}`);
+  /* And the right trigger does nothing else. It used to be a second
+     confirm, which would have picked a reply every time you ran. */
+  await ev(() => { window.__game.state = 'PAUSE'; window.__game.pauseSel = 2; });
+  await wait(120);
+  await tap(7);
+  check(`${label}: and the right trigger no longer doubles as select`,
+    (await st()).state === 'PAUSE', (await st()).state);
+  await ev(() => { window.__game.resume(); });
+  await wait(160);
+
   await page.close();
 }
 
@@ -371,11 +411,15 @@ await session('DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c)', '
     const A = window.__input.PAD_ACTIONS;
     const d = window.__input.defaultBinds();
     const on = (i) => (d[i] || []).join('+');
-    return { run: A.run.def, keys: A.run.keys, four: on(4), six: on(6), ten: on(10) };
+    return { run: A.run.def, keys: A.run.keys, confirm: A.confirm.def,
+      four: on(4), six: on(6), seven: on(7), ten: on(10) };
   });
-  check('sprint is on the left trigger, not a stick click',
-    sprint.run.length === 1 && sprint.run[0] === 6 && sprint.six.includes('run'),
+  check('sprint is on both triggers, not a stick click',
+    sprint.run.length === 2 && sprint.six.includes('run') && sprint.seven.includes('run'),
     `run on ${sprint.run.join(',')} (${sprint.keys.join(' ')})`);
+  check('and the right trigger is a trigger and nothing else',
+    !sprint.seven.includes('confirm') && !sprint.confirm.includes(7),
+    `RT: ${sprint.seven || 'nothing'} · select on ${sprint.confirm.join(',')}`);
   check('and neither LB nor L3 runs any more',
     !sprint.four.includes('run') && !sprint.ten.includes('run'),
     `LB: ${sprint.four || 'nothing'} · L3: ${sprint.ten || 'nothing'}`);

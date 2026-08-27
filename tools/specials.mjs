@@ -144,7 +144,13 @@ check('and the performance is actually running',
 
 const spots = await ev(() => {
   const g = window.__game;
-  const want = { DANCE: [6.6, 3.4], TV: [2.3, 2.8], PHONE: [8.4, 4.6], WINDOW: [11.6, 0.62] };
+  /* Read the spots out of the simulation rather than copying them here.
+     A copy is a copy: the man at the television was moved to square up
+     with the screen and this test went red about a spot he was no longer
+     supposed to be standing on. */
+  const S = window.__cust.ACT_SPOT;
+  const want = {};
+  for (const k of ['DANCE', 'TV', 'PHONE', 'WINDOW']) want[k] = [S[k].x, S[k].z];
   return g.customers.filter((c) => want[c.act]).map((c) => ({
     act: c.act, d: +Math.hypot(c.x - want[c.act][0], c.z - want[c.act][1]).toFixed(2),
   }));
