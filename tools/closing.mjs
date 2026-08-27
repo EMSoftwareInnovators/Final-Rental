@@ -85,6 +85,68 @@ const noMore = await ev(async () => {
 check('and nobody else comes in after it', noMore.after === noMore.before,
   `${noMore.before} in the shop, ${noMore.after} after thirty spawn ticks`);
 
+/* ---------- 3b. it locks the door; it does not clear the room ---------- */
+/* Midnight used to march the whole shop out at the stroke of twelve.
+   Everybody who was inside before the bolt went across still gets to pick
+   something out and pay for it -- all closing does is stop anyone else
+   coming in. */
+const finishUp = await ev(() => {
+  const g = window.__game;
+  g.state = 'PLAY';
+  g.customers.length = 0; g.queue.length = 0;
+  g.closing = false; g.closingT = 0;
+  g.elapsed = g.night.length + 1;
+  g.officerDone = true;
+
+  // Three people mid-browse when the clock turns over.
+  const crowd = [];
+  for (let i = 0; i < 3; i++) {
+    const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+    c.hasMoney = true;
+    c.x = 3.0 + i * 1.4; c.z = 6.0; c.state = 'BROWSING'; c.path = null;
+    g.customers.push(c); crowd.push(c);
+  }
+  g.updateClosing(1 / 30, false, false);
+  const rightAfter = crowd.map((c) => c.state);
+
+  /* A hundred seconds is a long browse and nowhere near long enough for
+     anybody to run out of patience at the counter, which is a separate
+     thing from closing and has its own check further down. */
+  let took = -1;
+  for (let i = 0; i < 3000; i++) {
+    crowd.forEach((c) => { if (!c.hidden) window.__cust.updateCustomer(c, 1 / 30, g.ctx); });
+    g.updateClosing(1 / 30, false, false);
+    if (crowd.every((c) => c.state === 'WAITING')) { took = Math.round(i / 30); break; }
+  }
+  /* Let the line settle before asking whether it can be served. Places are
+     handed out as people arrive, so for a frame or two after the last of
+     them lands the front of the queue can still be somebody walking. */
+  for (let i = 0; i < 300; i++) {
+    crowd.forEach((c) => { if (!c.hidden) window.__cust.updateCustomer(c, 1 / 30, g.ctx); });
+    g.updateClosing(1 / 30, false, false);
+  }
+  const front = g.queue[0];
+  const out = {
+    rightAfter,
+    states: crowd.map((c) => c.state),
+    picked: crowd.filter((c) => !!c.tape).length,
+    why: front ? (g.cannotServe(front) || 'can be served') : 'nobody at the counter',
+    idx: crowd.map((c) => c.queueIndex).sort((a, b) => a - b).join(','),
+    took,
+  };
+  g.customers.length = 0; g.queue.length = 0;
+  return out;
+});
+check('midnight does not turn the people already inside out of the shop',
+  finishUp.rightAfter.every((s) => s !== 'LEAVING'), finishUp.rightAfter.join(', '));
+check('they still get to pick something off the shelf',
+  finishUp.picked === 3, `${finishUp.picked} of 3 came away with something`);
+check('and still queue up to pay for it',
+  finishUp.states.every((s) => s === 'WAITING') && finishUp.idx === '0,1,2',
+  `${finishUp.states.join(', ')} at places ${finishUp.idx} after ${finishUp.took}s`);
+check('and the one at the front can be rung up like any other customer',
+  finishUp.why === 'can be served', finishUp.why);
+
 /* ---------- 4. the night waits for the shop to clear ---------- */
 const waits = await ev(() => {
   const g = window.__game;
@@ -98,8 +160,12 @@ const waits = await ev(() => {
   const seen = [];
   for (let i = 0; i < 8; i++) { g.updateClosing(0.5, false, false); seen.push(g.state); }
   const objWithBoth = g.ui.el.objective ? g.ui.el.objective.textContent : '';
-  // let them walk out
-  // Walking out of the shop and off down the pavement takes a while.
+  /* Now let them finish and go. Closing no longer sends anybody home, so
+     this stands in for the customer being served and heading out on their
+     own -- what the shift is waiting on is the room emptying, however it
+     empties.
+     Walking out of the shop and off down the pavement takes a while. */
+  g.customers.forEach((x) => g.ctx.leave(x));
   for (let i = 0; i < 4000; i++) {
     g.customers.forEach((x) => { if (!x.hidden) window.__cust.updateCustomer(x, 1 / 20, g.ctx); });
     g.customers = g.customers.filter((x) => x.state !== 'GONE');
@@ -541,15 +607,18 @@ const stubborn = await ev(() => {
   c.x = 10.75; c.z = 0.8; c.state = 'WAITING'; c.queueIndex = 0;
   g.customers.push(c);
   let leftAt = -1;
-  for (let i = 0; i < 12000; i++) {
+  for (let i = 0; i < 30000; i++) {
     g.updateClosing(1 / 30, false, false);
     if (c.state === 'LEAVING' || c.state === 'GONE') { leftAt = i / 30; break; }
   }
   return { leftAt: Math.round(leftAt) };
 });
-check('somebody parked at the counter is eventually shown the door',
-  stubborn.leftAt > 60 && stubborn.leftAt < 300,
-  `sent home after ${stubborn.leftAt}s of closing`);
+/* Generously long, on purpose: it is a backstop against a shift that cannot
+   end, not a bell. Somebody who was inside at midnight gets several
+   transactions' worth of time before they give up on being served. */
+check('but somebody parked at the counter all night is eventually shown the door',
+  stubborn.leftAt > 300 && stubborn.leftAt < 480,
+  `gave up after ${stubborn.leftAt}s of closing`);
 
 console.log('\n--- errors ---');
 console.log(errors.length ? errors.join('\n') : '(none)');

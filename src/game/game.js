@@ -39,6 +39,12 @@ const GRINDERS = { REEKER: true, SMOKER: true, SOVEREIGN: true };
 const SHELVE_REACH = 1.05;
 const SHELVE_TIME = 1.5;
 
+/* How long somebody who was already inside at midnight gets to finish up
+   before they give up and go home. Deliberately far longer than anything
+   should take: it exists so a shift can always end, not to hurry anyone.
+   Seven minutes of shop-floor time is several transactions' worth. */
+const CLOSING_LIMIT = 420;
+
 export class Game {
   constructor() {
     this.canvas = document.getElementById('screen');
@@ -614,8 +620,11 @@ export class Game {
          This used to say "the clock over the door has stopped again" on
          deputy nights and "shift ends at midnight" on the rest, which
          told the player before anybody had come through the door whether
-         tonight was a night the killer might be working. */
-      this.ui.toast(`Shift ends at midnight.`, '');
+         tonight was a night the killer might be working.
+
+         And it is the doors that close at midnight, not the shift: whoever
+         is inside when the bolt goes across is still yours to serve. */
+      this.ui.toast(`Doors close at midnight.`, '');
     }
   }
 
@@ -735,9 +744,10 @@ export class Game {
    *
    * The clock reaching the end of the shift used to end the night on the
    * spot, mid-sentence, with three people in the queue and a tape still in
-   * the rewinder. It shuts the door instead: nobody else comes in, and the
-   * shift is not over until the last customer is out of the building one
-   * way or another and every tape is back in a run.
+   * the rewinder. Midnight is a lock on the door instead, and only that:
+   * nobody else comes in, and the shift is not over until the last customer
+   * is out of the building one way or another and every tape is back in a
+   * run.
    */
   updateClosing(dt, holdClock, talking) {
     if (this.elapsed < this.night.length || holdClock) return;
@@ -748,23 +758,36 @@ export class Game {
       this.door.locked = true;
       this.sound.chimeGood();
       this.ui.toast(`Midnight. Door's shut.`, '');
-      this.ui.toast(`Everybody out, everything back on the shelves.`, '');
+      this.ui.toast(`Nobody else comes in. Everyone already here still gets served.`, '');
     }
     this.closingT += dt;
 
-    /* Everyone still inside is now on their way out. They finish what they
-       are doing -- a customer at the counter still gets served, and still
-       gets their change -- but nobody starts anything new, and the ones
-       still reading the back of a box put it down. */
+    /* Midnight turns the sign round; it does not clear the room.
+
+       This used to march the whole shop out at the stroke of twelve, which
+       meant a woman four feet from the counter with a tape in her hand and
+       her money out got turned round and sent home, and the last minutes of
+       a shift were spent watching people you had been serving all night
+       file past you. Anybody who was inside before the bolt went across
+       still gets to pick something out and pay for it.
+
+       All they are told is that the shop is shutting, which makes them
+       settle for the aisle they are already standing in rather than doing
+       another lap. After that they finish in their own time, and they leave
+       when they are done, the way they would have anyway. */
     for (const c of this.customers) {
       if (c.hidden || c.state === CS.GONE || c.state === CS.LEAVING) continue;
-      if (!c._toldClosing) { c._toldClosing = true; this.ctx.hurry(c); }
-      const busy = c === this.speaking || c.awaitingChange
-        || c.state === CS.WAITING || c.state === CS.TO_COUNTER || c.state === CS.TALKING;
-      // Browsers go now. People mid-transaction get a fair while, then go too.
-      if (!busy || this.closingT > 150) {
-        if (c.tape && !c.checkedOut && c.script !== 'return') this.ctx.returnToShelf(c);
+      if (!c._toldClosing) { c._toldClosing = true; c._closingT = 0; this.ctx.hurry(c); }
+      c._closingT = (c._closingT || 0) + dt;
+      /* A backstop and nothing else. Every state a customer can be in has
+         its own way out, so this should never fire -- but a shift that
+         cannot end because one person is wedged in an aisle is worse than
+         one customer going home unserved, and the player is not owed an
+         unwinnable room at half past midnight. */
+      if (c._closingT > CLOSING_LIMIT) {
+        if (c.tape && !c.checkedOut && c.script !== 'return') this.ctx.abandonTape(c);
         this.ctx.leave(c);
+        this.ui.toast(`${c.name} gave up waiting and left.`, 'bad');
       }
     }
 
@@ -1086,7 +1109,7 @@ export class Game {
     if (this.officerDone) return;
     this.officerDone = true;
     this.ui.toast(`${glyphText('notes')} reads your notes.`, '');
-    this.ui.toast(`Clock's running. Shift ends at midnight.`, '');
+    this.ui.toast(`Clock's running. Doors close at midnight.`, '');
   }
 
   /** Walk an NPC along a fixed list of points. Returns true when it runs out. */
