@@ -134,8 +134,12 @@ check('and only the man with somebody else\'s tape walked in holding one',
   settled.filter((c) => c.tape).map((c) => `${c.id}:${c.tape}`).join(' '));
 
 const actors = settled.filter((c) => c.act);
+/* However many of them have somewhere to be -- read it off the roster
+   rather than writing the number down here, which is how this went red
+   the day two more people with somewhere to be were added. */
+const nActs = await ev(() => window.__specials.specialRoster().filter((s) => s.act).length);
 check('the ones with somewhere to be got there and are doing it',
-  actors.length === 6 && actors.every((c) => c.state === 'ACTING'),
+  actors.length === nActs && actors.every((c) => c.state === 'ACTING'),
   actors.map((c) => `${c.id}:${c.state}@${c.x},${c.z}`).join(' '));
 check('nobody is standing in the doorway',
   settled.every((c) => c.z < 12.4), `deepest z ${Math.max(...settled.map((c) => c.z)).toFixed(2)}`);
@@ -224,7 +228,36 @@ const trees = await ev(() => {
       }
       g.customers.splice(g.customers.indexOf(c), 1);
     };
+
+    /* The exhaustive walk stops six choices in, because past that it is
+       exponential. Long trees end past that -- the woman who is offended
+       about the offence talks for four levels before she is anywhere near
+       agreeing to rent something -- so the walk alone was quietly claiming
+       those endings did not exist.
+
+       So: also run straight down the tree, taking the same choice every
+       time, as deep as it goes. Four cheap runs per person, and between
+       them they reach the endings the exhaustive pass cannot afford. */
+    const probe = (pick) => {
+      const c = window.__cust.makeSpecial(g.rng, sp);
+      c.x = 5.4; c.z = 3.0; c.state = 'QUEUE';
+      g.customers.push(c);
+      let node = D.talkTo(c, g.ctx, { atCounter: true });
+      for (let turn = 0; turn < 60 && node; turn++) {
+        if (node.text) lines.add(node.text);
+        const ch = node.choices || [];
+        ch.forEach((r) => replies.add(r.label || r.text || ''));
+        if (!ch.length) break;
+        const r = ch[Math.min(pick, ch.length - 1)];
+        node = r.go ? r.go() : (r.fn ? r.fn() : null);
+        if (c.checkedOut || (c.script === 'rent' && c.state === 'BROWSING')) { sales++; break; }
+        if (c.state === 'LEAVING' || c.gone) { exits++; break; }
+        if (!node) node = D.talkTo(c, g.ctx, { atCounter: true });
+      }
+      g.customers.splice(g.customers.indexOf(c), 1);
+    };
     explore([]);
+    for (let pick = 0; pick < 4; pick++) probe(pick);
     out.push({
       id: sp.id, nodes, exits, sales, deadEnds, blown,
       lines: lines.size, replies: replies.size,
@@ -269,10 +302,15 @@ check('and mashing one button always reaches the end of the conversation',
    period in between, which is what the grind checks above walk end to end.
    Everybody else can be got out of the shop in one go. */
 const GRINDERS = ['REEKER', 'SMOKER', 'SOVEREIGN'];
+/* Three shapes, and everybody is one of them: shown the door, sold
+   something and sent off to the shelves, or worn down over many
+   conversations. The woman who is offended about the offence is the
+   middle one -- she has no exit line at all, because she leaves the way
+   any customer leaves, having bought a film. */
+const noWayOut = trees.filter((t) => !t.exits && !t.sales && !GRINDERS.includes(t.id));
 check('every one of them has a way out of the shop',
-  trees.filter((t) => !GRINDERS.includes(t.id)).every((t) => t.exits > 0),
-  trees.filter((t) => !t.exits && !GRINDERS.includes(t.id)).map((t) => t.id).join(' ')
-  || 'all ten can be got rid of in one conversation');
+  noWayOut.length === 0,
+  noWayOut.map((t) => t.id).join(' ') || 'nobody in the roster is a dead end');
 check('and most of them can be turned into a sale if you handle them right',
   trees.filter((t) => t.sales > 0).length >= 9,
   `${trees.filter((t) => t.sales > 0).length} of ${trees.length} will rent something`);
@@ -879,6 +917,125 @@ await ev(() => { window.__game.timeScale = 1; });
 check('the shop survives a room full of them',
   ['PLAY', 'REPORT', 'PAUSE'].includes(await ev(() => window.__game.state)),
   await ev(() => window.__game.state));
+
+/* ---------- 4g. the man with the assignment ---------- */
+/* Denying the basement never works, however many times you do it. What
+   works is giving him a better address. */
+const crook = await ev(() => {
+  const g = window.__game;
+  const D = window.__dlg;
+  const run = (pick) => {
+    g.customers.length = 0; g.queue.length = 0;
+    const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById('BASEMENT'));
+    c.x = 5.4; c.z = 3.0; c.state = 'ACTING';
+    g.customers.push(c);
+    let node = D.talkTo(c, g.ctx, { atCounter: true });
+    const said = [];
+    let gone = false;
+    for (let turn = 0; turn < 40 && node; turn++) {
+      said.push(node.text || '');
+      const cs = node.choices || [];
+      if (!cs.length) break;
+      const i = pick(cs, turn);
+      const r = cs[i];
+      said.push(r.label || '');
+      node = r.fn ? r.fn() : null;
+      if (c.state === 'LEAVING' || c.state === 'GONE') { gone = true; break; }
+      if (!node) node = D.talkTo(c, g.ctx, { atCounter: true });
+    }
+    const out = { gone, turns: said.length, text: said.join(' ¶ '), mood: Math.round(c.mood) };
+    g.customers.length = 0; g.queue.length = 0;
+    return out;
+  };
+
+  // (a) refuse, over and over, exactly the way a person would
+  const refuse = run((cs) => {
+    const i = cs.findIndex((r) => /no basement|Get out|Just go/i.test(r.label));
+    return i >= 0 ? i : 0;
+  });
+  // (b) tell him it is the other store
+  const other = run((cs) => {
+    const i = cs.findIndex((r) => /other store|across town|which video store|other side/i.test(r.label));
+    return i >= 0 ? i : 0;
+  });
+  // (c) and every reply in the tree leads somewhere written
+  let holes = 0, lines = 0;
+  for (let k = 0; k < 25; k++) {
+    const r = run((cs) => k % cs.length < cs.length ? (k + cs.length) % cs.length : 0);
+    lines += r.turns;
+    if (/undefined|\[object/.test(r.text)) holes++;
+  }
+  return { refuse, other, holes, lines };
+});
+check('refusing the man his basement never gets rid of him',
+  crook.refuse.gone === false && crook.refuse.turns > 20,
+  `${crook.refuse.turns} lines of it, he is still there, mood ${crook.refuse.mood}`);
+check('and every refusal costs you',
+  crook.refuse.mood < 60, `mood ${crook.refuse.mood}`);
+check('sending him to the store across town is what works',
+  crook.other.gone === true, crook.other.gone ? 'he goes' : 'still standing there');
+/* Mood is capped at a hundred, so "he leaves happy" is "he leaves with
+   nothing taken off him" -- unlike the refusal run, which ends at zero. */
+check('and he takes it as good news rather than a brush-off',
+  crook.other.mood >= 100 && crook.refuse.mood < crook.other.mood,
+  `told: ${crook.other.mood}, refused: ${crook.refuse.mood}`);
+check('every path through the assignment is written',
+  crook.holes === 0, crook.holes ? `${crook.holes} with a hole` : `${crook.lines} lines walked`);
+console.log('      "' + crook.other.text.slice(0, 150).replace(/\n/g, ' ') + '"');
+
+/* ---------- 4h. offended that anybody was offended ---------- */
+/* She is not an ejection. She talks herself all the way round to a
+   completely different subject and then goes and rents something. */
+const off = await ev(() => {
+  const g = window.__game;
+  const D = window.__dlg;
+  const runs = [];
+  for (let k = 0; k < 30; k++) {
+    g.customers.length = 0; g.queue.length = 0;
+    const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById('OFFENDED'));
+    c.x = 5.4; c.z = 3.0; c.state = 'ACTING';
+    g.customers.push(c);
+    let node = D.talkTo(c, g.ctx, { atCounter: true });
+    const said = [];
+    for (let turn = 0; turn < 40 && node; turn++) {
+      said.push(node.text || '');
+      const cs = node.choices || [];
+      if (!cs.length) break;
+      const r = cs[(k + turn) % cs.length];
+      said.push(r.label || '');
+      node = r.fn ? r.fn() : null;
+      if (c.state === 'BROWSING') break;
+      if (!node) node = D.talkTo(c, g.ctx, { atCounter: true });
+    }
+    runs.push({
+      shops: c.state === 'BROWSING', rungUp: !!c.checkedOut,
+      turns: said.length, text: said.join(' ¶ '),
+      offended: /offended THAT|being offended by it|UPSET about it/.test(said.join(' ')),
+    });
+  }
+  g.customers.length = 0; g.queue.length = 0;
+  const subjects = new Set(runs.map((r) => (r.text.match(/Gravy|Gravel|Bread|quiet house/i) || [''])[0]));
+  return {
+    n: runs.length,
+    shops: runs.filter((r) => r.shops).length,
+    rungUp: runs.filter((r) => r.rungUp).length,
+    offended: runs.filter((r) => r.offended).length,
+    holes: runs.filter((r) => /undefined|\[object/.test(r.text)).length,
+    shortest: Math.min(...runs.map((r) => r.turns)),
+    subjects: [...subjects].filter(Boolean),
+    sample: runs[0].text.slice(0, 200),
+  };
+});
+check('she is offended about the offence, not the thing',
+  off.offended === off.n, `${off.offended} of ${off.n}`);
+check('and the conversation ends up somewhere else entirely',
+  off.subjects.length >= 3, off.subjects.join(', '));
+check('it is not a quick one', off.shortest > 10, `shortest was ${off.shortest} lines`);
+check('she is never rung up on the spot', off.rungUp === 0);
+check('and she does go and rent something in the end',
+  off.shops >= off.n - 2, `${off.shops} of ${off.n} head for the shelves`);
+check('with no hole anywhere in it', off.holes === 0);
+console.log('      "' + off.sample.replace(/\n/g, ' ') + '"');
 
 console.log('\n--- errors ---');
 console.log(errors.length ? errors.join('\n\n') : '(none)');

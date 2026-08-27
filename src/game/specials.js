@@ -522,6 +522,94 @@ export const SPECIALS = [
       noMoney: [`Cash flow. You understand cash flow.`],
     },
   },
+
+  /* ---------------------------------------------------------- */
+  /* He has a mission. It came to him in his sleep, from people who do
+     not use telephones, and it ends in a basement this shop has never
+     had. Nothing you say about the basement helps, because the basement
+     is not the point -- the address is. */
+  {
+    id: 'BASEMENT',
+    name: 'Marlon Speake',
+    tag: 'has been given an assignment',
+    act: 'LINGER',
+    nuisance: null,
+    complaints: [
+      `He asked me if I had clearance. I'm buying a comedy.`,
+      `Sir, I don't know where the basement is either.`,
+      `Is he talking about Kennedy? He's talking about Kennedy.`,
+      `He's been staring at that floor tile for four minutes.`,
+    ],
+    app: {
+      gender: 'm', height: 'average', build: 'thin', facial: 'stubble', glasses: 'square',
+      hat: 'none', gait: 'stiff', carry: 'duffel', smell: 'wet', voice: 'flat',
+      hair: { id: 'grey', name: 'grey', hex: '#8d8a84', dark: '#6a6862', style: 'greasy',
+        styleName: 'combed flat and thinning', label: 'Grey hair, combed flat',
+        bulletin: 'grey hair, thinning, combed flat' },
+      jacket: { id: 'anorak', name: 'olive', hex: '#44492a', kind: 'work coat' },
+      pants: { id: 'khaki', name: 'khaki', hex: '#6a6248' },
+      shirt: { id: 'white', name: 'white', hex: '#b8b4aa' },
+      skin: '#c9a184',
+    },
+    ...BASE,
+    patience: 500, irascibility: 0.8, honesty: 1, chattiness: 1,
+    lines: {
+      wait: [`I'll wait. I've waited thirty-three years.`, `(he is counting ceiling tiles)`],
+      angry: [`You are OBSTRUCTING me. Do you understand the word obstruction?`],
+      bye: [`I was never here. Neither were you.`],
+      thanks: [`This never happened.`],
+      smalltalk: [`Do you ever wake up already knowing something?`],
+      greetRent: [`Something with a motorcade in it.`],
+      greetReturn: [`This is being returned. It has been reviewed.`],
+      feeAccept: [`Fine. It's not my money, it's theirs.`],
+      feeDispute: [`I'm not paying a fee to an asset of the same agency.`],
+      feeWaived: [`Correct.`],
+      noMoney: [`My funding is irregular. That's by design.`],
+    },
+  },
+
+  /* ---------------------------------------------------------- */
+  /* She is not offended about the thing. She is offended that anybody
+     was offended about the thing, and once that is established the
+     conversation goes somewhere else entirely and stays there. */
+  {
+    id: 'OFFENDED',
+    name: 'Roberta Kinsey',
+    tag: 'is offended on principle',
+    act: 'LINGER',
+    nuisance: null,
+    complaints: [
+      `She's been talking to him for eleven minutes. I timed it.`,
+      `I don't think either of them knows what they're arguing about.`,
+      `Is this a queue or a public meeting?`,
+    ],
+    app: {
+      gender: 'f', height: 'short', build: 'average', facial: 'clean', glasses: 'round',
+      hat: 'none', gait: 'brisk', carry: 'none', smell: 'cologne', voice: 'nasal',
+      hair: { id: 'red', name: 'red', hex: '#8a3a1c', dark: '#642713', style: 'curly',
+        styleName: 'curly and set', label: 'Red hair, curly and set',
+        bulletin: 'red hair, curly, set hard' },
+      jacket: { id: 'quilt', name: 'teal', hex: '#1c5157', kind: 'cardigan' },
+      pants: { id: 'cream', name: 'cream', hex: '#8a8270' },
+      shirt: { id: 'rust', name: 'rust orange', hex: '#7a3c1c' },
+      skin: '#e0b394',
+    },
+    ...BASE,
+    patience: 500, irascibility: 0.45, honesty: 0.8, chattiness: 1, wealth: 1,
+    lines: {
+      wait: [`No, no, finish what you're doing. I'll hold the thought.`],
+      angry: [`And THAT is exactly the attitude I'm talking about.`],
+      bye: [`Well. It's been a conversation.`],
+      thanks: [`You've been very patient. Which I notice.`],
+      smalltalk: [`Can I say something? I'm going to say something.`],
+      greetRent: [`I want something with a bit of backbone to it.`],
+      greetReturn: [`Here. And before you say anything — I have thoughts.`],
+      feeAccept: [`Fine. I'm not going to make a THING of it.`],
+      feeDispute: [`Now hang on. Hang on.`],
+      feeWaived: [`See, that's decency. That still exists.`],
+      noMoney: [`I've got it. Somewhere. Don't rush me.`],
+    },
+  },
 ];
 
 /* Built once. Every night sees the same faces. */

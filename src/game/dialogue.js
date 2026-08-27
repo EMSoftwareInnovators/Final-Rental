@@ -1293,6 +1293,27 @@ export function specialRoot(c, ctx) {
         ]),
       });
 
+    /* ---------------- the assignment ----------------
+       He was contacted in his sleep and given a mission, and the mission
+       ends in this shop's basement. There is no basement. Saying so does
+       not help, and saying so twice makes it worse -- he did not come here
+       to be told the building's floor plan, he came to be let in.
+
+       The one thing that works is not a denial at all. It is an
+       alternative address. Give him somewhere else to be and he goes
+       there, because a man on a mission would rather have the wrong
+       basement than no basement. */
+    case 'BASEMENT':
+      return basementRoot(c, ctx);
+
+    /* ---------------- offended on somebody else's behalf ----------------
+       She is not upset about the thing. She is upset that anybody was
+       upset about the thing, and once that is out of the way the
+       conversation leaves the subject entirely and does not come back.
+       She does rent something. It just takes a while to get there. */
+    case 'OFFENDED':
+      return offendedRoot(c, ctx);
+
     /* ---------------- the smell ----------------
        He does not think he smells. He thinks you have a problem with him,
        and he would like to discuss it, at length, in the aisle. */
@@ -1752,6 +1773,285 @@ export function specialRoot(c, ctx) {
     default:
       return idleRoot(c, ctx);
   }
+}
+
+/* ============================================================
+   THE ASSIGNMENT
+
+   Codename SHEPHERD'S CROOK. He was briefed while asleep, by people who
+   do not use telephones, and the briefing said: the basement of the video
+   store on Delaney. There is no basement. There has never been a
+   basement. He is aware that you will say that -- it is in the briefing.
+
+   Every denial makes him worse, because a denial is what an obstruction
+   sounds like. Refusing outright makes him worse faster. The exit is not
+   a denial at all: it is a better address. Suggest the mission meant the
+   OTHER video store, the one across town, and he thanks you and goes,
+   because a man with an assignment would rather have the wrong basement
+   than no basement at all.
+   ============================================================ */
+const CROOK_OPEN = [
+  `Don't say anything yet. I want to see your face when I say this.\n\nSHEPHERD'S CROOK.`,
+  `I'm going to say two words and I want you to watch your own reaction. Ready.\n\nSHEPHERD'S CROOK.`,
+  `You won't have been told. That's normal. That's how it's supposed to work.\n\nSHEPHERD'S CROOK. Say it back to me.`,
+];
+
+const CROOK_BRIEF = [
+  `Tuesday night. Three-forty in the morning. I was asleep and then I was being spoken to, and I was still asleep, which is how you know it wasn't a dream.\n\nThey don't use phones. Phones can be listened to. They use the part of you that's already switched off.`,
+  `They came in through the sleep. That's the channel. Always has been — they've been doing it since sixty-one and they got very good at it by sixty-three.\n\nI woke up with the whole thing already in me. Like a song you didn't learn.`,
+  `I don't hear voices. I want to be extremely clear about that, because people get it wrong and then they stop listening.\n\nI was ISSUED something. In my sleep. There's a difference and it's an important one.`,
+];
+
+const CROOK_TASK = [
+  `The assignment is a retrieval. There's a canister. Sixteen millimetre, unspliced, and it has been in a basement on this street since November of sixty-three.\n\nYour basement.`,
+  `Dallas. The whole of it, from an angle nobody has ever published, because the man holding the camera put it in a can and the can went into a basement on Delaney.\n\nThis is Delaney. This is the basement.`,
+  `There is a reel. It shows the fence. Not the book building — the fence.\n\nAnd it has been sitting under this floor for thirty-three years waiting for somebody with clearance to come and get it, and that somebody is me.`,
+];
+
+const CROOK_DIG = [
+  `See, that's the exact phrasing. "There is no basement." Word for word. They told me you'd say that.`,
+  `You're doing very well. You've been trained well. I'm not angry at you, I want you to understand that.`,
+  `Every building on this parade has a basement. I've been in the laundrette's. I've been in the barber's. Yours is the one that's a secret.`,
+  `A man who genuinely didn't have a basement would look confused. You look CAREFUL. That's a different face.`,
+  `I'm not asking you to come down with me. I'm asking you to stand aside from a door you say isn't there.`,
+  `Fine. FINE. Then show me the floor. Show me the whole floor. Move the shelving.`,
+];
+
+const CROOK_HOT = [
+  `DON'T. Don't say it again.`,
+  `You are OBSTRUCTING a retrieval. Do you know what that makes you? It makes you PART of it.`,
+  `Thirty-three years! Thirty-three years and it's a boy behind a till!`,
+  `I have a NAME for what you are and I am being polite by not using it.`,
+];
+
+function basementRoot(c, ctx) {
+  const rng = ctx.rng;
+  if (c.crookStage === undefined) { c.crookStage = 0; c.crookHeat = 0; }
+  /* Per conversation, not per night. He is inexhaustible across the shift
+     and finite within one exchange: go round the houses enough times and
+     he stops talking to you and goes back to studying the floor. Which
+     ends the conversation without ending him -- he is still in the shop,
+     and still has no basement to be let into. */
+  c.crookRound = 0;
+
+  const stonewall = () => say(c, rng.pick([
+    `No. No, we're going in circles and circles are how they waste you.\n\nI'll wait. I've waited thirty-three years, I can wait out a shift.`,
+    `I'm not going to keep asking a man who's been told what to say.\n\n(he turns away and looks at the floor again)`,
+    `You know what? Don't. Don't say it again.\n\nI'll be over here. Looking at your floor.`,
+  ]), [reply(`...`, () => null)]);
+
+  /* Every denial winds him up. He never leaves this way -- the meter is
+     only there so the room can see the refusals landing badly. */
+  const deny = (line) => {
+    c.crookHeat++;
+    c.crookRound++;
+    ctx.mood(c, -8);
+    if (c.crookRound > 5) return stonewall();
+    const pool = c.crookHeat >= 4 ? CROOK_HOT : CROOK_DIG;
+    return say(c, `${line}\n\n${rng.pick(pool)}`, [
+      reply(`There is no basement. There has never been a basement.`,
+        () => deny(`(he closes his eyes for a moment)`), { risk: true }),
+      reply(`I'm not showing you anything. Get out.`,
+        () => deny(`(he does not move)`), { risk: true }),
+      reply(`...Wait. Which video store did they say?`, () => redirect()),
+      reply(`What's on the reel?`, () => say(c, rng.pick(CROOK_TASK),
+        [reply(`...Right.`, () => deny(`(he waits)`))])),
+    ]);
+  };
+
+  /* The way out. Not a denial: a better address. He would rather have the
+     wrong basement than no basement, so give him one. */
+  const redirect = () => say(c, rng.pick([
+    `...Say that again.`,
+    `What do you mean, which one.`,
+    `(for the first time, he stops talking)`,
+  ]), [
+    reply(`There are two video stores in this town. This is the one on Delaney.`,
+      () => confirm()),
+    reply(`Sunset's got a second store the other side of town. That one has a basement.`,
+      () => confirm()),
+    reply(`I think your assignment might be the other store. The one across town.`,
+      () => confirm()),
+    reply(`Never mind. Just go.`, () => deny(`(the moment passes)`), { risk: true }),
+  ]);
+
+  const confirm = () => say(c, rng.pick([
+    `The other one.\n\nThe OTHER one. On the west side. By the overpass.\n\n...That's a basement. That building has a basement, I've seen the vent.`,
+    `West side. Behind the overpass.\n\nOh. Oh, that's — that would explain the whole of it. The whole of it.\n\nThey said Sunset. They never said Delaney. I put Delaney on it. That was me.`,
+    `(he is very still)\n\nI assumed. I ASSUMED. Thirty-three years and I assumed.\n\nThere's a Sunset on the west side. With a basement. With a vent on the alley side.`,
+  ]), [
+    reply(`Sounds like where you're meant to be.`, () => out(`Yes. Yes. I've lost forty minutes.`)),
+    reply(`I'd hurry. It's nearly midnight.`, () => out(`They'll have allowed for that. They allow for everything.`)),
+    reply(`Good luck with the canister.`, () => out(`Don't say canister out loud in here.`)),
+  ]);
+
+  const out = (last) => say(c, `${last}\n\n(he is already moving)`, [
+    reply(`...`, () => { ctx.mood(c, +20); ctx.leave(c); return null; }),
+  ]);
+
+  if (c.crookStage === 0) {
+    c.crookStage = 1;
+    return say(c, rng.pick(CROOK_OPEN), [
+      reply(`...I don't know what that is.`, () => say(c, rng.pick(CROOK_BRIEF),
+        [reply(`Sir.`, () => deny(`So. Your basement.`))])),
+      reply(`Shepherd's what?`, () => say(c, rng.pick(CROOK_BRIEF),
+        [reply(`Okay.`, () => deny(`So. Your basement.`))])),
+      reply(`Can I help you find a movie?`, () => say(c,
+        `A movie. He says a movie.\n\nI'm not here for a movie. I'm here for what's under it.`,
+        [reply(`Under what?`, () => deny(`Under the FLOOR.`))])),
+    ]);
+  }
+  return deny(rng.pick([`Are we doing this again?`, `Basement.`, `I haven't moved.`]));
+}
+
+/* ============================================================
+   OFFENDED ABOUT THE OFFENCE
+
+   Somebody, somewhere, was offended by something. She was not. She is
+   offended that they were, and she has come here to say so -- and then
+   the conversation slides sideways, twice, and ends up somewhere with no
+   connection to where it started.
+
+   She is not an ejection. She talks herself out, arrives at a completely
+   different subject, notices she has been standing there for ten minutes
+   and goes and rents something. What she wants is for you to keep saying
+   things back.
+   ============================================================ */
+/* What set her off, tonight. Never the same one twice in a night. */
+const OFFENCES = [
+  { it: `a picture on a cereal box`, who: `a woman in Ohio` },
+  { it: `the word "moist" in a magazine`, who: `an entire church group` },
+  { it: `a mascot at a county fair`, who: `somebody's mother-in-law` },
+  { it: `a joke on the radio, at six in the morning`, who: `a man who called in about it` },
+  { it: `the colour they repainted the bank`, who: `the historical society` },
+  { it: `a greetings card with a frog on it`, who: `a woman at my church` },
+  { it: `a nativity where Joseph had a beard`, who: `three separate families` },
+  { it: `the new road signs`, who: `a retired schoolteacher` },
+  { it: `a sitcom where the dog talks`, who: `a letter-writing campaign` },
+];
+
+/* Where it goes instead, once the offence has been dealt with. */
+const TANGENTS = [
+  {
+    into: `And do you know what that reminds me of? Gravy.`,
+    body: [
+      `My sister makes gravy with the water off the potatoes. The WATER. And she'll tell you it's how our mother did it, and our mother did no such thing, I was THERE.`,
+      `I have said nothing about it for eleven years. Eleven years of that gravy. And every year she says "you're quiet" and I say "I'm enjoying it."`,
+      `That's not lying. That's manners. There's a difference and nobody teaches it any more.`,
+    ],
+    land: `Anyway. Gravy.`,
+  },
+  {
+    into: `Which brings me — and I don't know why — to my neighbour's driveway.`,
+    body: [
+      `He's put gravel down. Gravel. On a slope. And now every time it rains I have his driveway in my flowerbed.`,
+      `I said, Ray, that's not a driveway, that's a delivery. And he laughed. He LAUGHED. Which I took well, I think.`,
+      `I've been picking his driveway out of my begonias since March and we are still on speaking terms, which if you knew me you'd call a miracle.`,
+    ],
+    land: `Anyway. Gravel.`,
+  },
+  {
+    into: `Now. This is going to sound like a change of subject and it isn't.`,
+    body: [
+      `They've moved the bread. In the store. The bread has been in the same place my whole adult life and now it's where the cards were.`,
+      `And I asked a boy about it and he said it was to do with the FLOW. The flow! Of a grocery store!`,
+      `I stood in front of the cards for a full minute the first time. Just stood there. Like something that had been switched off.`,
+    ],
+    land: `Anyway. Bread.`,
+  },
+  {
+    into: `Can I tell you what I actually came out for tonight? Because it wasn't a film.`,
+    body: [
+      `The house is very quiet since Dennis. And a quiet house is fine in the day. In the day it's peaceful.`,
+      `It's about nine o'clock it stops being peaceful. Nine o'clock it turns into something else entirely.`,
+      `So I get in the car. And I drive somewhere with a light on. That's the whole plan. Somewhere with a light on.`,
+    ],
+    land: `Anyway. That's more than you asked for.`,
+  },
+];
+
+function offendedRoot(c, ctx) {
+  const rng = ctx.rng;
+  if (!c.offence) {
+    c.offence = rng.pick(OFFENCES);
+    c.tangent = rng.pick(TANGENTS);
+    c.offStage = 0;
+  }
+  const O = c.offence, T = c.tangent;
+
+  /* The tangent, one paragraph at a time. She only needs you to keep
+     saying things back; what you say barely matters, which is the joke. */
+  const wander = (i) => {
+    if (i >= T.body.length) return land();
+    return say(c, T.body[i], [
+      reply(rng.pick([`Right.`, `Mm.`, `I see.`]), () => wander(i + 1)),
+      reply(rng.pick([`That does sound frustrating.`, `That's a long time to say nothing.`,
+        `I can imagine.`]), () => { ctx.mood(c, +6); return wander(i + 1); }),
+      reply(rng.pick([`Ma'am, is there a film you wanted?`, `Was there something you needed?`]),
+        () => say(c, rng.pick([
+          `In a minute. I'm nearly at the end of it.`,
+          `Yes — yes, I'll get to that. Let me just finish.`,
+          `There is. There is. Hold on.`,
+        ]), [reply(`...Go on.`, () => wander(i + 1))])),
+    ]);
+  };
+
+  const land = () => say(c, `${T.land}\n\n...I've been standing here talking at you for ten minutes, haven't I. And you've let me.`, [
+    reply(`It's a slow night.`, () => sell(`That's a kind way of putting it.`)),
+    reply(`You have, a bit.`, () => sell(`Well. You could have stopped me.`)),
+    reply(`I didn't mind.`, () => { ctx.mood(c, +14); return sell(`No. I don't think you did.`); }),
+  ]);
+
+  const sell = (said) => say(c, `${said}\n\nRight. Something with a bit of backbone to it. I'll find it myself, you've done enough listening.`, [
+    reply(`Take your time.`, () => {
+      ctx.mood(c, +10);
+      return goShopping(c, ctx, `I always do.`, { close: `I'll be at the counter.` });
+    }),
+    reply(`Anything in particular?`, () => say(c,
+      `Something where somebody says what they mean. You'd be amazed how rare that is.`,
+      [reply(`Have a look round.`, () => {
+        ctx.mood(c, +10);
+        return goShopping(c, ctx, `I shall.`, { close: `I'll be at the counter.` });
+      })])),
+  ]);
+
+  const pivot = () => say(c, T.into, [
+    reply(`...Go on.`, () => wander(0)),
+    reply(`Is this still about the ${O.it}?`, () => say(c,
+      `No. No, we've dealt with that. Keep up.`, [reply(`Sorry.`, () => wander(0))])),
+  ]);
+
+  const core = () => say(c, rng.pick([
+    `And I want to be very clear, because people get this wrong. I am not offended by ${O.it}.\n\nI am offended THAT ${O.who} was offended by it. Those are two completely different things and I'll thank you not to run them together.`,
+    `Now, you'll think I'm about to complain about ${O.it}. I'm not. I don't care about ${O.it}.\n\nWhat I care about is that ${O.who} decided to be UPSET about it. In public. On purpose.`,
+    `${cap(O.who)} was offended by ${O.it}. And I have been carrying that around all week like a stone in my shoe.\n\nNot the ${O.it}. The being offended by it. That's the part.`,
+  ]), [
+    reply(`So you're offended that they were offended.`, () => say(c,
+      rng.pick([`Yes. Finally. Thank you.`, `YES. Somebody with ears.`,
+        `That is exactly it and you're the first person all week to get there.`]),
+      [reply(`Right.`, () => { ctx.mood(c, +10); return pivot(); })])),
+    reply(`That sounds exhausting.`, () => say(c,
+      `It IS. It's exhausting. And nobody sympathises, because to sympathise you'd have to follow it.`,
+      [reply(`I follow it.`, () => { ctx.mood(c, +8); return pivot(); })])),
+    reply(`I don't think I follow.`, () => say(c,
+      `Then I'll say it slower, because it's worth getting.`,
+      [reply(`Please do.`, () => pivot())])),
+  ]);
+
+  if (c.offStage === 0) {
+    c.offStage = 1;
+    return say(c, rng.pick([
+      `Can I say something? I'm going to say something, and then I'll buy a film, I promise.`,
+      `Before anything else. Have you heard about ${O.it}?`,
+      `You look like a man who'll let somebody finish a sentence. I've got one.`,
+    ]), [
+      reply(`Go ahead.`, () => core()),
+      reply(`...Sure.`, () => core()),
+      reply(`I'm listening.`, () => { ctx.mood(c, +6); return core(); }),
+    ]);
+  }
+  /* Come back to her mid-story and she picks up where she left off. */
+  return pivot();
 }
 
 /* ============================================================
