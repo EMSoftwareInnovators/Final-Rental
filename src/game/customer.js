@@ -181,6 +181,10 @@ export const ACT_SPOT = {
      waiting on a car. The counter frontage is full anyway: the service
      window and three queue places already run the length of it. */
   HATCH: { x: 7.05, z: 0.45, yaw: Math.PI },
+  /* In front of the popcorn cart -- which is behind the counter, on the
+     clerk's side, where a customer has absolutely no business being. That
+     is the point of him. */
+  POPPER: { x: 12.05, z: 6.10, yaw: Math.PI / 2 },
 };
 
 /* ---------------- movement ---------------- */
@@ -338,6 +342,14 @@ export function updateCustomer(c, dt, ctx) {
         }
         c.yaw = angleTowards(c.yaw, spot.yaw, dt * 3);
         c.moveSpeed = 0;
+        /* Nor does he start emptying the tub the second he gets there.
+           He has to get behind the counter, find the tub, and work out
+           that the lid comes off. Then it is all at once. */
+        if (c.act === 'POPPER' && !c.tipped) {
+          c.setupT = (c.setupT || 0) + dt;
+          if (c.setupT > 2.2) { c.tipped = true; ctx.startPopper(c); }
+          break;
+        }
         /* He does not start dancing the moment he arrives. He is carrying
            the thing: he has to crouch, put it down, find the switch, and
            stand back up. The music starts when it starts, not before. */
@@ -772,6 +784,14 @@ function performAct(c, dt) {
       a.armL = -0.42 + Math.sin(t * 0.35) * 0.06;   // the hand comes up now and then
       a.armR = 0;
       a.bob = Math.sin(t * 0.6) * 0.006;
+      break;
+    case 'POPPER':
+      /* Doubled over it, laughing, hands on the glass. */
+      a.headPitch = 0.30 + Math.sin(t * 3.4) * 0.16;
+      a.lean = 0.16 + Math.sin(t * 3.4) * 0.10;
+      a.armL = -1.15 + Math.sin(t * 3.1) * 0.18;
+      a.armR = -1.15 + Math.cos(t * 3.3) * 0.18;
+      a.bob = Math.abs(Math.sin(t * 3.4)) * 0.030;
       break;
     case 'PHONE':
       a.armL = -2.3;                                 // handset clamped to the ear

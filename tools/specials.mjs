@@ -210,9 +210,38 @@ const gripes = await ev(() => {
   g.ui.toast = real;
   return out;
 });
+/* However many of them are a nuisance -- another number that used to be
+   written down here and went stale the moment somebody new was one. */
+const nNuisance = await ev(() =>
+  window.__specials.specialRoster().filter((sp) => sp.nuisance).length);
 check('and the rest of the shop has something to say about them',
-  gripes.length === 4 && gripes.every((x) => x.got && x.line.length > 4),
+  gripes.length === nNuisance && gripes.every((x) => x.got && x.line.length > 4),
   gripes.map((x) => `${x.kind}: ${x.line.slice(0, 44)}`).join(' | '));
+/* And when there is nobody else in to complain, the shop tells you itself
+   -- every kind of nuisance needs its own lines for that. */
+const solo = await ev(() => {
+  const g = window.__game;
+  const kinds = [...new Set(window.__specials.specialRoster()
+    .filter((sp) => sp.nuisance).map((sp) => sp.nuisance))];
+  const missing = [];
+  for (const k of kinds) {
+    g.customers.length = 0;
+    const sp = window.__specials.specialRoster().find((x) => x.nuisance === k);
+    const c = window.__cust.makeSpecial(g.rng, sp);
+    g.customers.push(c);
+    const said = [];
+    const real = g.ui.toast.bind(g.ui);
+    g.ui.toast = (t) => { said.push(String(t)); };
+    for (let i = 0; i < 60; i++) g.ctx.nuisanceGripe(c);
+    g.ui.toast = real;
+    if (!said.length || said.some((t) => t === '...')) missing.push(k);
+  }
+  g.customers.length = 0;
+  return { kinds, missing };
+});
+check('and with nobody else in, the shop says it to you directly',
+  solo.missing.length === 0,
+  solo.missing.join(' ') || `${solo.kinds.length} kinds: ${solo.kinds.join(', ')}`);
 
 /* ---------- 4. talking them out of the shop ---------- */
 // Explore each special's whole tree rather than one path through it: every

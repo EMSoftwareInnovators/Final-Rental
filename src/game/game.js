@@ -34,7 +34,13 @@ const RES = [[256, 192, '256x192'], [320, 240, '320x240'], [400, 300, '400x300']
 
 /** Arm's length of a shelf run, and how long squaring a box away takes. */
 /** The three who cost you minutes, and hold the shift clock while they do. */
-const GRINDERS = { REEKER: true, SMOKER: true, SOVEREIGN: true };
+/* The ones who cost you minutes rather than money. While any of them is
+   in the building the shift clock waits, so getting rid of them is the
+   player's time and the player's job rather than something to shrug at
+   and let the night run out on.
+   Note what this does NOT cover: the popcorn on the floor afterwards.
+   He is free; his mess is not. */
+const GRINDERS = { REEKER: true, SMOKER: true, SOVEREIGN: true, POPCORN: true };
 
 const SHELVE_REACH = 1.05;
 const SHELVE_TIME = 1.5;
@@ -55,6 +61,14 @@ const CORD_REACH = 4.6;
 /* Where the kid puts the box down: the customer side of the counter, in
    front of the service window, so it is between the two of them. */
 const PIZZA_DROP = { x: 10.75, z: 0.95 };
+
+/* The machine will bury the shop if you let it, but not past the point
+   where the frame rate is the horror. */
+const MAX_SPILLS = 26;
+
+/* Where the vacuum stands in the back room. Against the shelf, by the
+   door, exactly where it has stood since 1984. */
+const VACUUM_HOME = { x: 5.15, z: 10.6, yaw: 0.4 };
 
 const PIZZA_BYE = [
   `See? Was that so hard?`,
@@ -114,6 +128,12 @@ export class Game {
     this.sweep = null;
     /* The phone on the back counter, and how far its cord goes. */
     this.managerCall = null;
+    this.pizza = null;
+    /* The popcorn machine, what came out of it, and the thing in the back
+       room that is the only way of dealing with what came out of it. */
+    this.popper = { running: false, spilled: 0 };
+    this.spills = [];
+    this.vacuum = { out: false, held: false, x: 0, z: 0, yaw: 0, running: false };
     this.killer = null;
     this.lights = 1; this.flickerAmt = 0; this.flickerT = 4;
     this.distress = 0; this.tension = 0;
@@ -253,6 +273,11 @@ export class Game {
     this.sweep = null;
     this.managerCall = null;
     this.pizza = null;
+    /* The popcorn machine, what came out of it, and the thing in the back
+       room that is the only way of dealing with what came out of it. */
+    this.popper = { running: false, spilled: 0 };
+    this.spills = [];
+    this.vacuum = { out: false, held: false, x: 0, z: 0, yaw: 0, running: false };
     this.briefingStarted = false;
 
     // the suspect
@@ -753,6 +778,8 @@ export class Game {
       this.updateSweep(h);
       this.updateHandedPhone(h);
       this.updatePizza(h);
+      this.updatePopper(h);
+      this.updateVacuum(h);
       for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
       this.customers = this.customers.filter((c) => c.state !== CS.GONE);
       updateKiller(this.killer, h, this.ctx);
@@ -839,12 +866,20 @@ export class Game {
        silent half minute staring at an empty room. */
     const inside = this.customers.filter((c) => !c.hidden && c.state !== CS.GONE && c.z > 0.15);
     const strays = this.strayMedia();
+    /* You do not lock up on a floor covered in popcorn with the machine
+       still running. That is tomorrow's problem only if there is a
+       tomorrow, and there is a man in this town who makes that a real
+       question. */
+    const mess = this.spills.length;
+    const popping = this.popper.running;
 
-    if (inside.length || strays.n) {
+    if (inside.length || strays.n || mess || popping) {
       this.closingClear = 0;
       const bits = [];
       if (inside.length) bits.push(`${inside.length} still in the shop`);
       if (strays.n) bits.push(`${strays.n} ${strays.word} not shelved`);
+      if (popping) bits.push(`the popper is still on`);
+      if (mess) bits.push(`popcorn all over the floor`);
       this.ui.setObjective(`CLOSING — ${bits.join(' · ')}`, this.closingT > 60);
       return;
     }
@@ -979,10 +1014,14 @@ export class Game {
   toggleStorage() {
     const s = this.storage;
     if (s.broken) { this.sound.error(); return; }
+    /* Whatever else is in there, the vacuum is in there. It only becomes
+       a thing in the world once somebody has had that door open. */
+    if (!s.locked || s.open) this.revealVacuum();
     if (s.locked) {
       s.locked = false; s.open = true;
       this.sound.lockClick(false);
       this.ui.toast('Back room unlocked', '');
+      this.revealVacuum();
       return;
     }
     if (s.open) {
@@ -992,6 +1031,7 @@ export class Game {
     }
     s.open = true;
     this.sound.doorOpen(0);
+    this.revealVacuum();
   }
 
   lockStorage() {
@@ -1347,6 +1387,13 @@ export class Game {
     t.push({ kind: 'rewinder', aabb: box(PROPS.rewinder) });
     t.push({ kind: 'register', aabb: box(PROPS.register) });
     t.push({ kind: 'phone', aabb: pad(PROPS.phone, 0.14, 0.22, 0.16) });
+    /* The cart itself, so there is something to switch off, and the
+       vacuum wherever it happens to be standing. */
+    t.push({ kind: 'popper', aabb: { x0: 12.14, x1: 13.0, y0: 0.8, y1: 1.9, z0: 5.70, z1: 6.62 } });
+    if (this.vacuum.out && !this.vacuum.held) {
+      const v = this.vacuum;
+      t.push({ kind: 'vacuum', aabb: { x0: v.x - 0.34, x1: v.x + 0.34, y0: 0, y1: 1.1, z0: v.z - 0.34, z1: v.z + 0.34 } });
+    }
     t.push({ kind: 'door', aabb: { x0: DOOR_X0 - 0.2, x1: DOOR_X1 + 0.2, y0: 0.2, y1: 2.1, z0: -0.35, z1: 0.35 } });
     t.push({ kind: 'storage', aabb: { x0: SDOOR_X0 - 0.25, x1: SDOOR_X1 + 0.25, y0: 0.2, y1: 2.0, z0: D - 0.45, z1: D + 0.45 } });
     for (const c of this.people()) {
@@ -1467,6 +1514,22 @@ export class Game {
       case 'phone': {
         prompt = `${K()}Pick up the phone`;
         act = () => this.pickUpPhone();
+        break;
+      }
+      case 'popper': {
+        if (this.popper.running) {
+          prompt = `${K()}Switch the popper off\n<span class="sub">it is still going</span>`;
+          act = () => this.stopPopper();
+        } else if (this.spills.length) {
+          prompt = `<span class="sub">POPCORN MACHINE - off. The floor is another matter</span>`;
+        } else {
+          prompt = `<span class="sub">POPCORN MACHINE</span>`;
+        }
+        break;
+      }
+      case 'vacuum': {
+        prompt = `${K()}Take the vacuum`;
+        act = () => this.takeVacuum();
         break;
       }
       case 'door': {
@@ -2504,6 +2567,7 @@ export class Game {
       this.drawTape(this.rewinder.tape, 11.88, PROPS.rewinder.y1 + 0.02, 1.58, 0, Math.PI / 2);
     }
     this.drawBoombox();
+    this.drawFloorMess();
 
     // ---- people ----
     for (const c of this.people()) {
@@ -2576,6 +2640,46 @@ export class Game {
       this.raster.drawMesh(this.world.boomMesh, M.m,
         { shade: lightAt(c.x, 0.9, c.z) * this.lights });
     }
+  }
+
+  /**
+   * What is on the carpet, and what you clean it up with.
+   *
+   * Each drift of corn is the same mesh at its own yaw and scale, so a
+   * floor covered in it does not read as a tiled pattern. The vacuum is
+   * either standing where it was left or out in front of the player,
+   * head-down, the way you actually push one.
+   */
+  drawFloorMess() {
+    const M = this._mats;
+    for (const sp of this.spills) {
+      setPosYaw(M.m, sp.x, 0, sp.z, sp.yaw);
+      /* Scale by writing the rotation columns short. A pile that has been
+         half hoovered up is a smaller pile. */
+      const k = sp.s;
+      M.m[0] *= k; M.m[2] *= k; M.m[8] *= k; M.m[10] *= k;
+      M.m[5] = Math.min(1, k * 1.2);
+      this.raster.drawMesh(this.world.spillMesh, M.m,
+        { shade: lightAt(sp.x, 0.1, sp.z) * this.lights });
+    }
+    const v = this.vacuum;
+    if (!v.out) return;
+    if (v.held) {
+      const p = this.player;
+      /* Out in front and tilted away, with a little sway when it is
+         running -- a vacuum being pushed rather than a vacuum being
+         carried. */
+      const sway = v.running ? Math.sin(this.time * 7) * 0.10 : 0;
+      const ax = p.x + Math.sin(p.yaw) * 0.52 + Math.cos(p.yaw) * sway * 0.3;
+      const az = p.z + Math.cos(p.yaw) * 0.52 - Math.sin(p.yaw) * sway * 0.3;
+      setPosYaw(M.m, ax, 0, az, p.yaw + Math.PI + sway);
+      this.raster.drawMesh(this.world.vacMesh, M.m,
+        { shade: lightAt(ax, 0.5, az) * this.lights });
+      return;
+    }
+    setPosYaw(M.m, v.x, 0, v.z, v.yaw);
+    this.raster.drawMesh(this.world.vacMesh, M.m,
+      { shade: lightAt(v.x, 0.5, v.z) * this.lights });
   }
 
   /** Where the music is coming from, from where the player is standing. */
@@ -2742,6 +2846,9 @@ export class Game {
       },
 
       /* He puts it down, finds the switch, and the shop is his. */
+      /* He has found the tub and worked out that the lid comes off. */
+      startPopper: (c) => g.startPopper(c),
+
       boomboxDown: (c) => {
         const yaw = c.yaw + Math.PI;
         g.boombox = {
@@ -3338,6 +3445,145 @@ export class Game {
     updateAnim(d.anim, dt, d.moveSpeed, d.app, {});
   }
 
+  /* ============================================================
+     THE POPCORN
+
+     He gets behind the counter -- which nobody does -- and tips the whole
+     tub of kernels into the kettle. Then he stands there giggling while
+     it comes over the sides and goes across the floor.
+
+     Getting him out is the first half. The machine is still running and
+     there is popcorn from the back counter to the front door, and the
+     shift does not end with a floor like that. The vacuum is in the back
+     room, where it has been since 1984.
+     ============================================================ */
+  /** He has started it. It keeps going until somebody switches it off. */
+  startPopper(c) {
+    if (this.popper.running) return;
+    this.popper.running = true;
+    this.popper.spilled = 0;
+    this.popper.t = 0;
+    this.popper.by = c || null;
+    this.sound.popperOn();
+    this.ui.toast(`He tips the whole tub in. The whole tub.`, 'bad');
+  }
+
+  stopPopper() {
+    if (!this.popper.running) return;
+    this.popper.running = false;
+    this.sound.popperOff();
+    this.ui.toast(`You get the switch. It winds down, and stops.`, 'good');
+  }
+
+  /** More corn on the floor, for as long as it is running. */
+  updatePopper(dt) {
+    const P = this.popper;
+    if (!P.running) return;
+    P.t = (P.t || 0) + dt;
+    P.popT = (P.popT || 0) - dt;
+    if (P.popT <= 0) {
+      P.popT = 0.09 + this.rng() * 0.14;
+      this.sound.popKernel();
+    }
+    P.spillT = (P.spillT || 0) - dt;
+    /* It piles up fast at first and then keeps going, so leaving it while
+       you deal with him costs you real floor. */
+    if (P.spillT <= 0 && this.spills.length < MAX_SPILLS) {
+      P.spillT = 1.5 + this.rng() * 1.6;
+      this.dropSpill();
+    }
+  }
+
+  /** One more drift of it, thrown out from the cart. */
+  dropSpill() {
+    const rng = this.rng;
+    /* Out from the machine and along the clerk's side, because that is
+       where it would actually go: it comes over the front of the case and
+       spreads down the run behind the counter. */
+    const a = rng.range(-1.5, 1.5);
+    const d = 0.5 + rng() * (1.2 + Math.min(3.4, this.spills.length * 0.22));
+    const x = clamp(12.35 + Math.sin(a) * d - d * 0.25, 9.4, 12.75);
+    const z = clamp(6.10 - Math.cos(a) * d * 0.85, 1.9, 6.6);
+    this.spills.push({ x, z, yaw: rng.range(0, Math.PI * 2), s: 0.75 + rng() * 0.5 });
+    this.popper.spilled++;
+  }
+
+  /** How much of it is still down. */
+  spillCount() { return this.spills.length; }
+
+  /** The mess and the machine, as one question: is the floor dealt with? */
+  floorClear() { return !this.popper.running && !this.spills.length; }
+
+  /* ---------------- the vacuum ---------------- */
+  /** It lives in the back room, against the shelf, where it always has. */
+  putVacuumBack() {
+    const v = this.vacuum;
+    v.held = false; v.running = false;
+    v.x = VACUUM_HOME.x; v.z = VACUUM_HOME.z; v.yaw = VACUUM_HOME.yaw;
+    v.out = true;
+  }
+
+  /* It is in the back room and it is not going to walk out. The first
+     time you open that door it is standing there against the shelf. */
+  revealVacuum() {
+    if (this.vacuum.out) return;
+    this.putVacuumBack();
+  }
+
+  takeVacuum() {
+    const v = this.vacuum;
+    if (v.held) return;
+    v.held = true; v.out = true;
+    this.sound.pickup();
+    this.ui.toast(`You wheel the vacuum out of the back.`, '');
+  }
+
+  dropVacuum() {
+    const v = this.vacuum;
+    if (!v.held) return;
+    v.held = false; v.running = false;
+    v.x = this.player.x; v.z = this.player.z; v.yaw = this.player.yaw;
+    this.sound.drop();
+  }
+
+  /**
+   * Running it.
+   *
+   * Held down rather than tapped: you push it over the mess and the mess
+   * goes, a pile at a time, which is what a vacuum is. Let go and it
+   * stops.
+   */
+  updateVacuum(dt) {
+    const v = this.vacuum;
+    if (!v.held) { v.running = false; return; }
+    const want = this.input.down.has('KeyE') || this.input.down.has('PadA')
+      || this.input.mouse[0];
+    if (want && !v.running) { v.running = true; this.sound.vacuumOn(); }
+    if (!want && v.running) { v.running = false; this.sound.vacuumOff(); }
+    if (!v.running) return;
+
+    this.sound.vacuumAt(dt);
+    /* The head is out in front of him, not under his feet. */
+    const hx = this.player.x + Math.sin(this.player.yaw) * 0.55;
+    const hz = this.player.z + Math.cos(this.player.yaw) * 0.55;
+    for (let i = this.spills.length - 1; i >= 0; i--) {
+      const sp = this.spills[i];
+      const d = Math.hypot(sp.x - hx, sp.z - hz);
+      if (d > 0.42) continue;
+      sp.s -= dt * 1.6;
+      if (sp.s <= 0.12) {
+        this.spills.splice(i, 1);
+        this.stats.popcornCleared = (this.stats.popcornCleared || 0) + 1;
+        this.sound.vacuumEat();
+        if (!this.spills.length) {
+          this.ui.toast(this.popper.running
+            ? `That's the floor. The machine is still going.`
+            : `That's the last of it.`, 'good');
+        }
+      }
+    }
+  }
+
   phoneTargets() {
     // Nobody is coming in a casual shift, so nobody can be called in either
     // -- and getting fired for accusing a customer is not a thing that
@@ -3397,6 +3643,12 @@ const NUISANCE_SOLO = {
     `It has reached the counter.`,
     `You breathe through your mouth for a while.`,
     `The smell has found the corner you are standing in.`,
+  ],
+  mess: [
+    `There is popcorn as far as the returns bin.`,
+    `You can hear it hitting the carpet from here.`,
+    `Something under your shoe. Then something else.`,
+    `The machine does not sound like it is going to stop on its own.`,
   ],
   skunk: [
     `The whole front of the shop smells like a greenhouse fire.`,

@@ -1440,6 +1440,68 @@ export function specialRoot(c, ctx) {
     case 'PIZZA':
       return pizzaRoot(c, ctx);
 
+    /* ---------------- the popcorn ----------------
+       He is having the time of his life and he is not being malicious
+       about it, which somehow makes him harder to shift. A grind, like
+       the smell and the smoker: no single line does it, you work him
+       down. And unlike them, what he leaves behind is on your floor. */
+    case 'POPCORN':
+      return grind(c, ctx, {
+        resist: 8,
+        cool: 11,
+        beats: [
+          `(he is laughing too hard to answer)`,
+          `Look at it. LOOK at it. It's still going!`,
+          `I didn't think it'd all fit. It all fit!`,
+          `Alright, alright — one more minute. One more.`,
+          `Have you seen how far it's gone? It's by the door!`,
+          `Okay. Okay, I'm going. I am. I'm going.`,
+          `(he is wiping his eyes)`,
+          `That was the best thing I've done all year.`,
+        ],
+        firm: [
+          `Get out from behind my counter.`,
+          `Out. Now.`,
+          `You need to leave. Right now.`,
+          `That's enough. Move.`,
+        ],
+        firmer: [
+          `Leave, or I'm calling the county.`,
+          `I'm not asking again. Out.`,
+          `You're going to pay for that machine.`,
+        ],
+        reason: [
+          `Do you know how long that takes to clean up?`,
+          `Somebody is going to slip on that.`,
+          `That machine costs more than I make in a month.`,
+        ],
+        give: [
+          `(he backs off a step, still giggling)`,
+          `Alright. Alright! God.`,
+          `(he holds his hands up, not sorry at all)`,
+        ],
+        dig: [
+          `Oh come ON. It's POPCORN. Nobody's hurt.`,
+          `You're going to remember this. You'll laugh about it.`,
+          `One more scoop. One. Then I'll go.`,
+        ],
+        deflect: [
+          `You could just... not clean it up? Leave it?`,
+          `It's biodegradable. Corn is.`,
+          `Get a mop. Have you got a mop?`,
+        ],
+        brush: [
+          `(he has gone back to watching it)`,
+          `(he is not listening. He is watching the popcorn)`,
+          `(he says something, but he is laughing, so it is not words)`,
+        ],
+        gone: [
+          `Fine! Fine. I'm going.\n\n(he looks back at it on his way past)\n\nWorth it, though.`,
+          `Alright. I'm out.\n\n(at the door)\n\nYou want to get a bigger tub, though. That one's too small.`,
+          `Going, going.\n\n(he is still laughing at the door)\n\nSorry about your floor. Genuinely. Sort of.`,
+        ],
+      });
+
     /* ---------------- the smell ----------------
        He does not think he smells. He thinks you have a problem with him,
        and he would like to discuss it, at length, in the aisle. */

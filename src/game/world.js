@@ -320,9 +320,55 @@ export function buildWorld(T) {
   }
   const boomMesh = boomB.build();
 
+  /* A drift of popcorn on the carpet. Built once and drawn wherever a mess
+     landed, at whatever yaw and scale, so no two piles read the same. Two
+     crossed quads rather than a box: from standing height a heap of corn
+     is a shape on the floor, and a box would have visible walls. */
+  const spillB = new MeshBuilder();
+  spillB.light = () => 1;
+  {
+    const R = 0.34;
+    // the flat of it, lying on the carpet
+    spillB.quad([-R, 0.012, -R], [R, 0.012, -R], [R, 0.012, R], [-R, 0.012, R],
+      T.popSpill, [0, 0, 64, 64], F_DOUBLE, [2, 2, false]);
+    // and a low mound through the middle, so it is not a decal
+    const H = 0.075;
+    spillB.quad([-R * 0.8, 0, 0], [R * 0.8, 0, 0], [R * 0.8, H, 0], [-R * 0.8, H, 0],
+      T.popSpill, [8, 8, 48, 30], F_DOUBLE);
+    spillB.quad([0, 0, -R * 0.8], [0, 0, R * 0.8], [0, H, R * 0.8], [0, H, -R * 0.8],
+      T.popSpill, [12, 6, 48, 30], F_DOUBLE);
+  }
+  const spillMesh = spillB.build();
+
+  /* The vacuum out of the back room. An upright, the kind with a cloth bag
+     up the handle -- 1996, and it has been in a stockroom since 1984. */
+  const vacB = new MeshBuilder();
+  vacB.light = () => 1;
+  {
+    // the foot: a wide flat head with a brush strip along the front
+    vacB.box(-0.19, 0, -0.13, 0.19, 0.11, 0.13,
+      { all: { tex: T.vacBody, uv: [0, 0, 48, 16] }, ny: null });
+    vacB.box(-0.19, 0, -0.15, 0.19, 0.035, -0.13,
+      { all: { tex: T.vacMetal, uv: [0, 0, 48, 6] } });
+    // motor housing sat on top of it
+    vacB.box(-0.13, 0.11, -0.10, 0.13, 0.27, 0.10,
+      { all: { tex: T.vacBody, uv: [0, 0, 40, 24] } });
+    // the handle, raked back, with the bag hung off it
+    vacB.box(-0.028, 0.27, 0.02, 0.028, 0.95, 0.075,
+      { all: { tex: T.vacMetal, uv: [0, 0, 8, 64] } });
+    vacB.box(-0.105, 0.34, 0.075, 0.105, 0.86, 0.175,
+      { all: { tex: T.vacBag, uv: [0, 0, 32, 64], sub: [1, 3, false] } });
+    // the grip across the top
+    vacB.box(-0.10, 0.95, 0.01, 0.10, 1.00, 0.085,
+      { all: { tex: T.vacMetal, uv: [0, 0, 24, 10] } });
+  }
+  const vacMesh = vacB.build();
+
   return {
     mesh,
     boomMesh,
+    spillMesh,
+    vacMesh,
     tvMesh, tvPos, tvTextures,
     cashMesh,
     doorOpenMesh: doorLeaf(T.doorGlass),

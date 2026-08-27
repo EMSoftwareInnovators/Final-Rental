@@ -710,6 +710,53 @@ export const SPECIALS = [
       noMoney: [`I've got it. It's for the pizza, not for a movie.`],
     },
   },
+
+  /* ---------------------------------------------------------- */
+  /* He gets behind the counter, which nobody does, and empties the whole
+     tub of kernels into the kettle. Then he stands there giggling while
+     it goes everywhere. Getting him out is only the first half of it. */
+  {
+    id: 'POPCORN',
+    name: 'Little Ricky Dolan',
+    tag: 'is behind your counter',
+    act: 'POPPER',
+    /* Not noise. What everybody else in the shop minds about him is what
+       is on the floor and what is going to be on the floor. */
+    nuisance: 'mess',
+    complaints: [
+      `He's BEHIND the counter. Is he meant to be behind the counter?`,
+      `There's popcorn in my hair. There's popcorn in my HAIR.`,
+      `That machine is going to catch fire.`,
+      `Somebody's going to slip on that and it won't be him.`,
+      `I've been standing in it for five minutes. It's up to my ankles.`,
+    ],
+    app: {
+      gender: 'm', height: 'short', build: 'thin', facial: 'clean', glasses: 'round',
+      hat: 'trucker', gait: 'brisk', carry: 'none', smell: 'none', voice: 'nasal',
+      hair: { id: 'red', name: 'red', hex: '#8a3a1c', dark: '#642713', style: 'curly',
+        styleName: 'curly and out of control', label: 'Red hair, curly',
+        bulletin: 'red hair, curly, sticking out under a cap' },
+      jacket: { id: 'wind', name: 'mustard yellow', hex: '#8a7317', kind: 'windbreaker' },
+      pants: { id: 'denim', name: 'denim blue', hex: '#33507a' },
+      shirt: { id: 'teal', name: 'teal', hex: '#1c5157' },
+      skin: '#e8c39e',
+    },
+    ...BASE,
+    patience: 600, irascibility: 0.3, honesty: 0.2, chattiness: 1, wealth: 0.4,
+    lines: {
+      wait: [`(he is giggling)`, `(he has not stopped giggling)`],
+      angry: [`Okay okay OKAY. God. No sense of humour in this town.`],
+      bye: [`Worth it. Worth every second of that.`],
+      thanks: [`You're alright, you are.`],
+      smalltalk: [`How much corn does that hold, do you reckon? Roughly.`],
+      greetRent: [`Nah. I'm good. I've done what I came for.`],
+      greetReturn: [`Not returning. Just visiting.`],
+      feeAccept: [`Put it on my tab.`],
+      feeDispute: [`Worth it though.`],
+      feeWaived: [`Legend.`],
+      noMoney: [`Spent it. On corn, ironically.`],
+    },
+  },
 ];
 
 /* Built once. Every night sees the same faces. */

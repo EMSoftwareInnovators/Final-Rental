@@ -835,6 +835,51 @@ export function buildTextures() {
   });
   T.popcorn = T.popRed;
 
+  /* -------- what ends up on the carpet -------- */
+  /* Loose corn, seen from above and from the side. Lighter and drier than
+     the heap in the case, because it has been on the floor and trodden
+     round, and with the carpet showing through the gaps. */
+  T.popSpill = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#1d3a3c', w, h);                          // the carpet under it
+    for (let i = 0; i < 150; i++) {
+      const x = R.int(w), y = R.int(h), r = 2 + R.int(4);
+      g.fillStyle = ['#e6dcbc', '#d2c49a', '#bcae86', '#f0e8ce'][R.int(4)];
+      g.beginPath();
+      // two overlapping lobes: popped corn is not a circle
+      g.arc(x, y, r, 0, 7);
+      g.arc(x + r * 0.7, y - r * 0.5, r * 0.75, 0, 7);
+      g.fill();
+    }
+    noise(g, w, h, 12);
+  });
+
+  /* -------- the vacuum from the back room -------- */
+  T.vacBody = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#7a2418', w, h);                          // scuffed red enamel
+    g.fillStyle = '#5e1a11'; g.fillRect(0, 0, w, 6); g.fillRect(0, h - 9, w, 9);
+    g.fillStyle = 'rgba(255,255,255,.09)'; g.fillRect(5, 10, 4, h - 26);
+    g.fillStyle = '#c8a13a'; g.font = 'bold 8px "Courier New",monospace';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('HOOVR', w / 2, h / 2);
+    noise(g, w, h, 9); grime(g, w, h, 0.45);
+  });
+  T.vacBag = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#8d8674', w, h);                          // grey cloth bag
+    g.strokeStyle = 'rgba(0,0,0,.16)'; g.lineWidth = 1;
+    for (let y = 4; y < h; y += 7) {                   // sagging horizontal folds
+      g.beginPath();
+      g.moveTo(0, y); g.bezierCurveTo(w * 0.3, y + 3, w * 0.7, y - 2, w, y + 1);
+      g.stroke();
+    }
+    noise(g, w, h, 11); grime(g, w, h, 0.5);
+  });
+  T.vacMetal = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#5a5c60', w, h);
+    g.fillStyle = 'rgba(255,255,255,.14)'; g.fillRect(0, 6, w, 3);
+    g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(0, h - 8, w, 4);
+    noise(g, w, h, 7); grime(g, w, h, 0.3);
+  });
+
   /* -------- a fold of bills -------- */
   T.cash = makeTex(64, 32, (g, w, h) => {
     fill(g, '#5d7a4e', w, h);

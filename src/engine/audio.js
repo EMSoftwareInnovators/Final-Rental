@@ -356,6 +356,46 @@ export class Sound {
         a: 0.001, d: 0.03, when });
     }
   }
+  /* -------- the popcorn machine, and the thing that cleans up after it --------
+     A kettle full of kernels is a motor, a heating element and a lot of
+     small explosions. The vacuum is one big motor and a lot of moving air,
+     and it has been in a stockroom since 1984, so it is not a quiet one. */
+  popperOn() {
+    this.tone({ freq: 60, type: 'sawtooth', gain: 0.05, a: 0.4, d: 0.2, s: 0.7, sT: 1.2, r: 0.4,
+      filter: 'lowpass', cutoff: 260 });
+    this.noise({ filter: 'bandpass', freq: 700, q: 1.2, gain: 0.05, a: 0.5, d: 1.4 });
+  }
+  popperOff() {
+    this.tone({ freq: 58, to: 20, type: 'sawtooth', gain: 0.06, a: 0.02, d: 1.1,
+      filter: 'lowpass', cutoff: 220 });
+  }
+  /** One kernel going. Sharp, dry, and never quite the same twice. */
+  popKernel() {
+    const f = 900 + Math.random() * 1500;
+    this.noise({ filter: 'bandpass', freq: f, q: 6, gain: 0.10, a: 0.001, d: 0.035 });
+    this.tone({ freq: f * 0.5, type: 'triangle', gain: 0.03, a: 0.001, d: 0.03 });
+  }
+  vacuumOn() {
+    this.tone({ freq: 90, to: 165, type: 'sawtooth', gain: 0.05, a: 0.25, d: 0.4,
+      filter: 'lowpass', cutoff: 500 });
+  }
+  vacuumOff() {
+    this.tone({ freq: 165, to: 55, type: 'sawtooth', gain: 0.05, a: 0.02, d: 0.8,
+      filter: 'lowpass', cutoff: 420 });
+  }
+  /** The running note, re-struck often enough to sound continuous. */
+  vacuumAt(dt) {
+    this._vacT = (this._vacT || 0) - dt;
+    if (this._vacT > 0) return;
+    this._vacT = 0.14;
+    this.tone({ freq: 158 + Math.random() * 12, type: 'sawtooth', gain: 0.035,
+      a: 0.01, d: 0.16, filter: 'lowpass', cutoff: 620 });
+    this.noise({ filter: 'bandpass', freq: 1500, q: 0.8, gain: 0.03, a: 0.01, d: 0.16 });
+  }
+  /** A pile going up the tube. */
+  vacuumEat() {
+    this.noise({ filter: 'highpass', freq: 1800, gain: 0.10, a: 0.005, d: 0.22, rate: 0.7 });
+  }
   ringback() {
     for (let k = 0; k < 2; k++) {
       this.tone({ freq: 440, type: 'sine', gain: 0.07, a: 0.02, d: 0.02, s: 1, sT: 1.6, r: 0.05, when: k * 3 });
