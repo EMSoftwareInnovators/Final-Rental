@@ -305,6 +305,14 @@ export class Game {
     return this.input.hit('Enter', 'KeyE', 'Space', 'PadAny');
   }
 
+  /** Backing out of whatever is on screen: Escape, or B on a pad.
+      Deliberately not the same test as pausing. Escape does both jobs on a
+      keyboard because it is the only key there for either, but a pad has a
+      Start button for pausing, so B is only ever a step backwards. */
+  backHit() {
+    return this.input.hit('Escape', 'UiBack');
+  }
+
   /** The same, for the screens where clicking has always been allowed.
       The pause menu is deliberately not one of them. */
   confirmOrClick() {
@@ -387,7 +395,7 @@ export class Game {
   updatePanelMenu() {
     const i = this.input;
     if (this.state === ST.HOWTO) {
-      if (this.confirmHit() || i.hit('Escape')) {
+      if (this.confirmHit() || this.backHit()) {
         this.sound.uiBack();
         this.ui.hidePanel();
         if (this._fromPause) { this._fromPause = false; this.showPauseMenu(); }
@@ -417,8 +425,9 @@ export class Game {
       this.ui.showPanel(optionsHtml(this.optView()));
     }
     this.ui.panelSelect(this.optSel);
-    if (this.confirmHit() || i.hit('Escape')) {
-      if (this.optSel === BACK || i.hit('Escape')) {
+    const back = this.backHit();
+    if (this.confirmHit() || back) {
+      if (this.optSel === BACK || back) {
         this.sound.uiBack();
         if (this._fromPause) { this._fromPause = false; this.showPauseMenu(); }
         else { this.ui.hidePanel(); this.state = ST.TITLE; }
@@ -480,7 +489,7 @@ export class Game {
     };
 
     // The keyboard always works, whatever the pad is doing.
-    if (i.hit('Escape')) { leave(); return; }
+    if (this.backHit()) { leave(); return; }
 
     let moved = false;
     if (i.hit('ArrowUp', 'KeyW')) { this.padSel = (this.padSel + N - 1) % N; moved = true; }
@@ -617,7 +626,15 @@ export class Game {
     const i = this.input;
 
     // ---- pause / notepad ----
+    /* Escape only, never the pad's back button. Pausing is Start's job;
+       B pulling up the pause menu as well was the whole complaint. */
     if (i.hit('Escape')) { this.pause(); return; }
+    // What there is to back out of during a shift is the notepad.
+    if (this.notesOpen && this.backHit()) {
+      this.notesOpen = false;
+      this.ui.hideNotes();
+      this.sound.paper();
+    }
     /* Before the bulletin exists there is nothing on the page and nobody to
        compare anybody against, so the notepad simply is not a thing yet. */
     if (i.hit('Tab')) {
@@ -854,7 +871,7 @@ export class Game {
     if (i.hit('ArrowUp', 'KeyW')) { this.pauseSel = (this.pauseSel + N - 1) % N; this.sound.uiMove(); }
     if (i.hit('ArrowDown', 'KeyS')) { this.pauseSel = (this.pauseSel + 1) % N; this.sound.uiMove(); }
     this.ui.panelSelect(this.pauseSel);
-    if (i.hit('Escape')) { this.resume(); return; }
+    if (this.backHit()) { this.resume(); return; }
     if (this.confirmHit()) {
       this.quietly(() => this.sound.uiSelect());
       if (this.pauseSel === 0) this.resume();

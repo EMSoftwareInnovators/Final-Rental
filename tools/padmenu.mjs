@@ -131,6 +131,21 @@ async function session(id, expectScheme, expectSelect) {
   await tap(1);
   check(`${label}: and backing out again resumes the shift`, (await st()).state === 'PLAY', (await st()).state);
 
+  /* Back is not pause. It shares Escape's job in menus, but Escape also
+     pauses a shift, and for a while that meant B pulled up the pause menu
+     as well as Start did. During play the back button must do nothing. */
+  await tap(1);
+  check(`${label}: back does not pause the shift -- that is start's job`,
+    (await st()).state === 'PLAY', (await st()).state);
+  await tap(1); await tap(1);
+  check(`${label}: still nothing, however many times it is pressed`,
+    (await st()).state === 'PLAY', (await st()).state);
+  await tap(9);
+  check(`${label}: while start still pauses`, (await st()).state === 'PAUSE', (await st()).state);
+  await tap(1);
+  check(`${label}: and back still resumes from the pause menu`,
+    (await st()).state === 'PLAY', (await st()).state);
+
   /* ---- the stick must still drive the player, not just menus ---- */
   await ev(() => { window.__pad.axes[1] = -1; });
   await wait(400);

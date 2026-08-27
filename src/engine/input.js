@@ -24,7 +24,12 @@
  */
 export const PAD_ACTIONS = {
   confirm: { label: 'Select / interact', keys: ['PadA', 'KeyE', 'Enter', 'Space'], def: [0, 7] },
-  back: { label: 'Back / cancel', keys: ['PadB', 'Escape'], def: [1] },
+  /* B stands in for a back key of its own rather than for Escape. Escape
+     both backs out of a menu and pauses the shift, so while B spoke as
+     Escape it paused the game too -- there was no way for the play loop to
+     tell the two apart. The keyboard is unchanged: every screen that goes
+     back still tests Escape as well. */
+  back: { label: 'Back / cancel', keys: ['PadB', 'UiBack'], def: [1] },
   drop: { label: 'Put it down', keys: ['PadX', 'KeyG'], def: [2] },
   notes: { label: 'Notepad', keys: ['PadY', 'Tab'], def: [3] },
   /* On the left trigger. It used to be LB and L3; holding a stick click
