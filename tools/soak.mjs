@@ -181,7 +181,18 @@ for (let i = 0; i < 40; i++) {
   await page.keyboard.press('Enter');   // take reply 1
   await wait(200);
 }
-check('conversation ran to a natural end', lines.length > 1, `${lines.length} nodes`);
+/* Not "more than one node": plenty of real trees end on the first reply --
+   "Come back when you've got it" is a whole conversation -- so counting
+   nodes was asserting which branch the shuffle happened to deal. What has
+   to be true is that it opened with something to say and something to say
+   back, and that it finished rather than looping. */
+const ended = await ev(() => !window.__game.dlg.active && !window.__game.dlg.node);
+check('the conversation opened with a line and a way to answer it',
+  lines.length >= 1 && !!(lines[0] && lines[0].text)
+  && !!(lines[0] && lines[0].choices && lines[0].choices.length),
+  `${lines.length} nodes`);
+check('and ran to an end rather than round in circles', ended,
+  ended ? `closed after ${lines.length}` : 'still open after 40 replies');
 if (lines[0]) {
   console.log('      them: "' + lines[0].text.replace(/\n/g, ' ').slice(0, 90) + '"');
   console.log('      you:  ' + (lines[0].choices || []).map((c) => `[${c}]`).join(' ').slice(0, 150));
