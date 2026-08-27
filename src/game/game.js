@@ -20,7 +20,7 @@ import { specialById } from './specials.js';
 import { createKiller, updateKiller, KP, killerActive, killerInside, killerInView, addIntel } from './killer.js';
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
-import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme } from './ui.js';
+import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds } from './ui.js';
 import { randomAppearance, paintSkin, voicePitchOf, pronounOf, describeApart } from './appearance.js';
 import { OFFICER } from './personality.js';
 import { GENRE_LABEL, GENRES, makeTape, tapeLabel, mediaWord } from './tapes.js';
@@ -28,6 +28,8 @@ import { GENRE_LABEL, GENRES, makeTape, tapeLabel, mediaWord } from './tapes.js'
 const ST = {
   BOOT: 'BOOT', TITLE: 'TITLE', HOWTO: 'HOWTO', OPTIONS: 'OPTIONS', PADCFG: 'PADCFG',
   ESTABLISH: 'ESTABLISH', PLAY: 'PLAY', REPORT: 'REPORT', ENDING: 'ENDING', PAUSE: 'PAUSE',
+  /* Are you sure. Quitting is the only thing in here that cannot be undone. */
+  QUIT: 'QUIT',
 };
 
 const RES = [[256, 192, '256x192'], [320, 240, '320x240'], [400, 300, '400x300']];
@@ -317,6 +319,10 @@ export class Game {
     if (this.input.scheme !== this._scheme) {
       this._scheme = this.input.scheme;
       setScheme(this._scheme);
+      /* And which buttons those things are actually on, so the how-to
+         page describes this player's pad rather than a copy of the
+         default table somebody kept up to date by hand. */
+      setPadBinds(this.input.bindsAreUser ? this.input.binds : null);
       this.onSchemeChanged();
     }
     let dt = (now - this.last) / 1000;
@@ -337,6 +343,7 @@ export class Game {
       case ST.ESTABLISH: this.updateEstablish(dt); break;
       case ST.PLAY: this.updatePlay(dt); break;
       case ST.PAUSE: this.updatePause(dt); break;
+      case ST.QUIT: this.updateQuitConfirm(); break;
       case ST.REPORT: this.updateReport(dt); break;
       case ST.ENDING: this.updateEnding(dt); break;
       default: break;
@@ -368,7 +375,15 @@ export class Game {
    * already looking at.
    */
   confirmHit() {
-    return this.input.hit('Enter', 'KeyE', 'Space', 'PadAny');
+    const i = this.input;
+    if (i.hit('Enter', 'KeyE', 'Space')) return true;
+    /* Every unbound button announces itself as PadAny, and menus accept it
+       so that somebody whose pad the browser will not vouch for can still
+       get through the front end with no working button. That escape hatch
+       is only needed when there is no working button: with a bound confirm
+       sitting right there, letting every spare shoulder button count as
+       one meant LB resumed a paused game. */
+    return !i.bindsFor('confirm').length && i.hit('PadAny');
   }
 
   /** Backing out of whatever is on screen: Escape, or B on a pad.
@@ -396,6 +411,7 @@ export class Game {
     else if (this.state === ST.OPTIONS) { this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel); }
     else if (this.state === ST.PADCFG) this.showPadMenu();
     else if (this.state === ST.PAUSE) this.showPauseMenu();
+    else if (this.state === ST.QUIT) this.showQuitConfirm(this.quitSel);
     this._promptCache = null;
   }
 
@@ -597,6 +613,10 @@ export class Game {
 
   /** Bindings are the one setting worth remembering between sessions. */
   savePadBinds() {
+    /* The how-to page names buttons off these, so it has to be told when
+       they move -- otherwise rebinding sprint leaves the page describing
+       where sprint used to be. */
+    setPadBinds(this.input.bindsAreUser ? this.input.binds : null);
     try { localStorage.setItem('finalrental.padbinds', JSON.stringify(this.input.binds)); }
     catch (err) { /* private browsing, or no storage at all. Not fatal. */ }
   }
@@ -610,6 +630,7 @@ export class Game {
         // Saves from before a button could carry more than one job.
         this.input.binds = normaliseBinds(b);
         this.input.bindsAreUser = true;
+        setPadBinds(this.input.binds);
       }
     } catch (err) { /* a corrupt entry just means the defaults */ }
   }
@@ -946,6 +967,51 @@ export class Game {
     this.ui.panelSelect(this.pauseSel || 0);
   }
 
+  /**
+   * Asking twice before throwing a shift away.
+   *
+   * Quitting from the pause menu is one button away from resuming, and it
+   * is the only thing in the game you cannot undo -- the night goes, and
+   * whatever you had worked out about who is in the shop goes with it. It
+   * asks first, and the cursor starts on "no".
+   */
+  showQuitConfirm(sel = 0) {
+    this.state = ST.QUIT;
+    this.quitSel = sel;
+    this.ui.showPanel(`<h2>QUIT TO TITLE?</h2>
+      <p class="quiet">Tonight's shift ends here. Night ${this.nightNo} will not be finished, and what you have written down goes with it.</p>
+      <ul><li class="opt sel">No &mdash; back to the shift</li><li class="opt">Yes, quit</li></ul>
+      <p class="pad-foot">${this.ui.keyHint('confirm')} select &nbsp;&middot;&nbsp; ${this.ui.keyHint('back')} back</p>`);
+    this.ui.panelSelect(this.quitSel);
+  }
+
+  updateQuitConfirm() {
+    const i = this.input;
+    const N = 2;
+    if (i.hit('ArrowUp', 'KeyW')) { this.quitSel = (this.quitSel + N - 1) % N; this.sound.uiMove(); }
+    if (i.hit('ArrowDown', 'KeyS')) { this.quitSel = (this.quitSel + 1) % N; this.sound.uiMove(); }
+    this.ui.panelSelect(this.quitSel);
+    /* Backing out of the question is the same as saying no. */
+    if (this.backHit()) {
+      this.quietly(() => this.sound.uiBack());
+      this.pauseSel = 2;
+      this.showPauseMenu();
+      return;
+    }
+    if (!this.confirmHit()) return;
+    this.quietly(() => this.sound.uiSelect());
+    if (this.quitSel === 0) { this.pauseSel = 2; this.showPauseMenu(); return; }
+    this.quitToTitle();
+  }
+
+  /** Put the whole night down and go back to the front screen. */
+  quitToTitle() {
+    this.dlg.node = null; this.phone.node = null; this._heldTalk = null; this.speaking = null;
+    this.ui.hidePanel(); this.ui.hideDialogue(); this.ui.hidePhone(); this.ui.hideNotes();
+    this.ui.setHudVisible(false); this.ui.cinema(false); this.ui.showTitle(true);
+    this.state = ST.TITLE; this.menuSel = 0; this.titleT = 0;
+  }
+
   resume() {
     this.ui.hidePanel();
     this._fromPause = false;
@@ -976,12 +1042,9 @@ export class Game {
       this.quietly(() => this.sound.uiSelect());
       if (this.pauseSel === 0) this.resume();
       else if (this.pauseSel === 1) { this.state = ST.OPTIONS; this.optSel = 0; this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(0); this._fromPause = true; }
-      else {
-        this.dlg.node = null; this.phone.node = null; this._heldTalk = null; this.speaking = null;
-        this.ui.hidePanel(); this.ui.hideDialogue(); this.ui.hidePhone(); this.ui.hideNotes();
-        this.ui.setHudVisible(false); this.ui.cinema(false); this.ui.showTitle(true);
-        this.state = ST.TITLE; this.menuSel = 0; this.titleT = 0;
-      }
+      /* Not straight out. It is the one thing in here you cannot take
+         back, and it sits one row under "back to the counter". */
+      else this.showQuitConfirm();
     }
   }
 
@@ -2520,7 +2583,8 @@ export class Game {
     invertRigid(M.view, M.cam);
     rz.setCamera(M.view, 1.18);
 
-    const L = this.state === ST.PLAY || this.state === ST.PAUSE || this.state === ST.ENDING || this.state === ST.REPORT
+    const L = this.state === ST.PLAY || this.state === ST.PAUSE || this.state === ST.QUIT
+      || this.state === ST.ENDING || this.state === ST.REPORT
       ? this.lights : 1;
 
     // ---- static world ----

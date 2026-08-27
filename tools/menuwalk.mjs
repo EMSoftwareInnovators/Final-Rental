@@ -52,9 +52,33 @@ await page.mouse.click(400, 300); await page.waitForTimeout(250);
 s2 = await st();
 check('a click does nothing in the pause menu',
   s2.s === 'PAUSE' && (await page.evaluate(() => window.__game.pauseSel)) === before, s2.s);
-// resume
-await page.keyboard.press('Escape'); await page.waitForTimeout(300);
-check('escape resumes', (await st()).s === 'PLAY');
+/* Quitting is the one thing in here you cannot take back, and it sits one
+   row under "back to the counter". It asks first. */
+const key = async (k) => { await page.keyboard.press(k); await page.waitForTimeout(240); };
+const sel = () => page.evaluate(() => ({ q: window.__game.quitSel, p: window.__game.pauseSel }));
+/* Walk down to the quit row rather than assuming where the cursor is --
+   an earlier check in this file leaves it wherever it left it. */
+const toQuit = async () => {
+  for (let i = 0; i < 6 && (await sel()).p !== 2; i++) await key('ArrowDown');
+};
+await toQuit();
+check('the quit row can be reached from the pause menu', (await sel()).p === 2);
+await key('Enter');
+check('choosing quit asks whether you are sure', (await st()).s === 'QUIT', (await st()).s);
+check('and the cursor starts on no', (await sel()).q === 0);
+const asks = await page.evaluate(() => document.getElementById('panel-body').textContent);
+check('and it says what quitting costs',
+  /QUIT TO TITLE\?/.test(asks) && /will not be finished/.test(asks));
+await key('Enter');
+check('saying no goes back to the pause menu', (await st()).s === 'PAUSE', (await st()).s);
+check('with the cursor still on quit, where you left it', (await sel()).p === 2);
+await key('Enter');
+check('and asks again the next time', (await st()).s === 'QUIT', (await st()).s);
+await key('Escape');
+check('and backing out of the question is also no', (await st()).s === 'PAUSE', (await st()).s);
+await key('Enter'); await key('ArrowDown'); await key('Enter');
+check('saying yes quits to the title', (await st()).s === 'TITLE', (await st()).s);
+
 console.log(logs.length ? logs.join('\n') : 'no page errors');
 await browser.close();
 process.exit(fails ? 1 : 0);

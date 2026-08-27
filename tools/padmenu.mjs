@@ -172,6 +172,49 @@ async function session(id, expectScheme, expectSelect) {
     dpad.left.x < -0.5 && dpad.right.x > 0.5,
     `left ${dpad.left.x}, right ${dpad.right.x}`);
 
+  /* ---- a spare shoulder button is not a confirm ---- */
+  /* Every unbound button announces itself as PadAny so that a pad the
+     browser will not vouch for can still work a menu. With a perfectly
+     good A button sitting there that hatch is not needed, and it meant a
+     stray LB resumed a paused game. */
+  await tap(9);
+  check(`${label}: start pauses so the strays can be tried`,
+    (await st()).state === 'PAUSE', (await st()).state);
+  for (const spare of [4, 8, 10, 11, 16]) {
+    await tap(spare);
+  }
+  check(`${label}: no unbound button resumes a paused game`,
+    (await st()).state === 'PAUSE', (await st()).state);
+  await tap(5);
+  check(`${label}: nor does the shoulder button that throws the bolt`,
+    (await st()).state === 'PAUSE', (await st()).state);
+  await tap(0);
+  check(`${label}: but the select button still does`,
+    (await st()).state === 'PLAY', (await st()).state);
+
+  /* ---- and the how-to page names the buttons it is actually on ---- */
+  const named = await ev(() => {
+    const U = window.__ui;
+    const out = {};
+    for (const a of ['run', 'interact', 'notes', 'drop', 'bolt', 'pause', 'back', 'move', 'look']) {
+      out[a] = U.glyphText(a);
+    }
+    out.html = U.howToHtml();
+    return out;
+  });
+  const TRIG = expectScheme === 'xbox' ? 'LT/RT' : 'L2/R2';
+  check(`${label}: the how-to page puts hurry on the triggers`,
+    named.run === TRIG, `hurry: ${named.run}`);
+  check(`${label}: and names every other control off the real bindings`,
+    named.interact === (expectScheme === 'xbox' ? 'A' : '\u2715')
+    && named.notes === (expectScheme === 'xbox' ? 'Y' : '\u25B3')
+    && named.drop === (expectScheme === 'xbox' ? 'X' : '\u25A1')
+    && named.back === (expectScheme === 'xbox' ? 'B' : '\u25CB')
+    && named.pause === '\u2630',
+    Object.entries(named).filter(([k]) => k !== 'html').map(([k, v]) => `${k}:${v}`).join(' '));
+  check(`${label}: and says so on the page itself`,
+    named.html.includes('hurry') && !/LB<\/span>\s*hurry/.test(named.html));
+
   /* ---- sprint is on either trigger, or both ---- */
   const trig = async (list) => {
     await ev((bs) => { bs.forEach((b) => { window.__pad.buttons[b] = 1; }); }, list);

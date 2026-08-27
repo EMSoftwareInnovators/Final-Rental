@@ -3,6 +3,7 @@
    HUD, dialogue box, the notepad you compare faces against,
    the phone, and the screens that end a night.
    ============================================================ */
+import { PAD_ACTIONS } from '../engine/input.js';
 import { paintPortrait } from './appearance.js';
 import { KEY_LABEL, VISIBLE_KEYS, traitLabel, sameTrait } from './appearance.js';
 import { GENRE_LABEL } from './tapes.js';
@@ -15,46 +16,117 @@ const $ = (id) => document.getElementById(id);
    depends on what is plugged in. One table, three columns: a keyboard
    cap, an Xbox face button, a PlayStation shape.
    ============================================================ */
-const GLYPHS = {
-  //           keyboard      xbox                     playstation
-  interact:  ['E',          ['A', 'x-a'],            ['\u2715', 'p-x']],
-  confirm:   ['E',          ['A', 'x-a'],            ['\u2715', 'p-x']],
-  back:      ['ESC',        ['B', 'x-b'],            ['\u25CB', 'p-o']],
-  pause:     ['ESC',        ['\u2630', 'x-m'],       ['\u2630', 'p-m']],
-  notes:     ['TAB',        ['Y', 'x-y'],            ['\u25B3', 'p-t']],
-  drop:      ['G',          ['X', 'x-x'],            ['\u25A1', 'p-s']],
-  bolt:      ['F',          ['RB', 'x-b'],           ['R1', 'p-o']],
-  run:       ['SHIFT',      ['LB', 'x-b'],           ['L1', 'p-o']],
-  up:        ['\u2191',     ['\u2191', 'x-d'],       ['\u2191', 'p-d']],
-  down:      ['\u2193',     ['\u2193', 'x-d'],       ['\u2193', 'p-d']],
-  left:      ['\u2190',     ['\u2190', 'x-d'],       ['\u2190', 'p-d']],
-  right:     ['\u2192',     ['\u2192', 'x-d'],       ['\u2192', 'p-d']],
-  move:      ['WASD',       ['\u25CE L', 'x-d'],     ['\u25CE L', 'p-d']],
-  look:      ['MOUSE',      ['\u25CE R', 'x-d'],     ['\u25CE R', 'p-d']],
+/* What each button is CALLED, by index, under the standard mapping. The
+   one factual table: index 6 is the left trigger, and on an Xbox pad that
+   is "LT" and on a DualSense it is "L2". */
+const PAD_BUTTONS = {
+  0: ['A', '\u2715', 'x-a', 'p-x'],
+  1: ['B', '\u25CB', 'x-b', 'p-o'],
+  2: ['X', '\u25A1', 'x-x', 'p-s'],
+  3: ['Y', '\u25B3', 'x-y', 'p-t'],
+  4: ['LB', 'L1', 'x-m', 'p-m'],
+  5: ['RB', 'R1', 'x-m', 'p-m'],
+  6: ['LT', 'L2', 'x-m', 'p-m'],
+  7: ['RT', 'R2', 'x-m', 'p-m'],
+  8: ['\u29C9', 'CREATE', 'x-m', 'p-m'],
+  9: ['\u2630', '\u2630', 'x-m', 'p-m'],
+  10: ['L3', 'L3', 'x-m', 'p-m'],
+  11: ['R3', 'R3', 'x-m', 'p-m'],
+  12: ['\u2191', '\u2191', 'x-d', 'p-d'],
+  13: ['\u2193', '\u2193', 'x-d', 'p-d'],
+  14: ['\u2190', '\u2190', 'x-d', 'p-d'],
+  15: ['\u2192', '\u2192', 'x-d', 'p-d'],
 };
+
+/* The keyboard cap for each thing you can do, and the two analog sticks,
+   which are not buttons and never move.
+
+   Everything else is worked out from the bindings rather than written
+   down twice. There used to be a third column here listing the pad button
+   for every action, kept in step with the real table by hand, and it was
+   not in step: sprint moved to the triggers and this still said LB. */
+const CAPS = {
+  interact: 'E', confirm: 'E', back: 'ESC', pause: 'ESC', notes: 'TAB',
+  drop: 'G', bolt: 'F', run: 'SHIFT',
+  up: '\u2191', down: '\u2193', left: '\u2190', right: '\u2192',
+};
+const STICKS = {
+  move: ['WASD', '\u25CE L', 'x-d', 'p-d'],
+  look: ['MOUSE', '\u25CE R', 'x-d', 'p-d'],
+};
+
+/** Whatever the player has actually bound, when they have bound anything. */
+let USER_BINDS = null;
+export function setPadBinds(binds) { USER_BINDS = binds || null; }
+
+/* Prompts ask for "interact"; the binding table calls the same thing
+   "confirm", because in a menu it is a select. One name, two words. */
+const ALIAS = { interact: 'confirm' };
+
+/** Which physical buttons do `action`, as indices under the standard mapping. */
+function buttonsFor(name) {
+  const action = ALIAS[name] || name;
+  if (USER_BINDS) {
+    const out = [];
+    for (const k of Object.keys(USER_BINDS)) {
+      if ((USER_BINDS[k] || []).includes(action)) out.push(+k);
+    }
+    if (out.length) return out.sort((a, b) => a - b);
+  }
+  const a = PAD_ACTIONS[action];
+  return (a && a.def) || [];
+}
 
 let SCHEME = 'kbm';
 /** Told by the game whenever the active input device changes. */
 export function setScheme(s) { SCHEME = s || 'kbm'; }
 export function currentScheme() { return SCHEME; }
 
-/** The markup for one control, in whatever language the player's hands speak. */
-export function glyph(action) {
-  const row = GLYPHS[action];
-  if (!row) return `<span class="key">${escape(String(action).toUpperCase())}</span>`;
-  if (SCHEME === 'kbm') return `<span class="key">${row[0]}</span>`;
-  const [label, cls] = SCHEME === 'playstation' ? row[2] : row[1];
+/** One button, drawn as the thing on the controller. */
+function padGlyph(i) {
+  const b = PAD_BUTTONS[i];
   // NB: not "pad" -- that is the paper-panel class, and a glyph wearing it
   // inherited the panel's absolute positioning and 78cqw width.
-  return `<span class="key btn ${cls}">${label}</span>`;
+  if (!b) return `<span class="key btn x-m">${i}</span>`;
+  const ps = SCHEME === 'playstation';
+  return `<span class="key btn ${ps ? b[3] : b[2]}">${ps ? b[1] : b[0]}</span>`;
+}
+
+function padText(i) {
+  const b = PAD_BUTTONS[i];
+  if (!b) return `BUTTON ${i}`;
+  return SCHEME === 'playstation' ? b[1] : b[0];
+}
+
+/** The markup for one control, in whatever language the player's hands speak. */
+export function glyph(action) {
+  const stick = STICKS[action];
+  if (stick) {
+    if (SCHEME === 'kbm') return `<span class="key">${stick[0]}</span>`;
+    const ps = SCHEME === 'playstation';
+    return `<span class="key btn ${ps ? stick[3] : stick[2]}">${ps ? stick[1] : stick[1]}</span>`;
+  }
+  if (SCHEME === 'kbm') {
+    const cap = CAPS[action];
+    return `<span class="key">${cap || escape(String(action).toUpperCase())}</span>`;
+  }
+  const on = buttonsFor(action);
+  if (!on.length) return `<span class="key">${CAPS[action] || escape(String(action).toUpperCase())}</span>`;
+  /* An action can sit on more than one button -- sprint is on both
+     triggers, and interact throws the bolt as well -- so say so rather
+     than picking one and quietly being half right. Two is plenty; the
+     panel has to fit a 4:3 screen without scrolling. */
+  return on.slice(0, 2).map(padGlyph).join('<span class="key-or"> </span>');
 }
 
 /** Bare text form, for places that cannot take markup. */
 export function glyphText(action) {
-  const row = GLYPHS[action];
-  if (!row) return String(action).toUpperCase();
-  if (SCHEME === 'kbm') return row[0];
-  return (SCHEME === 'playstation' ? row[2] : row[1])[0];
+  const stick = STICKS[action];
+  if (stick) return SCHEME === 'kbm' ? stick[0] : stick[1];
+  if (SCHEME === 'kbm') return CAPS[action] || String(action).toUpperCase();
+  const on = buttonsFor(action);
+  if (!on.length) return CAPS[action] || String(action).toUpperCase();
+  return on.slice(0, 2).map(padText).join('/');
 }
 
 export class UI {
@@ -325,7 +397,7 @@ export function howToHtml() {
       ${key('notes', 'the notepad')}
     </ul>
     <ul>
-      ${key('drop', 'put down what you are holding')}
+      ${key('drop', 'put it down')}
       ${key('bolt', 'bolt the back room')}
     </ul>
   </div>
