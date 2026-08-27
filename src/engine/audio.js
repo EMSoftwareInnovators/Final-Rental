@@ -334,6 +334,28 @@ export class Sound {
     this.tone({ freq: LOW[i], type: 'sine', gain: 0.09, a: 0.005, d: 0.16 });
     this.tone({ freq: HIGH[i], type: 'sine', gain: 0.09, a: 0.005, d: 0.16 });
   }
+  /**
+   * The phone on the counter, ringing at you.
+   *
+   * Not the ringback you hear down a line you have dialled -- this is the
+   * bell in the set itself. A 1996 desk phone still has a real gong in it:
+   * two hammers, a shade out of tune with each other, struck about twenty
+   * times a second for two seconds, with the whole thing sat in a plastic
+   * box that takes the top off it.
+   */
+  phoneBell() {
+    const T = 2.0, HZ = 19;
+    for (let i = 0; i * (1 / HZ) < T; i++) {
+      const when = i * (1 / HZ);
+      const g = 0.055 * (i % 2 ? 0.85 : 1);
+      this.tone({ freq: 1040, type: 'triangle', gain: g, a: 0.001, d: 0.055,
+        filter: 'bandpass', cutoff: 1600, when });
+      this.tone({ freq: 1355, type: 'triangle', gain: g * 0.7, a: 0.001, d: 0.045,
+        filter: 'bandpass', cutoff: 2000, when });
+      this.noise({ filter: 'bandpass', freq: 2600, q: 3, gain: g * 0.5,
+        a: 0.001, d: 0.03, when });
+    }
+  }
   ringback() {
     for (let k = 0; k < 2; k++) {
       this.tone({ freq: 440, type: 'sine', gain: 0.07, a: 0.02, d: 0.02, s: 1, sT: 1.6, r: 0.05, when: k * 3 });

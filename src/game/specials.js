@@ -553,6 +553,8 @@ export const SPECIALS = [
     },
     ...BASE,
     patience: 500, irascibility: 0.8, honesty: 1, chattiness: 1,
+    /* Refusing him does not work. A better address does. */
+    immovable: true,
     lines: {
       wait: [`I'll wait. I've waited thirty-three years.`, `(he is counting ceiling tiles)`],
       angry: [`You are OBSTRUCTING me. Do you understand the word obstruction?`],
@@ -642,6 +644,8 @@ export const SPECIALS = [
     },
     ...BASE,
     patience: 900, irascibility: 0.9, honesty: 0.9, chattiness: 1, wealth: 1,
+    /* Being unpleasant to her does not work. The phone does. */
+    immovable: true,
     lines: {
       wait: [`I'll wait right here. Don't mind me.`, `(she has not moved)`],
       angry: [`Do NOT take that tone. I have been perfectly reasonable.`],
@@ -654,6 +658,56 @@ export const SPECIALS = [
       feeDispute: [`Absolutely not.`],
       feeWaived: [`As it should be.`],
       noMoney: [`That's hardly the issue here.`],
+    },
+  },
+
+  /* ---------------------------------------------------------- */
+  /* He rings first, from a payphone, and orders a pizza. He is not
+     confused about which number he dialled -- he is certain, and the
+     certainty is the problem. Then he turns up to collect it. The only
+     way this ends is with an actual pizza on your actual counter. */
+  {
+    id: 'PIZZA',
+    name: 'Gordy Nusbaum',
+    tag: 'is here to collect his order',
+    /* At the collection end of the counter, where a man waiting on food
+       stands: not in the line, because he is not queueing for anything
+       you sell. */
+    act: 'HATCH',
+    nuisance: null,
+    complaints: [
+      `He thinks this is a pizza place. He genuinely does.`,
+      `Sir, look around you. Look at the walls.`,
+      `Twenty minutes he's been asking about a pizza.`,
+      `I would like to rent a film and go home to my family.`,
+    ],
+    app: {
+      gender: 'm', height: 'short', build: 'heavy', facial: 'mustache', glasses: 'none',
+      hat: 'cap', gait: 'normal', carry: 'none', smell: 'smoke', voice: 'loud',
+      hair: { id: 'brown', name: 'dark brown', hex: '#3d2a1a', dark: '#2a1c11', style: 'short',
+        styleName: 'short, flattened by the cap', label: 'Dark brown hair, short',
+        bulletin: 'dark brown hair, short, hat hair' },
+      jacket: { id: 'letter', name: 'maroon', hex: '#4a1a1e', kind: 'letterman jacket' },
+      pants: { id: 'denim', name: 'denim blue', hex: '#33507a' },
+      shirt: { id: 'cream', name: 'cream', hex: '#b6ab8c' },
+      skin: '#c08e63',
+    },
+    ...BASE,
+    patience: 900, irascibility: 0.85, honesty: 1, chattiness: 1, wealth: 1,
+    /* Arguing does not work. A pizza works. */
+    immovable: true,
+    lines: {
+      wait: [`I'll stand here. Order's paid for.`, `(he keeps looking at the back room door)`],
+      angry: [`I ORDERED. On the PHONE. To THIS NUMBER.`],
+      bye: [`Appreciate it. Told you it'd be quicker to just make it.`],
+      thanks: [`See? Was that so hard?`],
+      smalltalk: [`You do wings? For next time.`],
+      greetRent: [`I'm not renting. I'm collecting.`],
+      greetReturn: [`I'm not returning anything, I'm collecting an order.`],
+      feeAccept: [`Put it on the order.`],
+      feeDispute: [`I already paid on the phone.`],
+      feeWaived: [`Right. Good.`],
+      noMoney: [`I've got it. It's for the pizza, not for a movie.`],
     },
   },
 ];

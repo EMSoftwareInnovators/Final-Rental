@@ -209,7 +209,12 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
    ============================================================ */
 export function talkTo(c, ctx, opts = {}) {
   if (c.awaitingChange) return changeRoot(c, ctx);
-  if (c.mood <= 0 && !c.resolvedAnger) return angryRoot(c, ctx);
+  /* Anybody can be driven out by being rude to them -- except the few
+     whose way out is an errand you have not run yet. Grinding the man
+     waiting on a pizza down to nothing used to send him home, which made
+     "be unpleasant twenty times" a faster solution than the pizza and
+     quietly deleted the whole character. He stays. He just hates you. */
+  if (c.mood <= 0 && !c.resolvedAnger && !c.immovable) return angryRoot(c, ctx);
   if (c.script === 'confused' && !c.confusionResolved) {
     c.confusionResolved = true;
     return confusedRoot(c, ctx);
@@ -1131,6 +1136,22 @@ export function buildPhoneCall(ctx) {
 
   const hang = () => { ctx.hangUp(); return null; };
 
+  /* If the thing is ringing, picking it up answers it. Nothing else on
+     this phone matters until you have found out who that is. */
+  const P = ctx.pizzaState && ctx.pizzaState();
+  if (P && P.phase === 'RINGING') { ctx.pizzaAnswered(); return buildPizzaOrder(ctx); }
+
+  /* And once there is a man in the shop waiting on food, the parlour is
+     on the list -- it is the only thing that gets rid of him. */
+  /* Until the order is actually in an oven. It used to hide the row the
+     moment he agreed to something else, which is precisely the moment you
+     need to ring them back -- so the one call that ends this was taken off
+     the list one step before you could make it. */
+  const parlourRow = P && !P.done && P.customer
+    && P.phase !== 'COOKING' && P.phase !== 'DELIVERING'
+    ? [reply(`Ring Bertucci's on the parade.`, () => buildPizzaParlour(ctx))]
+    : [];
+
   /* There is a woman at the counter who wants the regional manager, and
      the regional manager is a man forty minutes away who went to bed at
      ten. Ringing him is its own little errand and it does not work first
@@ -1140,8 +1161,8 @@ export function buildPhoneCall(ctx) {
     ? [reply(`Call the regional manager.`, () => managerCall(ctx, karen), { risk: false })]
     : [];
 
-  if (!suspects.length && managerRow.length) {
-    return say(OP, `(dial tone)`, managerRow.concat([
+  if (!suspects.length && (managerRow.length || parlourRow.length)) {
+    return say(OP, `(dial tone)`, managerRow.concat(parlourRow).concat([
       reply(`Put it back down.`, () => hang()),
     ]));
   }
@@ -1163,7 +1184,7 @@ export function buildPhoneCall(ctx) {
 
   const choose = () => say(OP, `Nine-one-one. Go ahead.`,
     suspects.map((s) => reply(s.phoneLabel, () => confirm(s), { risk: true }))
-      .concat(managerRow)
+      .concat(managerRow).concat(parlourRow)
       .concat([reply(`Never mind. Sorry.`, () => hang())]));
 
   return choose();
@@ -1411,6 +1432,13 @@ export function specialRoot(c, ctx) {
        phone number is on a card by the register. */
     case 'MANAGER':
       return managerRoot(c, ctx);
+
+    /* ---------------- the pizza ----------------
+       He rang, he ordered, and he is here to collect. Nothing you say
+       moves him, because he is not confused -- he is certain. The only
+       thing that ends it is a box on the counter. */
+    case 'PIZZA':
+      return pizzaRoot(c, ctx);
 
     /* ---------------- the smell ----------------
        He does not think he smells. He thinks you have a problem with him,
@@ -2262,6 +2290,269 @@ function managerRoot(c, ctx) {
     `Have you got that number yet?`,
     `I'm still here.`,
   ]));
+}
+
+/* ============================================================
+   THE PIZZA
+
+   He rings first, from a payphone outside the laundrette, and orders.
+   He is not confused about which number he dialled: he is certain, and
+   the certainty is what you cannot get past. Then he turns up to
+   collect, and he will stand there.
+
+   There is exactly one way this ends, and it is a real pizza on your
+   real counter with his toppings on it. Which means the phone twice --
+   once to order, and once more after Bertucci's tells you they have not
+   got half of what he asked for and you have to go back and make him
+   choose again.
+   ============================================================ */
+/* What he asks for. The second of each pair is the one no pizza place in
+   1996 has ever had, which is the whole point of the second call. */
+const TOPPINGS = [
+  { ok: 'pepperoni', odd: 'canned corn' },
+  { ok: 'sausage', odd: 'sauerkraut' },
+  { ok: 'mushroom', odd: 'tuna, drained' },
+  { ok: 'green pepper', odd: 'pineapple AND anchovy, together' },
+  { ok: 'extra cheese', odd: 'sliced hard-boiled egg' },
+  { ok: 'onion', odd: 'peanut butter, just a scrape' },
+  { ok: 'black olive', odd: 'macaroni' },
+  { ok: 'bacon', odd: 'raisins' },
+];
+
+const PIZZA_INSIST = [
+  `No, I've got the number right here. Written down. In pen.`,
+  `Delaney. Four-four-one-two Delaney. That's you.`,
+  `Look, I'm not being funny, but I've ordered from you before.`,
+  `Sunset. That's what it says on the front of the building, right?`,
+  `I don't need to know what else you do. I need a pizza.`,
+  `Then who am I talking to? Because this is the number.`,
+  `You're doing the thing where you pretend you're not open.`,
+  `A large. That's all. I'm not asking for the world here.`,
+];
+
+const PIZZA_FLOOR = [
+  `I'm not leaving without it. I paid on the phone.`,
+  `Mate. MATE. Where is my pizza.`,
+  `Then go and check the back. Go on. Go and check.`,
+  `I can smell popcorn. You've got a popcorn machine. Don't tell me you don't do food.`,
+  `Forty minutes. It's been forty minutes.`,
+  `You know what, I'll wait. I've got all night and I'm getting hungrier.`,
+  `Is there someone else I can talk to? Someone in the kitchen?`,
+  `I'm looking at a wall of tapes and I do not care about a single one of them.`,
+];
+
+/** His half of the call that starts the whole thing off. */
+export function buildPizzaOrder(ctx) {
+  const rng = ctx.rng;
+  const P = ctx.pizzaState();
+  const caller = { name: 'A MAN ON A PAYPHONE', voicePitch: 0.95, rough: 0.55 };
+  const hang = () => { ctx.hangUp(); return null; };
+
+  if (!P || !P.wants) {
+    const pick = rng.pick(TOPPINGS);
+    if (P) P.wants = pick;
+  }
+  const W = (P && P.wants) || TOPPINGS[0];
+
+  const done = (line) => say(caller, line, [
+    reply(`...Hello? Hello.`, () => {
+      if (P) { P.phase = 'ORDERED'; P.t = 0; }
+      ctx.toast(`He hung up. He is coming here.`, 'bad');
+      return hang();
+    }),
+  ]);
+
+  const order = () => say(caller,
+    `Right. Large. ${cap(W.ok)}, and ${W.odd}.\\n\\nAnd don't skimp on the ${W.odd}, last time it was like you'd waved it at the thing.`, [
+    reply(`Sir, this is a video rental store.`, () => push(1)),
+    reply(`We don't sell food. We sell films.`, () => push(1)),
+    reply(`...${cap(W.odd)}.`, () => say(caller,
+      `${cap(W.odd)}. Yes. Is that a problem? It's not a problem.`,
+      [reply(`I'll see what I can do.`, () => done(`Twenty minutes. I'm walking over.`))])),
+  ]);
+
+  const push = (n) => {
+    if (n >= 3) return done(rng.pick([
+      `Twenty minutes. I'm walking over. Have it ready.`,
+      `I'll come to you. Clearly this is easier in person.`,
+      `Right, I'm coming down there. Don't start the pizza till I'm there, I want to watch.`,
+    ]));
+    return say(caller, rng.pick(PIZZA_INSIST), [
+      reply(`There is no kitchen here. There's a popcorn machine.`, () => push(n + 1)),
+      reply(`You've got the wrong number.`, () => push(n + 1)),
+      reply(`...What did you want on it?`, () => order()),
+    ]);
+  };
+
+  return say(caller, rng.pick([
+    `Yeah, hi — I'd like to order a large for collection.`,
+    `Hi. Do you do collection? I'll collect.`,
+    `Evening. One large, please. For pick-up.`,
+  ]), [
+    reply(`Sunset Video, how can I help?`, () => push(0)),
+    reply(`I think you've misdialled.`, () => push(1)),
+    reply(`...Go ahead.`, () => order()),
+  ]);
+}
+
+/**
+ * Ringing Bertucci's, which is what actually solves this.
+ *
+ * The first call gets you told they have not got the strange half of it.
+ * Then you have to go and tell HIM, get him to pick something they do
+ * have, and ring back. Two calls, with a conversation in the middle.
+ */
+export function buildPizzaParlour(ctx) {
+  const rng = ctx.rng;
+  const P = ctx.pizzaState();
+  const shop = { name: `BERTUCCI'S`, voicePitch: 1.0, rough: 0.45 };
+  const hang = () => { ctx.hangUp(); return null; };
+  const W = (P && P.wants) || TOPPINGS[0];
+
+  /* Second call: he has settled on something they actually stock. */
+  if (P && P.agreed) {
+    return say(shop, `"Bertucci's."`, [
+      reply(`Me again. Large, ${W.ok} and ${P.agreed}.`, () => {
+        ctx.pizzaCook(rng.range(55, 95));
+        return say(shop,
+          `"${cap(W.ok)} and ${P.agreed}. Now that we can do."\\n\\n(the sound of a man writing on a pad)\\n\\n"Twenty minutes. Delaney, yeah? The video place?"`, [
+          reply(`The video place. Yes.`, () => {
+            ctx.toast(`Ordered. Twenty minutes, they said.`, 'good');
+            return hang();
+          }),
+        ]);
+      }),
+    ]);
+  }
+
+  /* First call: they have not got the odd half and they say so. */
+  if (P && P.placed) {
+    return say(shop, `"It's coming. Twenty minutes means twenty minutes."`, [
+      reply(`Sorry. Thanks.`, () => hang()),
+    ]);
+  }
+
+  return say(shop, rng.pick([
+    `"Bertucci's, collection or delivery?"`,
+    `"Bertucci's."\\n\\n(somebody shouting an order in the background)`,
+    `"Yeah, Bertucci's, hold on — yeah, go ahead."`,
+  ]), [
+    reply(`Delivery. To Sunset Video, on Delaney. Large, ${W.ok} and ${W.odd}.`, () => {
+      if (P) P.placed = true;
+      return say(shop, rng.pick([
+        `"${cap(W.ok)}, fine. ${cap(W.odd)} — no. We haven't got that. We've never had that."`,
+        `"Yeah. Yeah. ...${cap(W.odd)}? On a pizza? No, pal. Not a thing we own."`,
+        `"Hold on."\\n\\n(muffled, away from the phone: "Have we got ${W.odd}?" ... "Have we WHAT?")\\n\\n"No. That's a no."`,
+      ]), [
+        reply(`What have you got?`, () => say(shop,
+          `"What everyone's got. ${PARLOUR_STOCK.join(', ')}. It's a pizza place, not a chemist."`, [
+          reply(`Let me ask him and call you back.`, () => {
+            if (P) P.refused = W.odd;
+            ctx.toast(`They haven't got ${W.odd}. He'll have to pick something else.`, 'bad');
+            return hang();
+          }),
+        ])),
+        reply(`Right. I'll ring back.`, () => {
+          if (P) P.refused = W.odd;
+          ctx.toast(`They haven't got ${W.odd}. He'll have to pick something else.`, 'bad');
+          return hang();
+        }),
+      ]);
+    }),
+    reply(`Nothing. Sorry, wrong number.`, () => hang()),
+  ]);
+}
+
+const PARLOUR_STOCK = ['pepperoni', 'sausage', 'mushroom', 'onion', 'green pepper',
+  'black olive', 'bacon', 'extra cheese'];
+
+function pizzaRoot(c, ctx) {
+  const rng = ctx.rng;
+  const P = ctx.pizzaState();
+  const W = (P && P.wants) || TOPPINGS[0];
+  if (c.pizzaAsked === undefined) c.pizzaAsked = 0;
+  c.pizzaAsked++;
+  c.pizzaRound = 0;
+
+  const standing = () => say(c, rng.pick([
+    `(he stops arguing and stands there, arms folded, facing the back room)`,
+    `Fine. I'll wait. Waiting's free.\\n\\n(he does not leave)`,
+    `(he has stopped listening and is watching the door)`,
+  ]), [reply(`...`, () => null)]);
+
+  /* The wall. He is immovable until there is a box on the counter. */
+  const floor = (lead) => {
+    c.pizzaRound++;
+    if (c.pizzaRound > 6) return standing();
+    return say(c, `${lead ? lead + '\\n\\n' : ''}${rng.pick(PIZZA_FLOOR)}`, [
+      reply(`This is a video shop. There is no pizza.`, () => {
+        ctx.mood(c, -6);
+        return floor(rng.pick([`Then what's the popcorn for?`, `You keep saying that.`,
+          `(he looks at the popcorn machine, then back at you)`]));
+      }, { risk: true }),
+      reply(`I need you to leave.`, () => {
+        ctx.mood(c, -12);
+        return floor(rng.pick([`Not without my food.`, `Give me the pizza and I'm gone.`,
+          `I'll go the second there's a box in my hand.`]));
+      }, { risk: true }),
+      reply(`What exactly did you order?`, () => say(c,
+        `Large. ${cap(W.ok)} and ${W.odd}. I said don't skimp on the ${W.odd}.`,
+        [reply(`Right.`, () => floor(null))])),
+      reply(`...`, () => null),
+    ]);
+  };
+
+  /* They have not got the odd half. This is the bit only he can settle. */
+  if (P && P.refused && !P.agreed) {
+    const take = (t) => say(c, rng.pick([
+      `...Fine. ${cap(t)}. But I want it noted that this is a compromise.`,
+      `${cap(t)}, then. Under protest.`,
+      `Go on then. ${cap(t)}. And extra of it, since I'm being flexible.`,
+    ]), [
+      reply(`I'll ring them back.`, () => {
+        ctx.pizzaAgree(t);
+        return null;
+      }),
+    ]);
+    const some = ctx.rng.shuffle(PARLOUR_STOCK.filter((t) => t !== W.ok)).slice(0, 3);
+    return say(c, rng.pick([
+      `They haven't got it? How has a pizza place not got ${P.refused}?`,
+      `No ${P.refused}. Right. Of course. Of COURSE there's no ${P.refused}.`,
+      `What do you mean they haven't got it. It's ${P.refused}. It comes in a tin.`,
+    ]), some.map((t) => reply(`They've got ${t}.`, () => take(t)))
+      .concat([reply(`They've got what everyone's got.`, () => say(c,
+        `Then surprise me. No — don't surprise me. What have they got.`,
+        [reply(`${cap(some[0])}.`, () => take(some[0]))]))]));
+  }
+
+  if (P && (P.placed && P.agreed)) {
+    return say(c, rng.pick([
+      `Is it coming? Tell me it's coming.`,
+      `Twenty minutes, they said? From when?`,
+      `(he has calmed down considerably and is now just hungry)`,
+    ]), [
+      reply(`It's on its way.`, () => { ctx.mood(c, +10); return null; }),
+      reply(`Any minute.`, () => { ctx.mood(c, +6); return null; }),
+    ]);
+  }
+
+  if (c.pizzaAsked === 1) {
+    return say(c, rng.pick([
+      `Collection. Nusbaum. Large, ${W.ok} and ${W.odd}.`,
+      `I rang about twenty minutes ago. Nusbaum. Is it ready?`,
+      `Hi. Order for Nusbaum? I called it in.`,
+    ]), [
+      reply(`Sir, this is a video rental store.`, () => floor(
+        `I know what it is. I can see the tapes. Where's my pizza?`)),
+      reply(`We don't do food.`, () => floor(`Then why did you take my order?`)),
+      reply(`...I'll see what I can do.`, () => {
+        ctx.mood(c, +12);
+        return say(c, `Thank you. THANK you. That's all I wanted.`,
+          [reply(`Give me a minute.`, () => null)]);
+      }),
+    ]);
+  }
+  return floor(null);
 }
 
 /* ============================================================

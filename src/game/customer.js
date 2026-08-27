@@ -121,6 +121,11 @@ export function makeSpecial(rng, sp) {
   c.nuisance = sp.nuisance || null;
   c.complaints = sp.complaints || null;
   c.blocksLine = !!sp.blocksLine;
+  /* Some of them cannot be got rid of by being rude to them, because
+     being rude to them is not the puzzle. The way out is an errand -- a
+     phone call, an address -- and until you have run it they stay, and
+     get angrier, which is the pressure rather than the escape. */
+  c.immovable = !!sp.immovable;
   c.asked = 0;                 // how many times you have asked them to go
   c.actTimer = 0;
   // He arrives with it under one arm and does not put it down until he
@@ -171,6 +176,11 @@ export const ACT_SPOT = {
      can be in the shop at once without standing in each other. Still
      inside the phone flex, which she is going to need. */
   RAIL: { x: 12.35, z: 0.66, yaw: -0.30 },
+  /* At the front window, left of the door, watching the street.
+     He is not queueing -- he is not buying anything you sell, he is
+     waiting on a car. The counter frontage is full anyway: the service
+     window and three queue places already run the length of it. */
+  HATCH: { x: 7.05, z: 0.45, yaw: Math.PI },
 };
 
 /* ---------------- movement ---------------- */

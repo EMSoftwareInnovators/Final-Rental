@@ -340,16 +340,60 @@ const GRINDERS = ['REEKER', 'SMOKER', 'SOVEREIGN'];
        (the woman who is offended about the offence has no exit line at
        all: she leaves having bought a film)
      - worn down across many conversations, with a cooling-off period
-     - handed a telephone (the woman who wants a manager, whose way out
-       is not in her dialogue tree at all -- talking to her is a wall on
-       purpose, and tools/manager.mjs is what proves the phone works)
+     - sent off on an errand: the ones marked `immovable` in the roster,
+       whose way out is not in their dialogue tree at all. Talking to them
+       is a wall on purpose. Each has a harness of its own that walks the
+       errand end to end -- manager.mjs for the phone call to the regional
+       manager, pizza.mjs for the two calls to Bertucci's -- and the check
+       below only insists the flag is deliberate rather than a tree
+       somebody forgot to finish.
    What must never happen is a fifth shape: somebody with no way out. */
-const BY_PHONE = ['MANAGER'];
+const ERRAND = await ev(() =>
+  window.__specials.specialRoster().filter((s) => s.immovable).map((s) => s.id));
 const noWayOut = trees.filter((t) => !t.exits && !t.sales
-  && !GRINDERS.includes(t.id) && !BY_PHONE.includes(t.id));
+  && !GRINDERS.includes(t.id) && !ERRAND.includes(t.id));
 check('every one of them has a way out of the shop',
   noWayOut.length === 0,
   noWayOut.map((t) => t.id).join(' ') || 'nobody in the roster is a dead end');
+/* And the flag is not a way of dodging the check. What `immovable` means
+   is specifically that RUDENESS does not work on them: anybody else, ground
+   down to no patience at all, gives you the branch where they walk out in
+   disgust, and that used to be a faster way of clearing the man waiting on
+   a pizza than the pizza was. It does not mean they have no exit -- the man
+   with the assignment leaves through his own tree, when you give him the
+   address of the other store. So: grind each of them to zero and check
+   that what comes back is still their own conversation. */
+const rudeness = await ev(() => {
+  const g = window.__game;
+  const D = window.__dlg;
+  const out = [];
+  for (const id of window.__specials.specialRoster().filter((s) => s.immovable).map((s) => s.id)) {
+    g.customers.length = 0; g.queue.length = 0;
+    const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById(id));
+    c.x = 7.05; c.z = 0.45; c.state = 'ACTING';
+    g.customers.push(c);
+    c.mood = 0;
+    let node = D.talkTo(c, g.ctx, { atCounter: true });
+    // take every reply that sounds like showing them the door
+    let left = false;
+    for (let k = 0; k < 30 && node; k++) {
+      const cs = node.choices || [];
+      if (!cs.length) break;
+      let i = cs.findIndex((r) => /leave|get out|out\.|go\b/i.test(r.label));
+      if (i < 0) i = 0;
+      node = cs[i].fn ? cs[i].fn() : null;
+      if (c.state === 'LEAVING' || c.state === 'GONE') { left = true; break; }
+      if (!node) node = D.talkTo(c, g.ctx, { atCounter: true });
+    }
+    out.push({ id, left, mood: Math.round(c.mood) });
+  }
+  g.customers.length = 0; g.queue.length = 0;
+  return out;
+});
+check('and being unpleasant to the errand people never gets rid of them',
+  rudeness.every((r) => !r.left),
+  rudeness.filter((r) => r.left).map((r) => r.id).join(' ')
+  || `${rudeness.length} stood their ground: ${rudeness.map((r) => r.id).join(', ')}`);
 check('and most of them can be turned into a sale if you handle them right',
   trees.filter((t) => t.sales > 0).length >= 9,
   `${trees.filter((t) => t.sales > 0).length} of ${trees.length} will rent something`);

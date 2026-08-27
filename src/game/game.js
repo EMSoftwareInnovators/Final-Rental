@@ -52,6 +52,17 @@ const CORD_REACH = 4.6;
 
 /* Her side of a call you only hear one half of. She came in loud and she
    does not stay loud, which is the whole shape of it. */
+/* Where the kid puts the box down: the customer side of the counter, in
+   front of the service window, so it is between the two of them. */
+const PIZZA_DROP = { x: 10.75, z: 0.95 };
+
+const PIZZA_BYE = [
+  `See? Was that so hard?`,
+  `Told you. Told you it'd be quicker to just make it.`,
+  `Appreciate it. You want to get some signs up, though.`,
+  `Good pizza place, this. Slow, but good.`,
+];
+
 const MANAGER_CALL_BEATS = [
   `Yes — hello. Am I speaking to the regional manager? ...Right. Right.`,
   `No, the young man has been perfectly polite. That isn't what this is about.`,
@@ -241,6 +252,7 @@ export class Game {
     }
     this.sweep = null;
     this.managerCall = null;
+    this.pizza = null;
     this.briefingStarted = false;
 
     // the suspect
@@ -710,7 +722,7 @@ export class Game {
        not the player's doing, so the shift does not pay for the walk to
        the counter and the conversation. Same rule as the briefing. */
     const holdClock = killerActive(this.killer) || !this.officerDone
-      || this.grinderPresent() || this.sweepPresent() || this.managerBusy();
+      || this.grinderPresent() || this.sweepPresent() || this.managerBusy() || this.pizzaPending();
     if (!holdClock) this.elapsed += dt;
     this.updatePolice(dt);
 
@@ -740,6 +752,7 @@ export class Game {
       this.updateOfficer(h);
       this.updateSweep(h);
       this.updateHandedPhone(h);
+      this.updatePizza(h);
       for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
       this.customers = this.customers.filter((c) => c.state !== CS.GONE);
       updateKiller(this.killer, h, this.ctx);
@@ -1173,6 +1186,12 @@ export class Game {
       const rng = this.rng;
       if (s.special) {
         const sp = specialById(s.special);
+        if (sp && sp.id === 'PIZZA') {
+          /* He does not walk in. He rings first, from the payphone
+             outside the laundrette, and turns up afterwards. */
+          this.beginPizzaCall(sp);
+          continue;
+        }
         if (sp) { this.customers.push(makeSpecial(rng, sp)); continue; }
       }
       let app;
@@ -1345,6 +1364,7 @@ export class Game {
     const out = this.customers.slice();
     if (this.officer && this.officer.state !== 'DONE') out.push(this.officer);
     if (this.sweep && !this.sweep.hidden) out.push(this.sweep);
+    if (this.pizza && this.pizza.driver && !this.pizza.driver.hidden) out.push(this.pizza.driver);
     if (this.killer && !this.killer.ent.hidden) out.push(this.killer.ent);
     if (this.arrest && this.arrest.deputy && !this.arrest.deputy.hidden) out.push(this.arrest.deputy);
     return out;
@@ -2932,6 +2952,28 @@ export class Game {
         g.managerCall.connected = true;
       },
       toast: (text, kind) => g.ui.toast(text, kind || ''),
+
+      /* --- the pizza --- */
+      pizzaState: () => g.pizza,
+      /** The bell stops the moment you lift the receiver. */
+      pizzaAnswered: () => {
+        if (!g.pizza) return;
+        g.pizza.phase = 'ANSWERED';
+        g.ui.setObjective('');
+      },
+      /** He has settled on something the parlour actually stocks. */
+      pizzaAgree: (topping) => {
+        if (!g.pizza) return;
+        g.pizza.agreed = topping;
+        g.ui.toast(`He'll take ${topping}. Ring them back.`, '');
+      },
+      /** Ordered. It is in an oven on the parade now. */
+      pizzaCook: (seconds) => {
+        if (!g.pizza) return;
+        g.pizza.phase = 'COOKING';
+        g.pizza.t = 0;
+        g.pizza.cookTime = seconds;
+      },
       hangUp: () => g.hangUp(),
 
       /* --- killer beats --- */
@@ -3119,6 +3161,181 @@ export class Game {
       return c;
     }
     return null;
+  }
+
+  /* ============================================================
+     THE PIZZA
+
+     A man rings the shop from a payphone and orders a pizza. He is not
+     confused about the number -- he is certain, and the certainty is the
+     problem. He turns up to collect it, he will not be told, and there is
+     exactly one thing that ends it: an actual pizza, on the counter, with
+     his toppings on it.
+
+     Which means the phone twice. Once to order, and once more when the
+     parlour tells you they have not got half of what he asked for and you
+     have to go back and get him to choose again.
+     ============================================================ */
+  /** The state of tonight's order, or null if nobody has rung. */
+  pizzaState() { return this.pizza; }
+
+  /** He is in the building and has not got his food. */
+  pizzaPending() {
+    const P = this.pizza;
+    if (!P || P.done) return false;
+    const c = P.customer;
+    return !!c && !c.hidden && c.state !== CS.GONE && c.state !== CS.LEAVING;
+  }
+
+  /**
+   * The bell, until somebody picks it up.
+   *
+   * A phone that rings and is never answered is a phone that rings all
+   * night, so it gives up after a while and he simply turns up anyway --
+   * which is worse for you, because then you have not even heard the
+   * order.
+   */
+  updatePizza(dt) {
+    const P = this.pizza;
+    if (!P) return;
+
+    if (P.phase === 'RINGING') {
+      P.t += dt;
+      P.bellT -= dt;
+      if (P.bellT <= 0) {
+        P.bellT = 4.2;
+        P.rings++;
+        this.sound.phoneBell();
+        this.ui.setObjective('THE PHONE IS RINGING', P.rings > 3);
+      }
+      /* Twelve rings and whoever it was gives up. He still comes. */
+      if (P.rings > 12) {
+        P.phase = 'UNHEARD';
+        P.t = 0;
+        this.ui.setObjective('');
+        this.ui.toast(`The phone stops ringing.`, '');
+      }
+      return;
+    }
+
+    /* You picked it up and then put it down again without letting him
+       finish. He still ordered, as far as he is concerned. */
+    if (P.phase === 'ANSWERED') {
+      P.t += dt;
+      if (P.t > 25) { P.phase = 'ORDERED'; P.t = 0; }
+      return;
+    }
+
+    if (P.phase === 'ORDERED' || P.phase === 'UNHEARD') {
+      /* He is on his way. Give it a beat so the call and the man are not
+         the same moment. */
+      P.t += dt;
+      if (P.t > (P.phase === 'UNHEARD' ? 30 : 22) && !P.arrived) {
+        P.arrived = true;
+        P.phase = 'WAITING';
+        this.spawnPizzaMan();
+      }
+      return;
+    }
+
+    if (P.phase === 'COOKING') {
+      P.t += dt;
+      if (P.t > P.cookTime && !P.driver) this.spawnDriver();
+      return;
+    }
+
+    if (P.phase === 'DELIVERING') this.updateDriver(dt);
+  }
+
+  /** Somebody rings the shop. Tonight, it is him. */
+  beginPizzaCall(sp) {
+    if (this.pizza) return;
+    this.pizza = {
+      phase: 'RINGING', t: 0, rings: 0, bellT: 0.6,
+      spec: sp, customer: null, driver: null,
+      wants: null, refused: null, agreed: null,
+      placed: false, arrived: false, done: false, cookTime: 0,
+    };
+  }
+
+  /** He walks in expecting food. */
+  spawnPizzaMan() {
+    const P = this.pizza;
+    if (!P || P.customer) return;
+    const c = makeSpecial(this.rng, P.spec);
+    this.customers.push(c);
+    P.customer = c;
+    this.ui.toast(`Somebody comes in and does not look at the shelves.`, '');
+  }
+
+  /**
+   * A kid from Bertucci's, with a box.
+   *
+   * Built the way the deputy is: a body walked along a fixed path rather
+   * than a customer with wants of his own. He comes in, puts the box on
+   * the counter, gets paid by the man who ordered it, and goes.
+   */
+  spawnDriver() {
+    const P = this.pizza;
+    if (!P || P.driver) return;
+    const app = randomAppearance(this.rng, { gender: this.rng.chance(0.5) ? 'm' : 'f' });
+    P.driver = {
+      id: -4, name: `The delivery kid`, app, skin: paintSkin(app), personality: OFFICER,
+      x: SPOTS.street.x + 1.1, y: 0, z: SPOTS.street.z - 0.8, yaw: 0, r: 0.30,
+      anim: makeAnim(), speed: 1.6, moveSpeed: 0, observed: new Set(),
+      mood: 100, phoneLabel: 'The delivery kid', isKiller: false, hidden: false,
+      state: 'IN', timer: 0, path: null, pathI: 0,
+    };
+    P.phase = 'DELIVERING';
+    P.t = 0;
+    this.ui.toast(`Headlights on the lot. Somebody gets out with a box.`, 'good');
+  }
+
+  updateDriver(dt) {
+    const P = this.pizza;
+    const d = P && P.driver;
+    if (!d || d.state === 'DONE') return;
+    d.timer += dt;
+
+    if (d.state === 'IN') {
+      if (!d.path) d.path = [SPOTS.outsideDoor, { x: SPOTS.door.x, z: 0.85 }, PIZZA_DROP];
+      if (this.followPath(d, dt)) { d.state = 'DROP'; d.timer = 0; }
+      else if (d.z > -0.6 && !d.entered) { d.entered = true; this.openDoorFor(); }
+    } else if (d.state === 'DROP') {
+      d.moveSpeed = 0;
+      d.yaw = angleTowards(d.yaw, Math.PI, dt * 5);
+      if (!d.dropped && d.timer > 0.9) {
+        d.dropped = true;
+        this.sound.impact(0.25);
+        this.ui.toast(`The box goes on the counter. It is a real pizza and it is warm.`, 'good');
+        P.onCounter = true;
+      }
+      if (d.timer > 2.4) { d.state = 'PAID'; d.timer = 0; }
+    } else if (d.state === 'PAID') {
+      d.moveSpeed = 0;
+      const c = P.customer;
+      if (!d.paid) {
+        d.paid = true;
+        this.sound.cashDrawer();
+        this.ui.toast(c ? `${c.name} pays the kid, in cash, without being asked.` : `The kid gets paid.`, 'good');
+      }
+      if (d.timer > 2.0) {
+        d.state = 'OUT'; d.path = null; d.pathI = 0;
+        if (c) {
+          c.onPhone = false;
+          this.ctx.mood(c, +50);
+          this.ui.toast(`${c.name}: "${this.rng.pick(PIZZA_BYE)}"`, '');
+          this.ctx.leave(c);
+        }
+        P.done = true;
+        this.ui.setObjective('');
+      }
+    } else if (d.state === 'OUT') {
+      if (!d.path) d.path = [{ x: SPOTS.door.x, z: 0.85 }, SPOTS.outsideDoor, { x: SPOTS.street.x + 2.0, z: SPOTS.street.z - 1.0 }];
+      if (this.followPath(d, dt)) { d.state = 'DONE'; d.hidden = true; }
+      else if (d.z < 1.0 && !d.exited) { d.exited = true; this.openDoorFor(); }
+    }
+    updateAnim(d.anim, dt, d.moveSpeed, d.app, {});
   }
 
   phoneTargets() {
