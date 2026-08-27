@@ -279,6 +279,8 @@ export const SPECIALS = [
     name: 'Lyle Rierdon',
     tag: 'does not recognise your authority',
     script: 'SOVEREIGN',
+    /** Stands at the end of the counter rather than joining the line. */
+    act: 'WINDOW',
     /** Blocks the window rather than moving along. */
     blocksLine: true,
     app: {

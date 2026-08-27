@@ -325,14 +325,14 @@ export function howToHtml() {
       ${key('notes', 'the notepad')}
     </ul>
     <ul>
-      ${key('drop', 'put the tape down')}
+      ${key('drop', 'put down what you are holding')}
       ${key('bolt', 'bolt the back room')}
     </ul>
   </div>
   <div class="cols">
     <ul>
-      <li><b>Returns.</b> Take the tape. Late fees are $1 a day.</li>
-      <li><b>Rewind.</b> An unwound tape goes in the rewinder before it goes on a shelf.</li>
+      <li><b>Returns.</b> Take the tape &mdash; or the cartridge, if it came off the games wall. Late fees are $1 a day, $2 on a game.</li>
+      <li><b>Rewind.</b> An unwound tape goes in the rewinder before it goes on a shelf. Cartridges do not rewind.</li>
       <li><b>Shelve.</b> Every tape belongs on its own genre run.</li>
       <li><b>Rentals.</b> People pull their own tapes. Ring them up, take the money.</li>
     </ul>

@@ -23,7 +23,7 @@ import { DialogueRunner, buildOfficerIntro, talkTo, buildPhoneCall } from './dia
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme } from './ui.js';
 import { randomAppearance, paintSkin, voicePitchOf, pronounOf } from './appearance.js';
 import { OFFICER } from './personality.js';
-import { GENRE_LABEL, GENRES, makeTape } from './tapes.js';
+import { GENRE_LABEL, GENRES, makeTape, tapeLabel, mediaWord } from './tapes.js';
 
 const ST = {
   BOOT: 'BOOT', TITLE: 'TITLE', HOWTO: 'HOWTO', OPTIONS: 'OPTIONS', PADCFG: 'PADCFG',
@@ -158,6 +158,7 @@ export class Game {
     this.elapsed = 0;
     this.closing = false;
     this.closingT = 0;
+    this.closingClear = 0;
     this.walkInAt = 0;
     this.boombox = null;
     this.arrest = null;
@@ -727,20 +728,50 @@ export class Game {
       }
     }
 
-    const left = this.customers.filter((c) => !c.hidden && c.state !== CS.GONE).length;
-    const strays = this.player.held.length + this.bin.length
-      + this.counterSlots.filter(Boolean).length + (this.rewinder.tape ? 1 : 0);
+    /* "Out of the shop" means out through the front door, not gone from the
+       simulation. They carry on down the pavement afterwards, well out of
+       the window, and the shift used to sit there waiting for that -- a
+       silent half minute staring at an empty room. */
+    const inside = this.customers.filter((c) => !c.hidden && c.state !== CS.GONE && c.z > 0.15);
+    const strays = this.strayMedia();
 
-    if (left || strays) {
+    if (inside.length || strays.n) {
+      this.closingClear = 0;
       const bits = [];
-      if (left) bits.push(`${left} still in the shop`);
-      if (strays) bits.push(`${strays} ${strays === 1 ? 'tape' : 'tapes'} not shelved`);
+      if (inside.length) bits.push(`${inside.length} still in the shop`);
+      if (strays.n) bits.push(`${strays.n} ${strays.word} not shelved`);
       this.ui.setObjective(`CLOSING — ${bits.join(' · ')}`, this.closingT > 60);
       return;
     }
     if (talking) return;
+
+    // Empty and tidy. Give it a few seconds, then lock up.
+    this.closingClear = (this.closingClear || 0) + dt;
+    const LOCK_UP = 4;
+    if (this.closingClear < LOCK_UP) {
+      this.ui.setObjective(`CLOSING — LOCKING UP`);
+      return;
+    }
     this.ui.setObjective('');
     this.endNight();
+  }
+
+  /**
+   * What is still out of its run, and what to call it.
+   *
+   * A cartridge is not a tape and the shift should not say it is, so this
+   * counts them separately and picks the word that covers what is actually
+   * lying about.
+   */
+  strayMedia() {
+    const out = this.player.held
+      .concat(this.bin, this.counterSlots.filter(Boolean), this.rewinder.tape ? [this.rewinder.tape] : []);
+    const games = out.filter((t) => t && t.game).length;
+    const tapes = out.length - games;
+    const word = games && tapes ? 'items'
+      : games ? (games === 1 ? 'cartridge' : 'cartridges')
+        : (tapes === 1 ? 'tape' : 'tapes');
+    return { n: out.length, games, tapes, word };
   }
 
   /* Pausing used to run through DialogueRunner.cancel(), which threw the
@@ -1339,7 +1370,9 @@ export class Game {
       }
       default: break;
     }
-    if (held && tgt.kind !== 'shelf') prompt += `\n<span class="sub">${glyph('drop')}put it down</span>`;
+    if (held && tgt.kind !== 'shelf') {
+      prompt += `\n<span class="sub">${glyph('drop')}put the ${mediaWord(held)} down</span>`;
+    }
     this.ui.setPrompt(prompt);
     /* A held action rather than a tap. Sliding a box back into a run and
        squaring it up is a couple of seconds of work, and making it a tap
@@ -2581,7 +2614,22 @@ export class Game {
         if (unpaid) { g.sound.registerBeep(); return null; }
         return g.takeCashFrom(price != null ? price : tape.price, c, 'rental');
       },
-      returnToShelf: (c) => { c.tape = null; g.ui.toast(`Tape goes back on the shelf.`, ''); },
+      /**
+       * They changed their mind, or ran out of patience holding it.
+       *
+       * It used to vanish out of their hands and reappear in its run, which
+       * is not a thing that happens in a video shop. They put it in the
+       * returns bin like everybody else and it is the clerk's to shelve.
+       */
+      returnToShelf: (c) => g.ctx.abandonTape(c),
+      abandonTape: (c) => {
+        const t = c.tape;
+        if (!t) return;
+        c.tape = null;
+        g.bin.push(t);
+        g.sound.drop();
+        g.ui.toast(`${c.name} drops ${tapeLabel(t)} in the returns bin.`, '');
+      },
 
       /**
        * They came in to do something else and have talked themselves into

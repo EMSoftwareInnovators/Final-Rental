@@ -155,6 +155,12 @@ const ACT_SPOT = {
   LINGER: null,          // wanders the shelves
   AUDIT: null,           // wanders the shelves, slowly, tutting
   PHONE: { x: 8.4, z: 4.6, yaw: 0.4 },
+  /* At the end of the counter, alongside the window rather than in front of
+     it. He is in the way, which is the point, but the line can still move
+     past him -- he used to take the head of the queue and hold it, and
+     since nothing could ever be sold to him, the queue behind him never
+     moved again for the rest of the night. */
+  WINDOW: { x: 11.6, z: 0.62, yaw: -0.55 },
 };
 
 /* ---------------- movement ---------------- */
@@ -463,19 +469,34 @@ export function updateCustomer(c, dt, ctx) {
       }
       {
         const rate = (100 / c.personality.patience) * (c.queueIndex === 0 ? 1 : 0.55);
-        c.mood -= rate * dt;
+        c.mood = Math.max(0, c.mood - rate * dt);
         // minor grievances: some people just need something to be annoyed about
         c.flareTimer -= dt;
         if (c.flareTimer <= 0) {
           c.flareTimer = 7 + rng() * 10;
           if (rng() < c.personality.irascibility * 0.55) {
-            c.mood -= 9 + rng() * 12;
+            c.mood = Math.max(0, c.mood - (9 + rng() * 12));
             ctx.grumble(c);
           }
         }
+        /* Running out of patience has to end in them going.
+
+           It used to fire once, set a flag, and stop -- and because the
+           flag was the guard, nothing ever happened again. A queue whose
+           head could not be served (a special parked at the window, say)
+           stood there for the rest of the night with a mood of minus three
+           hundred, and everybody behind it stood there too. Nobody in a
+           video shop waits forever. */
         if (c.mood <= 0 && !c.wentAngry) {
-          c.wentAngry = true; c.mood = 0;
+          c.wentAngry = true;
+          c.fuse = 18 + rng() * 22;
           ctx.wentAngry(c);
+        } else if (c.wentAngry) {
+          c.fuse -= dt;
+          if (c.fuse <= 0) {
+            if (c.tape && !c.checkedOut && c.script !== 'return') ctx.abandonTape(c);
+            ctx.storm(c);
+          }
         }
       }
       break;
@@ -590,6 +611,15 @@ function performAct(c, dt) {
     case 'AUDIT':
       a.headPitch = 0.22 + Math.sin(t * 0.7) * 0.12;
       a.headYaw = Math.sin(t * 0.4) * 0.5;
+      break;
+    case 'WINDOW':
+      // planted, one hand holding a folder up, the other making a point
+      a.armL = -1.15 + Math.sin(t * 0.5) * 0.05;
+      a.armLz = 0.30;
+      a.armR = -0.35 + Math.sin(t * 1.7) * 0.55;
+      a.armRz = -0.18;
+      a.headPitch = 0.20 + Math.sin(t * 1.7) * 0.10;
+      a.lean = Math.sin(t * 0.7) * 0.05;
       break;
     case 'LINGER':
     default:

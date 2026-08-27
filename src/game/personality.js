@@ -441,8 +441,24 @@ export function pickPersonality(rng, exclude = []) {
   return pool[pool.length - 1];
 }
 
+const TAPE_WORD = /\btapes?\b/i;
+
+/**
+ * One line out of somebody's bank.
+ *
+ * If what they are holding is a cartridge rather than a tape, lines that
+ * say "tape" are quietly taken out of the running -- a man handing back a
+ * game should not greet you with "same time, same tape". Every bank has
+ * plenty left over; on the rare occasion it does not, the caller's fallback
+ * covers it.
+ */
 export function line(person, key, rng, fallback = '...') {
-  const pool = person.personality.lines[key];
+  let pool = person.personality.lines[key];
   if (!pool || !pool.length) return fallback;
+  if (person.tape && person.tape.game) {
+    const clean = pool.filter((t) => !TAPE_WORD.test(t));
+    if (!clean.length) return fallback;
+    pool = clean;
+  }
   return pool[rng.int(pool.length)];
 }

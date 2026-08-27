@@ -135,7 +135,7 @@ check('and only the man with somebody else\'s tape walked in holding one',
 
 const actors = settled.filter((c) => c.act);
 check('the ones with somewhere to be got there and are doing it',
-  actors.length === 5 && actors.every((c) => c.state === 'ACTING'),
+  actors.length === 6 && actors.every((c) => c.state === 'ACTING'),
   actors.map((c) => `${c.id}:${c.state}@${c.x},${c.z}`).join(' '));
 check('nobody is standing in the doorway',
   settled.every((c) => c.z < 12.4), `deepest z ${Math.max(...settled.map((c) => c.z)).toFixed(2)}`);
@@ -144,13 +144,13 @@ check('and the performance is actually running',
 
 const spots = await ev(() => {
   const g = window.__game;
-  const want = { DANCE: [6.6, 3.4], TV: [2.1, 3.0], PHONE: [8.2, 4.6] };
+  const want = { DANCE: [6.6, 3.4], TV: [2.3, 2.8], PHONE: [8.4, 4.6], WINDOW: [11.6, 0.62] };
   return g.customers.filter((c) => want[c.act]).map((c) => ({
     act: c.act, d: +Math.hypot(c.x - want[c.act][0], c.z - want[c.act][1]).toFixed(2),
   }));
 });
-check('the boombox, the television and the phone call each have their own corner',
-  spots.length === 3 && spots.every((s) => s.d < 0.9),
+check('the boombox, the television, the phone call and the arguer each have their own spot',
+  spots.length === 4 && spots.every((s) => s.d < 0.9),
   spots.map((s) => `${s.act} ${s.d}m off`).join(' '));
 
 // The nuisances draw complaints from anyone else in the shop.

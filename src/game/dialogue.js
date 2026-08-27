@@ -350,7 +350,7 @@ function feeNode(c, ctx, then) {
       ]);
     }),
     reply(`I can waive it this once.`, () => waived(), { cost: `-${money(fee)}` }),
-    reply(`Then I can't check the tape back in.`, () => {
+    reply(`Then I can't check the ${mediaWord(tape)} back in.`, () => {
       ctx.mood(c, -24);
       return say(c, c.personality.irascibility > 0.45
         ? line(c, 'angry', rng, `Are you serious?`)
@@ -412,7 +412,7 @@ function handOver(c, ctx) {
     ctx.takeTape(tape, c);
     c.gaveTape = true;
     return say(c, line(c, 'thanks', rng, `Thanks.`), [reply('...', () => farewell(c, ctx))]);
-  }, { good: 'take tape' }));
+  }, { good: `take ${mediaWord(tape)}` }));
   cs.push(reply(`Drop it in the return bin.`, () => {
     ctx.binTape(tape, c);
     c.gaveTape = true;

@@ -108,18 +108,163 @@ const waits = await ev(() => {
   }
   const objTapeOnly = g.ui.el.objective ? g.ui.el.objective.textContent : '';
   const stateWithTape = g.state;
-  // and finally shelve the stray
+  // and finally shelve the strays. Locking up takes a few seconds once the
+  // shop is empty and tidy, so give it those.
   g.rewinder.tape = null;
-  g.updateClosing(0.5, false, false);
-  return { seen, objWithBoth, objTapeOnly, stateWithTape, ended: g.state };
+  g.player.held.length = 0; g.bin.length = 0;
+  g.counterSlots = g.counterSlots.map(() => null);
+  let lockUp = -1;
+  for (let i = 0; i < 400; i++) {
+    g.updateClosing(0.05, false, false);
+    if (g.state !== 'PLAY') { lockUp = +(i * 0.05).toFixed(2); break; }
+  }
+  return { seen, objWithBoth, objTapeOnly, stateWithTape, ended: g.state, lockUp };
 });
 check('a shop with people in it does not close', waits.seen.every((s) => s === 'PLAY'));
 check('and it says what is still outstanding', /still in the shop/.test(waits.objWithBoth)
   && /not shelved/.test(waits.objWithBoth), waits.objWithBoth);
 check('the last customer leaving is still not enough on its own',
   waits.stateWithTape === 'PLAY' && /not shelved/.test(waits.objTapeOnly), waits.objTapeOnly);
-check('and shelving the last tape is what ends the shift',
+check('and shelving the last one is what ends the shift',
   waits.ended === 'REPORT', waits.ended);
+check('with a few seconds to lock up rather than the lights going out mid-step',
+  waits.lockUp >= 3 && waits.lockUp <= 6, `${waits.lockUp}s after the shop was clear`);
+
+/* ---------- 4b. nobody in a video shop waits forever ---------- */
+/* A queue whose head cannot be served used to stand there for the rest of
+   the night. Patience ran out, a flag was set, and because the flag was the
+   guard, nothing ever happened again: moods went to minus three hundred and
+   six people stood at the counter until the heat death of the shift. */
+const patience = await ev(() => {
+  const g = window.__game;
+  g.state = 'PLAY';
+  g.closing = false; g.closingT = 0; g.elapsed = 0;
+  g.customers.length = 0; g.queue.length = 0;
+  const T = window.__tapes;
+  // somebody at the window who can never be sold anything, and a line behind
+  const sov = window.__cust.makeSpecial(g.rng, window.__specials.specialById('SOVEREIGN'));
+  sov.x = 10.75; sov.z = 0.8; sov.state = 'WAITING';
+  g.customers.push(sov);
+  for (let i = 0; i < 4; i++) {
+    const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+    c.tape = T.makeTape('HORROR', g.rng, { rewound: true });
+    c.script = 'rent'; c.x = 9.7 - i * 0.9; c.z = 0.8; c.state = 'WAITING';
+    g.customers.push(c);
+  }
+  g.customers.forEach((c) => g.claimCounterSpot(c));
+  const start = g.customers.length;
+
+  let worstMood = 100;
+  let clearedAt = -1;
+  for (let i = 0; i < 40000; i++) {
+    g.customers.forEach((c) => { if (!c.hidden) window.__cust.updateCustomer(c, 1 / 30, g.ctx); });
+    g.customers = g.customers.filter((c) => c.state !== 'GONE');
+    g.customers.forEach((c) => { worstMood = Math.min(worstMood, c.mood); });
+    if (!g.customers.length) { clearedAt = Math.round(i / 30); break; }
+  }
+  const leftBehind = g.customers.length;
+  g.customers.length = 0; g.queue.length = 0;
+  return { start, leftBehind, clearedAt, worstMood: Math.round(worstMood), binned: g.bin.length };
+});
+check('a queue that cannot be served does not stand there forever',
+  patience.leftBehind === 0,
+  patience.clearedAt >= 0 ? `all ${patience.start} gave up within ${patience.clearedAt}s`
+    : `${patience.leftBehind} still there`);
+check('and nobody is left in a mood the scale does not go to',
+  patience.worstMood >= 0, `worst mood seen ${patience.worstMood}`);
+check('what they were holding ends up in the returns bin, not back on a shelf',
+  patience.binned > 0, `${patience.binned} left in the bin`);
+
+const beside = await ev(() => {
+  const g = window.__game;
+  // An earlier check bolted the door for closing; open the shop again.
+  g.closing = false; g.closingT = 0; g.elapsed = 0; g.door.locked = false;
+  g.customers.length = 0; g.queue.length = 0;
+  const sov = window.__cust.makeSpecial(g.rng, window.__specials.specialById('SOVEREIGN'));
+  g.customers.push(sov);
+  const c = window.__cust.createCustomer(g.rng, { intent: 'RETURN' });
+  c.x = 6; c.z = 2; c.state = 'TO_COUNTER';
+  g.customers.push(c);
+  for (let i = 0; i < 6000; i++) {
+    g.customers.forEach((x) => { if (!x.hidden) window.__cust.updateCustomer(x, 1 / 20, g.ctx); });
+    if (sov.state === 'ACTING' && !sov.path && c.state === 'WAITING') break;
+  }
+  const out = { sovState: sov.state, sovQueue: sov.queueIndex,
+    sovAt: [+sov.x.toFixed(2), +sov.z.toFixed(2)],
+    otherState: c.state, otherQueue: c.queueIndex };
+  g.customers.length = 0; g.queue.length = 0;
+  return out;
+});
+check('the one who argues stands at the end of the counter, not in the line',
+  beside.sovState === 'ACTING' && beside.sovQueue < 0,
+  `${beside.sovState} at ${beside.sovAt.join(',')}, queue index ${beside.sovQueue}`);
+check('so the line behind him still moves',
+  beside.otherState === 'WAITING' && beside.otherQueue === 0,
+  `${beside.otherState} at the front`);
+
+/* ---------- 4c. a cartridge is not a tape ---------- */
+const words = await ev(() => {
+  const g = window.__game;
+  const T = window.__tapes;
+  const set = (items) => {
+    g.player.held.length = 0; g.bin.length = 0;
+    g.counterSlots = g.counterSlots.map(() => null);
+    g.rewinder.tape = null;
+    items.forEach((t) => g.bin.push(t));
+    return g.strayMedia();
+  };
+  const tape = () => T.makeTape('HORROR', g.rng, { rewound: true });
+  const game = () => T.makeTape('GAMES', g.rng, { rewound: true });
+  const out = {
+    oneTape: set([tape()]).word,
+    twoTapes: set([tape(), tape()]).word,
+    oneGame: set([game()]).word,
+    twoGames: set([game(), game()]).word,
+    mixed: set([tape(), game()]).word,
+  };
+  set([]);
+  return out;
+});
+check('one tape is a tape and two are tapes',
+  words.oneTape === 'tape' && words.twoTapes === 'tapes');
+check('and a cartridge is never called a tape',
+  words.oneGame === 'cartridge' && words.twoGames === 'cartridges',
+  `${words.oneGame} / ${words.twoGames}`);
+check('with a word that covers both when it is both', words.mixed === 'items', words.mixed);
+
+const said = await ev(() => {
+  const g = window.__game;
+  const D = window.__dlg;
+  const T = window.__tapes;
+  const lines = { tape: [], game: [] };
+  for (const [kind, genre] of [['tape', 'HORROR'], ['game', 'GAMES']]) {
+    for (let i = 0; i < 40; i++) {
+      const c = window.__cust.createCustomer(g.rng, { intent: 'RETURN' });
+      c.tape = T.makeTape(genre, g.rng, { rewound: true, daysLate: 3 });
+      c.script = 'return'; c.hasMoney = true; c.queueIndex = 0;
+      c.x = 10.75; c.z = 0.8; c.state = 'WAITING';
+      g.customers.push(c);
+      const walk = (node, depth) => {
+        if (!node || depth > 4) return;
+        if (node.text) lines[kind].push(node.text);
+        (node.choices || []).forEach((r) => {
+          lines[kind].push(r.label || '');
+          if (r.good) lines[kind].push(String(r.good));
+          if (depth < 2) walk(r.go ? r.go() : (r.fn ? r.fn() : null), depth + 1);
+        });
+      };
+      walk(D.talkTo(c, g.ctx, { atCounter: true }), 0);
+      g.customers.splice(g.customers.indexOf(c), 1);
+    }
+  }
+  // "tape rewinder", "shelf of tapes" and the like are about the shop, not
+  // about what is in their hand.
+  const ABOUT_THE_SHOP = /rewinder|shelf of tapes|videotapes|tape it|chew tapes|my tapes/i;
+  const bad = lines.game.filter((t) => /\btapes?\b/i.test(t) && !ABOUT_THE_SHOP.test(t));
+  return { gameLines: lines.game.length, bad: [...new Set(bad)].slice(0, 4) };
+});
+check('and nobody handing back a game calls it a tape',
+  said.bad.length === 0, said.bad.join(' | ') || `${said.gameLines} lines checked`);
 
 /* ---------- 5. and a stubborn customer cannot hold it open forever ---------- */
 const stubborn = await ev(() => {
