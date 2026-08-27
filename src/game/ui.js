@@ -380,14 +380,20 @@ export function padHtml(p) {
     const val = on ? '<span class="k">press a button&hellip;</span>'
       : r.buttons.length ? r.buttons.map((b) => `<span class="key btn">${b}</span>`).join(' ')
         : '<span class="quiet">unbound</span>';
-    return `<li class="opt">${escape(r.label)} &nbsp; ${val}</li>`;
+    // One button can do several jobs, the way E does on the keyboard.
+    const also = !on && r.shared && r.shared.length
+      ? ` <span class="quiet">(also ${escape(r.shared.join(', ').toLowerCase())})</span>` : '';
+    return `<li class="opt">${escape(r.label)} &nbsp; ${val}${also}</li>`;
   };
   const live = p.down.length
     ? p.down.map((i) => `<span class="key btn">${i}</span>`).join(' ')
     : '<span class="quiet">nothing pressed</span>';
   const warn = p.name && !p.trusted && !p.custom
-    ? `<p class="pad-foot k">This browser does not recognise your controller's layout, so
-       nothing is bound yet &mdash; any button will work a menu until you set it up here.</p>`
+    ? (p.known
+      ? `<p class="pad-foot">This browser does not describe your controller's layout, but it is
+         one we know &mdash; laid out below. Change anything that is wrong.</p>`
+      : `<p class="pad-foot k">This browser does not recognise your controller's layout, so
+         nothing is bound yet &mdash; any button will work a menu until you set it up here.</p>`)
     : '';
   return `<h2>CONTROLLER</h2>
   <p class="pad-foot">${p.name ? escape(p.name) : 'Nothing connected'}${
@@ -400,7 +406,8 @@ export function padHtml(p) {
   </ul>
   <p class="pad-foot">Held down now: ${live}</p>
   <p class="pad-foot quiet">Move with the stick or ${glyphText('up')}${glyphText('down')}.
-  Highlight a line and press the button you want for it.
+  Highlight a line and press the button you want for it &mdash; one button can do
+  several jobs, and pressing the same one again takes that job off it.
   ESC on the keyboard leaves at any time.</p>`;
 }
 

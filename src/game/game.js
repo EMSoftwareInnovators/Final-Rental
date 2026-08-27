@@ -5,7 +5,7 @@
    ============================================================ */
 import { Raster } from '../engine/raster.js';
 import { PostFX } from '../engine/postfx.js';
-import { Input, PAD_ACTIONS, BINDABLE } from '../engine/input.js';
+import { Input, PAD_ACTIONS, BINDABLE, normaliseBinds } from '../engine/input.js';
 import { Sound } from '../engine/audio.js';
 import { buildTextures } from '../engine/texture.js';
 import { mat, mul, setPosYaw, setRotX, setRotY, setTranslate, invertRigid, clamp, angleTowards } from '../engine/mathx.js';
@@ -441,9 +441,13 @@ export class Game {
       name: i.padId, mapping: i.padMapping, count: i.padButtonCount,
       trusted: i.padTrusted, custom: i.bindsAreUser,
       down: i.padDownIndices.slice(),
+      known: i.knownAs || '',
       rows: BINDABLE.map((id) => ({
         id, label: PAD_ACTIONS[id].label,
         buttons: i.bindsFor(id),
+        // what else that same button does, so sharing one is visible
+        shared: i.bindsFor(id).flatMap((b) => i.actionsOn(b))
+          .filter((a) => a !== id).map((a) => PAD_ACTIONS[a].label),
         capturing: i.capturing === id,
       })),
     };
@@ -520,7 +524,8 @@ export class Game {
       if (!raw) return;
       const b = JSON.parse(raw);
       if (b && typeof b === 'object' && Object.keys(b).length) {
-        this.input.binds = b;
+        // Saves from before a button could carry more than one job.
+        this.input.binds = normaliseBinds(b);
         this.input.bindsAreUser = true;
       }
     } catch (err) { /* a corrupt entry just means the defaults */ }
@@ -622,7 +627,11 @@ export class Game {
     }
     // Throwing the bolt is the one thing you may need to do without lining
     // up a crosshair first, so it gets its own key anywhere in the room.
-    if (i.hit('KeyF') && this.player.z > D + 0.05 && !this.storage.broken) {
+    /* The from-anywhere bolt. If the reticle is already on the door then
+       interacting with it does the same job, and on a pad where one button
+       carries both that would toggle it twice and leave it as it was. */
+    const onDoor = this.hover && this.hover.kind === 'storage';
+    if (i.hit('KeyF') && !onDoor && this.player.z > D + 0.05 && !this.storage.broken) {
       if (this.storage.locked) this.toggleStorage(); else this.lockStorage();
     }
 

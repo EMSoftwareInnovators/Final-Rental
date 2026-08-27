@@ -154,6 +154,122 @@ await session('DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c)', '
    somewhere else. This is a pad the player has to be able to fix, and
    fix without any working button to fix it with.
    ============================================================ */
+/* ============================================================
+   One button, several jobs -- and the layouts we know by name.
+   ============================================================ */
+{
+  const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
+  page.on('pageerror', (e) => errors.push(`[binds] ${e.message}`));
+  await page.addInitScript(padScript('Xbox Wireless Controller', '', 16));
+  // Stand in for the machine this actually happens on.
+  await page.addInitScript(() => {
+    try { Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' }); }
+    catch (e) { /* already fixed */ }
+  });
+  await page.goto('http://localhost:8080/', { waitUntil: 'load' });
+  await page.waitForTimeout(1800);
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  await ev(() => {
+    window.__game.sound.muted = true;
+    window.__game.input._padIndex = 0;
+    try { localStorage.removeItem('finalrental.padbinds'); } catch (e) { /* fine */ }
+  });
+
+  console.log('\n  -- one button, several jobs --');
+
+  const multi = await ev(() => {
+    const I = window.__game.input;
+    I.bindsAreUser = false;
+    I.binds = window.__input.defaultBinds();
+    // start them apart, then put the bolt on the same button as interact
+    I.bindButton(5, 'bolt');
+    const before = { confirm: I.bindsFor('confirm'), bolt: I.bindsFor('bolt') };
+    I.bindButton(before.confirm[0], 'bolt');
+    const after = { confirm: I.bindsFor('confirm'), bolt: I.bindsFor('bolt'),
+      on: I.actionsOn(before.confirm[0]) };
+    // and pressing it again on that row takes it back off
+    I.bindButton(before.confirm[0], 'bolt');
+    const toggled = { bolt: I.bindsFor('bolt'), on: I.actionsOn(before.confirm[0]) };
+    return { before, after, toggled };
+  });
+  check('interact and the bolt can share one button',
+    multi.after.on.includes('confirm') && multi.after.on.includes('bolt')
+    && multi.after.confirm.length > 0,
+    `button ${multi.before.confirm[0]} does ${multi.after.on.join(' + ')}`);
+  check('and pressing the same button again takes that job back off',
+    !multi.toggled.on.includes('bolt'), multi.toggled.on.join(' + '));
+
+  const keys = await ev(() => {
+    const I = window.__game.input;
+    const A = window.__input.PAD_ACTIONS;
+    const btn = I.bindsFor('confirm')[0];
+    I.bindButton(btn, 'bolt');
+    const on = I.actionsOn(btn);
+    const sends = new Set();
+    on.forEach((a) => A[a].keys.forEach((k) => sends.add(k)));
+    return { btn, on, sends: [...sends] };
+  });
+  check('and one press sends the keys for everything on it',
+    keys.sends.includes('KeyE') && keys.sends.includes('KeyF'),
+    `button ${keys.btn} sends ${keys.sends.filter((k) => /^Key|Enter|Escape|Tab|Shift/.test(k)).join(' ')}`);
+
+  const mac = await ev(() => {
+    const K = window.__input.knownLayout;
+    const onMac = K('Xbox Wireless Controller', 'MacIntel');
+    const onPc = K('Xbox Wireless Controller', 'Win32');
+    const other = K('Some Unknown Pad', 'MacIntel');
+    const b = onMac ? onMac.binds : {};
+    return {
+      known: !!onMac, notOnPc: !onPc, notOther: !other,
+      a: b['1'] || [], bBtn: b['2'] || [], x: b['3'] || [], y: b['5'] || [], r3: b['11'] || [],
+    };
+  });
+  check('an Xbox pad on a Mac is recognised even though the browser will not describe it',
+    mac.known && mac.notOnPc && mac.notOther);
+  check('and its buttons are where they actually are on that machine',
+    mac.a.includes('confirm') && mac.bBtn.includes('back') && mac.x.includes('drop')
+    && mac.y.includes('notes') && mac.r3.length > 0,
+    `A=1 ${mac.a.join('+')} · B=2 ${mac.bBtn.join('+')} · X=3 ${mac.x.join('+')} · Y=5 ${mac.y.join('+')} · R3=11 ${mac.r3.join('+')}`);
+  check('with the bolt on A, the way E throws it on the keyboard',
+    mac.a.includes('bolt'), mac.a.join(' + '));
+
+  // and it is actually applied when such a pad turns up
+  const applied = await ev(async () => {
+    const g = window.__game;
+    g.input.bindsAreUser = false;
+    g.input._laidOutFor = null;
+    await new Promise((r) => requestAnimationFrame(r));
+    await new Promise((r) => requestAnimationFrame(r));
+    return { known: g.input.knownAs, trusted: g.input.padTrusted,
+      confirm: g.input.bindsFor('confirm') };
+  });
+  check('so a Mac Xbox pad works the moment it is plugged in',
+    applied.known === 'xbox-macos' && !applied.trusted && applied.confirm.includes(1),
+    `recognised as ${applied.known || 'nothing'}, select on ${applied.confirm.join(',')}`);
+
+  /* ---- the right stick ---- */
+  const look = await ev(() => {
+    const g = window.__game;
+    const I = g.input;
+    const out = {};
+    for (const [name, v] of [['half', 0.5], ['full', 1.0]]) {
+      window.__pad.axes[2] = v;
+      I._pollPad();
+      out[name] = +I.lookX.toFixed(3);
+    }
+    window.__pad.axes[2] = 0;
+    I._pollPad();
+    out.sens = I.padSensitivity;
+    return out;
+  });
+  check('a half-pushed look stick is worth something',
+    look.half > 0.15, `half deflection gives ${look.half}`);
+  check('and the stick turns you at a usable rate',
+    look.sens >= 3.5, `${look.sens} radians a second at full lock`);
+
+  await page.close();
+}
+
 async function oddPad() {
   const id = 'Generic USB Gamepad (Vendor: 0079 Product: 0006)';
   const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
@@ -255,9 +371,10 @@ async function oddPad() {
   const saved = await ev(() => {
     try { return JSON.parse(localStorage.getItem('finalrental.padbinds') || 'null'); } catch (e) { return null; }
   });
+  // A button holds a list of jobs now, not a single one.
   check('odd pad: the binding is written down for next time',
-    saved && saved['11'] === 'confirm' && saved['12'] === 'back',
-    saved ? JSON.stringify(saved).slice(0, 60) : 'nothing saved');
+    saved && (saved['11'] || []).includes('confirm') && (saved['12'] || []).includes('back'),
+    saved ? JSON.stringify(saved).slice(0, 70) : 'nothing saved');
 
   await page.close();
 }

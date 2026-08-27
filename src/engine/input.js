@@ -28,7 +28,10 @@ export const PAD_ACTIONS = {
   drop: { label: 'Put it down', keys: ['PadX', 'KeyG'], def: [2] },
   notes: { label: 'Notepad', keys: ['PadY', 'Tab'], def: [3] },
   run: { label: 'Hurry', keys: ['PadLB', 'ShiftLeft'], def: [4, 10] },
-  bolt: { label: 'Throw the bolt', keys: ['PadRB', 'KeyF'], def: [5] },
+  /* On the same button as interact by default, because that is how the
+     keyboard behaves: E throws the bolt when you are looking at the door.
+     RB keeps the from-anywhere version. */
+  bolt: { label: 'Throw the bolt', keys: ['PadRB', 'KeyF'], def: [0, 5] },
   pause: { label: 'Pause', keys: ['PadStart', 'Escape'], def: [9] },
   up: { label: 'Up', keys: ['PadUp', 'ArrowUp'], def: [12] },
   down: { label: 'Down', keys: ['PadDown', 'ArrowDown'], def: [13] },
@@ -39,16 +42,70 @@ export const PAD_ACTIONS = {
 /** The actions worth putting in front of a player, in a sensible order. */
 export const BINDABLE = ['confirm', 'back', 'drop', 'notes', 'run', 'bolt', 'pause'];
 
-/** button index -> action id, as the standard mapping lays it out. */
+/**
+ * button index -> the actions on it, as the standard mapping lays it out.
+ *
+ * A list rather than a single id: one button can carry several jobs, the
+ * way E on the keyboard both interacts and throws the bolt. An action still
+ * lives on one button at a time, but a button can hold as many as you like.
+ */
 export function defaultBinds() {
   const out = {};
   for (const id of Object.keys(PAD_ACTIONS)) {
-    for (const i of PAD_ACTIONS[id].def) out[i] = id;
+    for (const i of PAD_ACTIONS[id].def) (out[i] = out[i] || []).push(id);
+  }
+  return out;
+}
+
+/** Old saves stored one action per button. Bring those forward. */
+export function normaliseBinds(b) {
+  const out = {};
+  for (const k of Object.keys(b || {})) {
+    const v = b[k];
+    const list = Array.isArray(v) ? v.slice() : (v ? [v] : []);
+    if (list.length) out[k] = list;
   }
   return out;
 }
 
 const DEAD = 0.22;
+
+/**
+ * Layouts we know about that the browser will not describe.
+ *
+ * Chrome and Safari on macOS report an Xbox pad with a non-standard mapping
+ * and shuffled indices: A lands on 1, B on 2, X on 3, Y on 5, and the right
+ * stick click on 11. Rather than leaving a first-party controller unbound
+ * until the player sets it up by hand, recognise it and lay the buttons out
+ * properly -- while still letting them change any of it.
+ */
+const KNOWN_LAYOUTS = [
+  {
+    id: 'xbox-macos',
+    match: (id) => /xbox|045e|microsoft/i.test(id),
+    mac: true,
+    binds: {
+      1: ['confirm', 'bolt'],
+      2: ['back'],
+      3: ['drop'],
+      5: ['notes'],
+      6: ['run'],
+      8: ['pause'],
+      11: ['run'],
+      12: ['up'], 13: ['down'], 14: ['left'], 15: ['right'],
+    },
+  },
+];
+
+/** The layout for a pad the browser will not vouch for, or null. */
+export function knownLayout(id, platform) {
+  const onMac = /mac|iphone|ipad/i.test(String(platform || ''));
+  for (const L of KNOWN_LAYOUTS) {
+    if (L.mac && !onMac) continue;
+    if (L.match(String(id || ''))) return { id: L.id, binds: normaliseBinds(L.binds) };
+  }
+  return null;
+}
 
 /* Menu navigation off the stick. A stick is not a key, so it gets an
    explicit edge: push past NAV_ON to fire, fall back under NAV_OFF before
@@ -84,7 +141,7 @@ export class Input {
     this.mousePressed = [false, false, false];
     this.locked = false;
     this.sensitivity = 0.0022;
-    this.padSensitivity = 2.6;          // radians per second at full deflection
+    this.padSensitivity = 4.2;          // radians per second at full deflection
     this.invertY = false;
     this.enabled = true;
 
@@ -206,7 +263,12 @@ export class Input {
     if (this._laidOutFor !== pad.id) {
       this._laidOutFor = pad.id;
       this.padTrusted = pad.mapping === 'standard';
-      if (!this.bindsAreUser) this.binds = this.padTrusted ? defaultBinds() : {};
+      const known = this.padTrusted ? null
+        : knownLayout(pad.id, typeof navigator !== 'undefined' ? navigator.platform : '');
+      this.knownAs = known ? known.id : '';
+      if (!this.bindsAreUser) {
+        this.binds = this.padTrusted ? defaultBinds() : (known ? known.binds : {});
+      }
       this._padDown.clear();
     }
 
@@ -219,8 +281,19 @@ export class Input {
       return Math.sign(v) * t * t;              // squared, for fine control near centre
     };
     const rawX = ax[0] || 0, rawY = ax[1] || 0;
+    /* Movement wants a squared curve -- it buys fine control near the
+       centre, and you are only ever walking. Looking does not: squaring it
+       meant half a stick gave a quarter of the speed, and turning round took
+       an age unless you pinned it to the edge. The look axes get a much
+       gentler shape. */
+    const lookCurve = (v) => {
+      const a = Math.abs(v);
+      if (a < DEAD) return 0;
+      const t = (a - DEAD) / (1 - DEAD);
+      return Math.sign(v) * t * (0.35 + 0.65 * t);
+    };
     const lx = curve(rawX), ly = curve(rawY);
-    const rx = curve(ax[2] || 0), ry = curve(ax[3] || 0);
+    const rx = lookCurve(ax[2] || 0), ry = lookCurve(ax[3] || 0);
     if (lx || ly) { this.moveX = lx; this.moveZ = -ly; used = true; }
     if (rx || ry) { this.lookX = rx; this.lookY = ry; used = true; }
     // The left stick drives menus as well as the player. Feeding it in as
@@ -236,11 +309,15 @@ export class Input {
       const b = btns[i];
       const on = typeof b === 'object' ? (b.pressed || b.value > 0.5) : b > 0.5;
       if (on) live.push(i);
-      const action = this.binds[i];
-      // Every button announces its own index whether it is bound or not, so
-      // the controller screen can show a pad the standard mapping does not
-      // describe -- and so an unbound button can still work a menu.
-      const keys = action ? PAD_ACTIONS[action].keys.concat('Pad#' + i) : ['Pad#' + i, 'PadAny'];
+      const actions = this.binds[i] || [];
+      /* Every button announces its own index whether it is bound or not, so
+         the controller screen can show a pad the standard mapping does not
+         describe -- and so an unbound button can still work a menu. A button
+         carrying several actions sends the keys for all of them. */
+      let keys = ['Pad#' + i];
+      if (actions.length) {
+        for (const a of actions) if (PAD_ACTIONS[a]) keys = keys.concat(PAD_ACTIONS[a].keys);
+      } else keys.push('PadAny');
       const id = 'Btn' + i;
       if (on) {
         used = true;
@@ -318,24 +395,42 @@ export class Input {
     return any;
   }
 
-  /** Bind one button index to one action, taking it off whatever had it. */
+  /**
+   * Put an action on a button.
+   *
+   * The action comes off whatever button had it, and goes onto this one
+   * alongside whatever that button already does. Pressing the button a
+   * second time on the same row takes it off again, which is how you clear
+   * one without a separate control for it.
+   */
   bindButton(index, action) {
     if (!PAD_ACTIONS[action]) return;
+    const had = (this.binds[index] || []).includes(action);
     for (const k of Object.keys(this.binds)) {
-      if (this.binds[k] === action) delete this.binds[k];
+      const list = this.binds[k].filter((a) => a !== action);
+      if (list.length) this.binds[k] = list; else delete this.binds[k];
     }
-    this.binds[index] = action;
+    if (!had) (this.binds[index] = this.binds[index] || []).push(action);
     this.bindsAreUser = true;
-    this._padDown.clear();
+    /* The button that did this is still held. Leaving it in the held set
+       means it has to be released before it counts as a press again --
+       clearing it here made the very next frame see a fresh press, which
+       re-armed the capture and toggled the binding straight back off. */
   }
 
   /** The indices currently standing for an action, for the settings screen. */
   bindsFor(action) {
-    return Object.keys(this.binds).filter((k) => this.binds[k] === action).map(Number).sort((a, b) => a - b);
+    return Object.keys(this.binds)
+      .filter((k) => this.binds[k].includes(action))
+      .map(Number).sort((a, b) => a - b);
   }
 
-  /** The next button pressed is bound to `action` rather than acting. */
-  capture(action) { this.capturing = action; this._padDown.clear(); }
+  /** Everything one button does, for the settings screen. */
+  actionsOn(index) { return (this.binds[index] || []).slice(); }
+
+  /** The next button PRESSED is bound to `action` rather than acting.
+      A button already held when you arrive on the row does not count. */
+  capture(action) { this.capturing = action; }
   cancelCapture() { this.capturing = null; }
 
   /** Back to whatever this pad's layout deserves: the standard table if the
