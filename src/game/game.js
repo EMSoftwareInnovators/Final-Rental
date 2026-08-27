@@ -33,6 +33,9 @@ const ST = {
 const RES = [[256, 192, '256x192'], [320, 240, '320x240'], [400, 300, '400x300']];
 
 /** Arm's length of a shelf run, and how long squaring a box away takes. */
+/** The three who cost you minutes, and hold the shift clock while they do. */
+const GRINDERS = { REEKER: true, SMOKER: true, SOVEREIGN: true };
+
 const SHELVE_REACH = 1.05;
 const SHELVE_TIME = 1.5;
 
@@ -442,6 +445,11 @@ export class Game {
       trusted: i.padTrusted, custom: i.bindsAreUser,
       down: i.padDownIndices.slice(),
       known: i.knownAs || '',
+      /* Every axis, live. A pad we do not have a layout for keeps its
+         d-pad somewhere unguessable -- on a hat, on a pair of axes, on
+         four buttons -- and the only reliable way to find it is to watch
+         the numbers move while somebody presses it. */
+      axes: i.padAxes.map((v) => Math.round(v * 100) / 100),
       rows: BINDABLE.map((id) => ({
         id, label: PAD_ACTIONS[id].label,
         buttons: i.bindsFor(id),
@@ -643,7 +651,13 @@ export class Game {
 
     // ---- clocks ----
     this.sim += dt;
-    const holdClock = killerActive(this.killer) || !this.officerDone;
+    /* The clock also stops while one of the three who will not be told is
+       still in the building. They cost minutes, and charging those minutes
+       to the shift made the right play "ignore him and eat the smell" --
+       which is not a decision, it is a shrug. Getting rid of him is now the
+       player's job, on the player's time, and the shift resumes when the
+       door shuts behind him. */
+    const holdClock = killerActive(this.killer) || !this.officerDone || this.grinderPresent();
     if (!holdClock) this.elapsed += dt;
     this.updatePolice(dt);
 
@@ -858,9 +872,13 @@ export class Game {
   updateDoor(dt) {
     const d = this.door;
     d.holdOpen = Math.max(0, d.holdOpen - dt);
-    // A thrown deadbolt is a thrown deadbolt: the leaves stay shut even if
-    // something was mid-swing when you turned it.
-    d.target = (d.holdOpen > 0 && !d.locked) ? 1.25 : 0;
+    if (d.holdOpen <= 0) d.fromInside = false;
+    /* A thrown deadbolt stops people getting IN. It does not stop anybody
+       already inside working the thumb latch and walking out -- and the
+       leaves have to swing when they do, or the shop empties at closing
+       time with everybody walking through a shut door. The rule the doors
+       are drawn by and the rule people are moved by are the same rule. */
+    d.target = (d.holdOpen > 0 && (!d.locked || d.fromInside)) ? 1.25 : 0;
     const k = d.target > d.swing ? 7 : 3.2;
     d.swing += (d.target - d.swing) * Math.min(1, dt * k);
 
@@ -1006,6 +1024,23 @@ export class Game {
     if (atWindow) return '';
     if (c.queueIndex > 0) return 'waiting in line';
     return 'not at the counter';
+  }
+
+  /**
+   * Is one of the ones who will not be told still in here?
+   *
+   * The arguer, the smell and the man at the television. Somebody on their
+   * way out through the door does not count -- the clock starts again the
+   * moment the last of them is leaving, not when they finish crossing the
+   * pavement.
+   */
+  grinderPresent() {
+    for (const c of this.customers) {
+      if (!GRINDERS[c.special] || c.hidden) continue;
+      if (c.state === CS.LEAVING || c.state === CS.GONE) continue;
+      return true;
+    }
+    return false;
   }
 
   /** Within arm's length of the run itself, not merely pointed at it. */
@@ -1792,6 +1827,7 @@ export class Game {
     e.leaving = false;
     e.rushing = false;
     this.door.holdOpen = 2.4;
+    this.door.fromInside = true;
     this.sound.doorChime();
     this.sound.siren();
     this.player.frozen = true;
@@ -1870,6 +1906,7 @@ export class Game {
         updateAnim(e.anim, dt, e.moveSpeed, e.app, { keep: true });
         walk(ex - Math.sin(e.yaw) * 0.55, ez - Math.cos(e.yaw) * 0.55, 1.5);
         this.door.holdOpen = 1.2;
+        this.door.fromInside = true;
         if (e.z < -1.9 || A.t > 14) {
           A.phase = 'DONE';
           e.hidden = true; d.hidden = true;
@@ -2435,7 +2472,7 @@ export class Game {
           ? `The bolt's thrown. You threw it.`
           : `Not until midnight. The store's yours till then.`, '');
       },
-      openDoor: () => g.openDoorFor(),
+      openDoor: (who) => g.openDoorFor(who),
       knock: (c) => { g.sound.knock(3); g.ui.toast(`Someone is knocking.`, ''); },
       lockedOut: (c) => {
         /* Turning somebody away costs you -- unless it is past midnight and
@@ -2452,6 +2489,7 @@ export class Game {
 
       /* --- queue --- */
       claimCounterSpot: (c) => g.claimCounterSpot(c),
+      lineTail: (c) => g.lineTail(c),
       releaseCounterSpot: (c) => g.releaseCounterSpot(c),
       despawn: (c) => g.releaseCounterSpot(c),
 
@@ -2481,6 +2519,18 @@ export class Game {
       stenchActive: () => g.customers.some((c) => !c.hidden && c.nuisance
         && (c.nuisance === 'stench' || c.nuisance === 'skunk')
         && c.state !== CS.LEAVING && c.state !== CS.GONE),
+      /** He is being worn down, and the shop can see it. */
+      wearingDown: (c, gone) => {
+        const step = Math.floor(gone * 5);
+        if (c._wearStep === step) return;
+        c._wearStep = step;
+        if (step <= 0) return;
+        g.sound.blip(voicePitchOf(c.app), c.app.voice.rough);
+        g.ui.toast(step >= 4
+          ? `${c.name} is going. Actually going.`
+          : `${c.name} is running out of reasons to stay.`, '');
+      },
+
       /** Somebody decides they will wait until the air clears. */
       stenchHoldsOff: (c) => {
         g.ui.toast(g.rng.pick([
@@ -2489,6 +2539,9 @@ export class Game {
           `${c.name} would like to pay, and is not walking through that to do it.`,
         ]), 'bad');
       },
+      /** Where the returns bin is, for somebody walking a stray tape over. */
+      binSpot: () => ({ x: (PROPS.bin.x0 + PROPS.bin.x1) / 2, z: PROPS.bin.z0 - 0.85 }),
+
       /** The one at the television has picked something up again. */
       stonerTook: (c) => {
         g.ui.toast(`${c.name} takes something off the shelf and wanders off with it.`, '');
@@ -2752,7 +2805,27 @@ export class Game {
     return this._ctx;
   }
 
-  openDoorFor() { this.door.holdOpen = Math.max(this.door.holdOpen, 1.6); this.sound.doorChime(0); }
+  /** Somebody works the door. `who` decides whether the bolt is in their way. */
+  openDoorFor(who) {
+    this.door.holdOpen = Math.max(this.door.holdOpen, 1.6);
+    if (!who || who.z > 0.15 || who.leaving || who.exited) this.door.fromInside = true;
+    this.sound.doorChime(0);
+  }
+
+  /**
+   * The back of the line, for somebody still walking to it.
+   *
+   * An empty counter means walk to the window. Otherwise it is one place
+   * behind whoever is currently last -- and it moves while you are walking,
+   * which is why the walker re-aims at it rather than setting off once.
+   */
+  lineTail(c) {
+    const others = this.queue.filter((q) => q !== c);
+    if (!others.length) return SPOTS.service;
+    const i = others.length;                    // the place they would take
+    const q = SPOTS.queue[Math.min(i - 1, SPOTS.queue.length - 1)];
+    return { x: q.x - Math.max(0, i - SPOTS.queue.length) * 0.9, z: q.z };
+  }
 
   claimCounterSpot(c) {
     if (!this.queue.includes(c)) this.queue.push(c);

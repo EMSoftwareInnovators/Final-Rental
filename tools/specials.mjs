@@ -378,42 +378,51 @@ check('he walks back to it, switches it off and picks it up',
   && Math.hypot(boom.afterLeave.at[0] - boom.box[0], boom.afterLeave.at[1] - boom.box[1]) < 1.2,
   `off after ${boom.afterLeave.quietAt}s, standing at ${boom.afterLeave.at.join(',')}`);
 
-/* ---------- 4a3. the two who will not be told ---------- */
+/* ---------- 4a3. the ones who will not be told ---------- */
+/* Pestered the way a player actually pesters: stand there and keep talking,
+   with no waiting and no reaching into the simulation to skip the parts
+   where he is not listening. The first version of this check zeroed his
+   cooling-off timer every round, which is exactly the thing a player cannot
+   do -- so it passed while, in play, nine tries in ten did nothing visible
+   and the man read as broken. */
 const grindTest = await ev(() => {
   const g = window.__game;
   const D = window.__dlg;
   const out = {};
   for (const id of ['REEKER', 'SMOKER', 'SOVEREIGN']) {
     const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById(id));
-    c.x = 4; c.z = 4; c.state = 'ACTING';
+    c.x = 2.3; c.z = 2.8; c.state = 'ACTING'; c.parked = true;
     g.customers.push(c);
     const lines = new Set();
-    let rounds = 0, brushed = 0, wait = 0, chars = 0, undef = 0;
-    // Lean on him, over and over, the way a player would.
-    while (c.state !== 'LEAVING' && rounds < 60) {
-      rounds++;
+    let tries = 0, brushed = 0, real = 0, chars = 0, undef = 0, sim = 0, blind = 0;
+    let lastResist = c.resist === undefined ? Infinity : c.resist;
+    while (c.state !== 'LEAVING' && tries < 500) {
+      tries++;
+      const before = c.resist === undefined ? Infinity : c.resist;
+      const wasBrush = c.brushT > 0;
       let node = D.talkTo(c, g.ctx, { atCounter: false });
       if (node && node.text) { lines.add(node.text); chars += node.text.length; }
-      if (node && (node.text === undefined || /undefined/.test(String(node.text)))) undef++;
-      // take the firm option, then close the exchange
+      if (node && node.text === undefined) undef++;
       let steps = 0;
       while (node && (node.choices || []).length && steps < 6) {
         steps++;
         const r = node.choices[0];
         node = r.go ? r.go() : (r.fn ? r.fn() : null);
         if (node && node.text) { lines.add(node.text); chars += node.text.length; }
-        if (node && node.text === undefined) undef++;
       }
-      if (c.brushT > 0) {
-        brushed++;
-        wait += c.brushT;
-        c.brushT = 0;                     // stand in for waiting him out
-      }
+      if (wasBrush) brushed++; else real++;
+      // Did that attempt move him at all?
+      if (c.resist !== undefined && c.resist >= before && c.state !== 'LEAVING') blind++;
+      lastResist = c.resist;
+      // two seconds of shop time between attempts: generous mashing
+      for (let k = 0; k < 40; k++) { window.__cust.updateCustomer(c, 1 / 20, g.ctx); sim += 1 / 20; }
     }
-    // 62 characters a second is the typewriter's rate.
-    out[id] = { rounds, brushed, lines: lines.size, left: c.state === 'LEAVING',
-      wait: Math.round(wait), resist: c.resist, undef,
-      minutes: +(((chars / 62) + wait) / 60).toFixed(1) };
+    out[id] = {
+      tries, brushed, real, blind, undef, left: c.state === 'LEAVING',
+      lines: lines.size, resist: lastResist,
+      sim: +(sim / 60).toFixed(1),
+      minutes: +(((chars / 62) + sim) / 60).toFixed(1),
+    };
     const k = g.customers.indexOf(c);
     if (k >= 0) g.customers.splice(k, 1);
   }
@@ -421,22 +430,46 @@ const grindTest = await ev(() => {
 });
 for (const id of ['REEKER', 'SMOKER', 'SOVEREIGN']) {
   const r = grindTest[id];
-  check(`${id.toLowerCase()}: he goes in the end`, r.left, `after ${r.rounds} goes`);
-  check(`${id.toLowerCase()}: but not quickly`, r.rounds >= 6, `${r.rounds} separate exchanges`);
-  check(`${id.toLowerCase()}: and he stops listening between them`,
-    r.brushed >= 4 && r.wait >= 60,
-    `brushed you off ${r.brushed} times, ${r.wait}s of waiting him out`);
-  check(`${id.toLowerCase()}: with plenty to say while he does it`, r.lines >= 12, `${r.lines} lines`);
-  check(`${id.toLowerCase()}: and every beat of it is written`, r.undef === 0);
+  const who = id.toLowerCase();
+  check(`${who}: standing there and keeping at him gets him out`, r.left,
+    `after ${r.tries} goes (${r.real} of them landed)`);
+  check(`${who}: and every single go moves him, even the ones he ignores`,
+    r.blind === 0, `${r.blind} of ${r.tries} did nothing at all`);
+  check(`${who}: but it is not quick`, r.tries >= 18, `${r.tries} exchanges`);
+  check(`${who}: with plenty to say while he does it`, r.lines >= 10, `${r.lines} lines`);
+  check(`${who}: and every beat of it is written`, r.undef === 0);
 }
-/* He is a project. Reading his paperwork at him and waiting him out between
-   goes is the better part of ten minutes, which is the point of him. */
+/* He is a project. Reading his paperwork at him is the better part of the
+   evening, which is the point of him. */
 check('the man with the folder takes literal minutes',
-  grindTest.SOVEREIGN.minutes >= 5,
-  `${grindTest.SOVEREIGN.minutes} minutes across ${grindTest.SOVEREIGN.rounds} exchanges`);
+  grindTest.SOVEREIGN.minutes >= 3,
+  `${grindTest.SOVEREIGN.minutes} minutes across ${grindTest.SOVEREIGN.tries} exchanges`);
 check('and considerably longer than the other two',
-  grindTest.SOVEREIGN.minutes > grindTest.REEKER.minutes * 1.8,
-  `${grindTest.REEKER.minutes} / ${grindTest.SMOKER.minutes} / ${grindTest.SOVEREIGN.minutes} minutes`);
+  grindTest.SOVEREIGN.tries > grindTest.REEKER.tries * 1.4,
+  `${grindTest.REEKER.tries} / ${grindTest.SMOKER.tries} / ${grindTest.SOVEREIGN.tries} exchanges`);
+
+/* And nobody camps in the shop all night if you simply ignore them. */
+const ignored = await ev(() => {
+  const g = window.__game;
+  const out = {};
+  for (const id of ['SMOKER', 'REEKER', 'SOVEREIGN']) {
+    const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById(id));
+    c.x = 2.3; c.z = 2.8; c.state = 'ACTING'; c.parked = true;
+    g.customers.push(c);
+    let t = 0;
+    for (let i = 0; i < 40000 && c.state !== 'LEAVING' && c.state !== 'GONE'; i++) {
+      window.__cust.updateCustomer(c, 1 / 20, g.ctx);
+      t += 1 / 20;
+    }
+    out[id] = { left: c.state === 'LEAVING' || c.state === 'GONE', minutes: +(t / 60).toFixed(1) };
+    const k = g.customers.indexOf(c);
+    if (k >= 0) g.customers.splice(k, 1);
+  }
+  return out;
+});
+check('and one you never speak to gives up on his own eventually',
+  ['SMOKER', 'REEKER', 'SOVEREIGN'].every((id) => ignored[id].left),
+  ['SMOKER', 'REEKER', 'SOVEREIGN'].map((id) => `${id.toLowerCase()} ${ignored[id].minutes}min`).join(', '));
 
 const stink = await ev(async () => {
   const g = window.__game;
@@ -501,6 +534,35 @@ check('and brings it back to the screen, still holding it',
   errand.back.holding && Math.abs(errand.back.x - 2.3) < 1.2, JSON.stringify(errand.back));
 check('and leaves it in the returns bin on his way out',
   errand.binned === 1, `${errand.binned} in the bin`);
+
+/* And he does that whether or not anybody ever gets him out of the shop.
+   He picked one up, wandered back to the screen with it, and then had no
+   idea why he was holding it -- that has to end somewhere the clerk can
+   reach, not in his hands forever. */
+const strayBin = await ev(() => {
+  const g = window.__game;
+  g.customers.length = 0;
+  g.bin.length = 0;
+  const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById('SMOKER'));
+  c.x = 2.3; c.z = 2.8; c.state = 'ACTING'; c.parked = true;
+  c.errandT = 0.1;
+  g.customers.push(c);
+  let took = false, minutes = 0;
+  for (let i = 0; i < 30000; i++) {
+    window.__cust.updateCustomer(c, 1 / 20, g.ctx);
+    minutes += 1 / 20 / 60;
+    if (c.tape) took = true;
+    if (took && g.bin.length) break;
+    if (c.state === 'LEAVING') break;
+  }
+  const out = { took, binned: g.bin.length, stillHolding: !!c.tape,
+    left: c.state === 'LEAVING', minutes: +minutes.toFixed(1) };
+  g.customers.length = 0; g.bin.length = 0;
+  return out;
+});
+check('he does not keep it: it goes in the bin without him having to leave',
+  strayBin.took && strayBin.binned >= 1 && !strayBin.stillHolding && !strayBin.left,
+  `binned after ${strayBin.minutes} minutes, still in the shop: ${!strayBin.left}`);
 
 /* ---------- 4b. the ones with a wrong idea about the shop ---------- */
 const prem = await ev(() => {

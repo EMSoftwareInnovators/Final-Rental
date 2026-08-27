@@ -270,6 +270,131 @@ await session('DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c)', '
   await page.close();
 }
 
+/* ============================================================
+   The phantom d-pad, and what a button we have never seen does.
+   ============================================================ */
+{
+  const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
+  page.on('pageerror', (e) => errors.push(`[hat] ${e.message}`));
+  // Ten axes, none of them a hat -- axis 9 sits at zero like all the others.
+  await page.addInitScript(`
+    const st = { buttons: new Array(17).fill(0), axes: new Array(10).fill(0),
+      id: 'Xbox Wireless Controller' };
+    window.__pad = st;
+    navigator.getGamepads = () => [{
+      index: 0, connected: true, id: st.id, mapping: '',
+      axes: st.axes.slice(),
+      buttons: st.buttons.map((v) => ({ pressed: v > 0.5, value: v })),
+    }];
+  `);
+  await page.goto('http://localhost:8080/', { waitUntil: 'load' });
+  await page.waitForTimeout(1800);
+  const ev = (fn, arg) => page.evaluate(fn, arg);
+  const wait = (ms) => page.waitForTimeout(ms);
+  await ev(() => { window.__game.sound.muted = true; window.__game.input._padIndex = 0; });
+
+  console.log('\n  -- a pad with ten axes and no hat --');
+
+  const phantom = await ev(async () => {
+    const g = window.__game;
+    const seen = [];
+    const before = g.menuSel;
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => requestAnimationFrame(r));
+      ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].forEach((k) => {
+        if (g.input.pressed.has(k)) seen.push(k);
+      });
+    }
+    return { seen: [...new Set(seen)], moved: g.menuSel !== before, sel: g.menuSel };
+  });
+  check('an axis that is not a hat does not press the d-pad',
+    phantom.seen.length === 0 && !phantom.moved,
+    phantom.seen.join(' ') || 'nothing pressed, cursor still on ' + phantom.sel);
+
+  // Now a real hat: neutral outside [-1,1], and up is -1.
+  const realHat = await ev(async () => {
+    const g = window.__game;
+    const I = g.input;
+    // Presses are cleared at the end of every frame, so watch from inside it.
+    const seen = new Set();
+    const realEnd = I.endFrame.bind(I);
+    I.endFrame = () => { I.pressed.forEach((k) => seen.add(k)); realEnd(); };
+    I._hatSeenNeutral = false;
+    window.__pad.axes[9] = 3.2857;              // the usual resting value
+    for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r));
+    const idle = seen.has('ArrowUp') || seen.has('ArrowDown');
+    seen.clear();
+    window.__pad.axes[9] = -1;                  // up
+    for (let i = 0; i < 6; i++) await new Promise((r) => requestAnimationFrame(r));
+    const up = seen.has('ArrowUp');
+    window.__pad.axes[9] = 3.2857;
+    I.endFrame = realEnd;
+    return { idle, up };
+  });
+  check('but a real hat still works, once it has shown itself to be one',
+    !realHat.idle && realHat.up, `idle pressed something: ${realHat.idle}`);
+
+  /* ---- nothing is bound to a button nobody has checked ---- */
+  const unknown = await ev(() => {
+    const I = window.__game.input;
+    const K = window.__input.knownLayout('Xbox Wireless Controller', 'MacIntel');
+    const b = K ? K.binds : {};
+    const listed = Object.keys(b).map(Number).sort((x, y) => x - y);
+    return { listed, four: b['4'] || [], six: b['6'] || [], twelve: b['12'] || [],
+      notes: Object.keys(b).filter((k) => (b[k] || []).includes('notes')).map(Number) };
+  });
+  check('the layout only claims the buttons somebody actually read off the pad',
+    unknown.listed.join(',') === '1,2,3,5,11', unknown.listed.join(','));
+  check('so a shoulder button does nothing until it is bound',
+    unknown.four.length === 0 && unknown.six.length === 0,
+    `4: ${unknown.four.join('+') || 'nothing'} · 6: ${unknown.six.join('+') || 'nothing'}`);
+  check('and only one button opens the notepad', unknown.notes.length === 1,
+    `notepad on ${unknown.notes.join(',')}`);
+
+  /* ---- sprint on the trigger ---- */
+  const sprint = await ev(() => {
+    const A = window.__input.PAD_ACTIONS;
+    const d = window.__input.defaultBinds();
+    const on = (i) => (d[i] || []).join('+');
+    return { run: A.run.def, keys: A.run.keys, four: on(4), six: on(6), ten: on(10) };
+  });
+  check('sprint is on the left trigger, not a stick click',
+    sprint.run.length === 1 && sprint.run[0] === 6 && sprint.six.includes('run'),
+    `run on ${sprint.run.join(',')} (${sprint.keys.join(' ')})`);
+  check('and neither LB nor L3 runs any more',
+    !sprint.four.includes('run') && !sprint.ten.includes('run'),
+    `LB: ${sprint.four || 'nothing'} · L3: ${sprint.ten || 'nothing'}`);
+
+  const pulled = await ev(async () => {
+    const g = window.__game;
+    // Pin the standard layout on, so the poll does not swap it out for the
+    // empty one it uses on a pad it cannot describe.
+    g.input.binds = window.__input.defaultBinds();
+    g.input.bindsAreUser = true;
+    window.__pad.buttons[6] = 0.72;            // a trigger, past halfway
+    for (let i = 0; i < 4; i++) await new Promise((r) => requestAnimationFrame(r));
+    const running = g.input.isDown('ShiftLeft');
+    window.__pad.buttons[6] = 0;
+    return running;
+  });
+  check('and pulling it actually makes you run', pulled === true);
+
+  /* ---- the screen shows the axes, so an unknown d-pad can be found ---- */
+  const readout = await ev(() => {
+    const g = window.__game;
+    window.__pad.axes[7] = -1;
+    g.input._pollPad();
+    const v = g.padView();
+    window.__pad.axes[7] = 0;
+    return { axes: v.axes.length, seven: v.axes[7] };
+  });
+  check('and the controller screen shows every axis live',
+    readout.axes >= 10 && readout.seven === -1,
+    `${readout.axes} axes, axis 7 reading ${readout.seven}`);
+
+  await page.close();
+}
+
 async function oddPad() {
   const id = 'Generic USB Gamepad (Vendor: 0079 Product: 0006)';
   const page = await browser.newPage({ viewport: { width: 640, height: 480 } });
@@ -352,11 +477,15 @@ async function oddPad() {
   check('odd pad: and the next line takes the next button',
     (await st()).back.join(',') === '12', `back = ${(await st()).back.join(',')}`);
 
-  // Down to Back and out, on the pad alone. Walk it one line at a time and
-  // stop on the last row rather than counting -- stepping onto "Reset to
-  // defaults" and pressing a button does exactly what it says on the tin.
-  for (let k = 0; k < 12 && (await st()).padSel !== 8; k++) await flick(1, 1);
-  check('odd pad: the stick reaches the bottom of the screen', (await st()).padSel === 8, `row ${(await st()).padSel}`);
+  /* Down to Back and out, on the pad alone. The Back row is the last one,
+     whatever the screen happens to list -- walking a counted number of steps
+     broke the moment the directions became bindable and the screen grew four
+     rows. Stepping onto "Reset to defaults" and pressing a button does
+     exactly what it says on the tin, so stop on the last row, not near it. */
+  const BACK_ROW = await ev(() => window.__input.BINDABLE.length + 1);
+  for (let k = 0; k < 20 && (await st()).padSel !== BACK_ROW; k++) await flick(1, 1);
+  check('odd pad: the stick reaches the bottom of the screen',
+    (await st()).padSel === BACK_ROW, `row ${(await st()).padSel} of ${BACK_ROW}`);
   await tap(11);
   check('odd pad: and the newly bound select gets you out', (await st()).state === 'OPTIONS', (await st()).state);
 

@@ -388,6 +388,11 @@ export function padHtml(p) {
   const live = p.down.length
     ? p.down.map((i) => `<span class="key btn">${i}</span>`).join(' ')
     : '<span class="quiet">nothing pressed</span>';
+  // Axes that are actually doing something, so a d-pad on a hat is findable.
+  const moving = (p.axes || []).map((v, i) => [i, v]).filter(([, v]) => Math.abs(v) > 0.12);
+  const axes = moving.length
+    ? moving.map(([i, v]) => `<span class="key btn">${i}</span>&#8202;${v.toFixed(2)}`).join(' &nbsp; ')
+    : '<span class="quiet">all centred</span>';
   const warn = p.name && !p.trusted && !p.custom
     ? (p.known
       ? `<p class="pad-foot">This browser does not describe your controller's layout, but it is
@@ -405,6 +410,7 @@ export function padHtml(p) {
     <li class="opt">Back</li>
   </ul>
   <p class="pad-foot">Held down now: ${live}</p>
+  <p class="pad-foot">Axes moving: ${axes}</p>
   <p class="pad-foot quiet">Move with the stick or ${glyphText('up')}${glyphText('down')}.
   Highlight a line and press the button you want for it &mdash; one button can do
   several jobs, and pressing the same one again takes that job off it.

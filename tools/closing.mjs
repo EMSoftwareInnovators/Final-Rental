@@ -202,6 +202,141 @@ check('so the line behind him still moves',
   beside.otherState === 'WAITING' && beside.otherQueue === 0,
   `${beside.otherState} at the front`);
 
+/* ---------- 4b2. the line is decided by who gets there ---------- */
+/* Somebody who sets off first from the far end of the shop used to hold
+   first place while a man standing next to the till walked up and was put
+   behind him. A queue is decided by who reaches it. */
+const line = await ev(() => {
+  const g = window.__game;
+  const T = window.__tapes;
+  g.customers.length = 0; g.queue.length = 0;
+  g.closing = false; g.elapsed = 0; g.door.locked = false;
+
+  const make = (x, z) => {
+    const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+    c.tape = T.makeTape('HORROR', g.rng, { rewound: true });
+    c.script = 'rent'; c.hasMoney = true;
+    c.x = x; c.z = z; c.state = 'TO_COUNTER'; c.path = null;
+    g.customers.push(c);
+    return c;
+  };
+
+  // Far sets off first, from the other end of the shop.
+  const far = make(1.0, 8.0);
+  far.name = 'Far Away';
+  for (let i = 0; i < 20; i++) window.__cust.updateCustomer(far, 1 / 20, g.ctx);
+  const farClaimedEarly = g.queue.includes(far);
+
+  // Near sets off a beat later, from right beside the counter.
+  const near = make(9.6, 1.6);
+  near.name = 'Right There';
+
+  let order = null;
+  for (let i = 0; i < 4000; i++) {
+    [far, near].forEach((c) => window.__cust.updateCustomer(c, 1 / 20, g.ctx));
+    if (far.state === 'WAITING' && near.state === 'WAITING') {
+      order = g.queue.map((c) => c.name);
+      break;
+    }
+  }
+  const out = {
+    farClaimedEarly, order,
+    nearIndex: near.queueIndex, farIndex: far.queueIndex,
+    nearAt: [+near.x.toFixed(2), +near.z.toFixed(2)],
+  };
+  g.customers.length = 0; g.queue.length = 0;
+  return out;
+});
+check('setting off first does not reserve you a place',
+  line.farClaimedEarly === false, `claimed while still walking: ${line.farClaimedEarly}`);
+check('the one who actually reaches the counter first is first in the line',
+  line.order && line.order[0] === 'Right There' && line.nearIndex === 0 && line.farIndex === 1,
+  line.order ? line.order.join(' then ') : 'neither of them ever got there');
+
+/* And a line still forms properly when everybody starts from the same place. */
+const stack = await ev(() => {
+  const g = window.__game;
+  const T = window.__tapes;
+  g.customers.length = 0; g.queue.length = 0;
+  const made = [];
+  for (let i = 0; i < 4; i++) {
+    const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+    c.tape = T.makeTape('HORROR', g.rng, { rewound: true });
+    c.script = 'rent'; c.hasMoney = true;
+    c.x = 6.4 + i * 0.1; c.z = 2.6; c.state = 'TO_COUNTER'; c.path = null;
+    g.customers.push(c); made.push(c);
+  }
+  for (let i = 0; i < 6000; i++) {
+    made.forEach((c) => window.__cust.updateCustomer(c, 1 / 20, g.ctx));
+    if (made.every((c) => c.state === 'WAITING')) break;
+  }
+  const idx = made.map((c) => c.queueIndex).sort((a, b) => a - b);
+  const spread = made.map((c) => +c.x.toFixed(1));
+  g.customers.length = 0; g.queue.length = 0;
+  return { idx, spread, waiting: made.filter((c) => c.state === 'WAITING').length };
+});
+check('four people arriving together make one line, not a heap',
+  stack.waiting === 4 && stack.idx.join(',') === '0,1,2,3',
+  `places ${stack.idx.join(',')} at x ${stack.spread.join(', ')}`);
+
+/* ---------- 4b3. they cost you their time, not the shift's ---------- */
+const clockHold = await ev(async () => {
+  const g = window.__game;
+  g.state = 'PLAY';
+  g.customers.length = 0; g.queue.length = 0;
+  g.closing = false; g.closingT = 0; g.elapsed = 10; g.officerDone = true;
+  g.door.locked = false;
+  if (g.killer) { g.killer.plan.appears = false; g.killer.phase = 'ABSENT'; }
+
+  const runFor = async (frames) => {
+    const a = g.elapsed;
+    for (let i = 0; i < frames; i++) await new Promise((r) => requestAnimationFrame(r));
+    return +(g.elapsed - a).toFixed(2);
+  };
+
+  const before = await runFor(20);
+  const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById('SOVEREIGN'));
+  c.x = 11.6; c.z = 0.62; c.state = 'ACTING'; c.parked = true;
+  g.customers.push(c);
+  const held = await runFor(20);
+  const presentWhileHeld = g.grinderPresent();
+
+  // on his way out, the shift starts again -- no waiting for the pavement
+  c.state = 'LEAVING'; c.leaving = true;
+  const leaving = await runFor(20);
+  const presentWhileLeaving = g.grinderPresent();
+
+  g.customers.length = 0;
+  const after = await runFor(20);
+  return { before, held, leaving, after, presentWhileHeld, presentWhileLeaving };
+});
+check('an ordinary shift clock runs', clockHold.before > 0.05, `${clockHold.before}s in 20 frames`);
+check('and stops dead while one of the three is in the building',
+  clockHold.held === 0 && clockHold.presentWhileHeld,
+  `${clockHold.held}s while he stood there`);
+check('it starts again the moment he is on his way out, not when he is off the pavement',
+  clockHold.leaving > 0.05 && !clockHold.presentWhileLeaving,
+  `${clockHold.leaving}s once he was leaving`);
+check('and keeps running once he has gone', clockHold.after > 0.05, `${clockHold.after}s`);
+
+const ignoredEnds = await ev(() => {
+  const g = window.__game;
+  g.customers.length = 0;
+  const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById('SOVEREIGN'));
+  c.x = 11.6; c.z = 0.62; c.state = 'ACTING'; c.parked = true;
+  g.customers.push(c);
+  let t = 0;
+  for (let i = 0; i < 60000 && g.grinderPresent(); i++) {
+    window.__cust.updateCustomer(c, 1 / 20, g.ctx);
+    t += 1 / 20;
+  }
+  const out = { cleared: !g.grinderPresent(), minutes: +(t / 60).toFixed(1) };
+  g.customers.length = 0;
+  return out;
+});
+check('so a player who simply ignores him is not stuck forever either',
+  ignoredEnds.cleared, `he gave up after ${ignoredEnds.minutes} minutes`);
+
 /* ---------- 4c. a cartridge is not a tape ---------- */
 const words = await ev(() => {
   const g = window.__game;
@@ -265,6 +400,73 @@ const said = await ev(() => {
 });
 check('and nobody handing back a game calls it a tape',
   said.bad.length === 0, said.bad.join(' | ') || `${said.gameLines} lines checked`);
+
+/* ---------- 4d. the doors have to actually open ---------- */
+/* The deadbolt stops people getting IN. Anybody already inside works the
+   thumb latch and walks out -- and the leaves have to swing when they do,
+   or the shop empties at closing with everybody walking through a shut
+   door. The rule the doors are drawn by and the rule people are moved by
+   have to be the same rule. */
+const doors = await ev(async () => {
+  const g = window.__game;
+  g.customers.length = 0; g.queue.length = 0;
+  g.door.locked = true; g.door.holdOpen = 0; g.door.swing = 0; g.door.fromInside = false;
+  for (let i = 0; i < 60; i++) g.updateDoor(1 / 30);
+  const shut = +g.door.swing.toFixed(3);
+
+  // somebody outside tries it: it stays shut
+  const outside = { z: -0.6, leaving: false };
+  g.ctx.openDoor(outside);
+  for (let i = 0; i < 20; i++) g.updateDoor(1 / 30);
+  const afterOutside = +g.door.swing.toFixed(3);
+
+  g.door.holdOpen = 0; g.door.fromInside = false;
+  for (let i = 0; i < 90; i++) g.updateDoor(1 / 30);
+
+  // somebody on their way out works it: it opens
+  const leaver = { z: 0.4, leaving: true };
+  g.ctx.openDoor(leaver);
+  for (let i = 0; i < 20; i++) g.updateDoor(1 / 30);
+  const afterLeaver = +g.door.swing.toFixed(3);
+
+  // and it shuts itself again afterwards
+  for (let i = 0; i < 200; i++) g.updateDoor(1 / 30);
+  const settled = +g.door.swing.toFixed(3);
+  const stillInside = g.door.fromInside;
+  g.door.locked = false;
+  return { shut, afterOutside, afterLeaver, settled, stillInside };
+});
+check('a bolted door stays shut for somebody on the pavement',
+  doors.shut < 0.02 && doors.afterOutside < 0.02, `swing ${doors.afterOutside}`);
+check('but swings open for somebody on their way out of it',
+  doors.afterLeaver > 0.6, `swing ${doors.afterLeaver}`);
+check('and shuts itself again behind them',
+  doors.settled < 0.02 && !doors.stillInside, `swing ${doors.settled}`);
+
+const walkedThrough = await ev(() => {
+  const g = window.__game;
+  g.customers.length = 0;
+  g.door.locked = true; g.door.holdOpen = 0; g.door.swing = 0; g.door.fromInside = false;
+  const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+  c.x = 6; c.z = 2.4; c.state = 'BROWSING';
+  g.customers.push(c);
+  g.ctx.leave(c);
+  let maxSwing = 0, wasOpenAtDoor = false;
+  for (let i = 0; i < 3000; i++) {
+    window.__cust.updateCustomer(c, 1 / 30, g.ctx);
+    g.updateDoor(1 / 30);
+    maxSwing = Math.max(maxSwing, g.door.swing);
+    // the moment they are in the doorway, is it open?
+    if (Math.abs(c.z) < 0.25 && g.door.swing > 0.5) wasOpenAtDoor = true;
+    if (c.state === 'GONE' || c.z < -1.5) break;
+  }
+  g.door.locked = false;
+  g.customers.length = 0;
+  return { maxSwing: +maxSwing.toFixed(2), wasOpenAtDoor, out: c.z < 0.2 };
+});
+check('so a customer leaving a shut shop opens it rather than phasing through',
+  walkedThrough.out && walkedThrough.wasOpenAtDoor && walkedThrough.maxSwing > 0.6,
+  `door reached ${walkedThrough.maxSwing} and was open as they crossed: ${walkedThrough.wasOpenAtDoor}`);
 
 /* ---------- 5. and a stubborn customer cannot hold it open forever ---------- */
 const stubborn = await ev(() => {

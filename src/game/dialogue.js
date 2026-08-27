@@ -1184,6 +1184,15 @@ function eject(c, ctx, texts, opts = {}) {
   ]);
 }
 
+/** How far gone he is, said the way you would see it rather than as a number. */
+function wearWord(left) {
+  if (left > 0.82) return 'he is not listening yet';
+  if (left > 0.62) return 'he is listening, and pretending not to';
+  if (left > 0.42) return 'he has started gathering his things';
+  if (left > 0.22) return 'he keeps glancing at the door';
+  return 'he is nearly out of the building';
+}
+
 /**
  * The two who will not be told.
  *
@@ -1200,12 +1209,27 @@ function grind(c, ctx, spec) {
   const rng = ctx.rng;
   if (c.resist === undefined) c.resist = spec.resist;
 
-  // Between goes he is not listening. Come back in a minute.
+  /* Between goes he is not listening -- but keeping at him still counts.
+
+     It used to count for nothing at all: nine tries in ten got a brush-off
+     that changed no state and said nothing, so a player standing there
+     working at him saw a man who could not be moved and concluded he was
+     broken. He was not; he just did all his moving in the one try out of
+     ten that landed. Pestering now chips at both his patience for you and
+     his position, so it is the slow way rather than the no way, and the
+     line says which of the two you are getting. */
   if (c.brushT > 0) {
-    return say(c, rng.pick(spec.brush), [reply(`...`, () => null)]);
+    c.brushT = Math.max(0, c.brushT - spec.cool * 0.22);
+    c.resist = Math.max(0, c.resist - 0.11);
+    ctx.wearingDown(c, 1 - c.resist / spec.resist);
+    if (c.resist <= 0) return leaving();
+    return say(c, `${rng.pick(spec.brush)}\n\n(${wearWord(c.resist / spec.resist)})`,
+      [reply(`I'm not going away.`, () => null)]);
   }
 
-  if (c.resist <= 0) {
+  if (c.resist <= 0) return leaving();
+
+  function leaving() {
     return say(c, rng.pick(spec.gone), [
       reply(`Out.`, () => { ctx.leave(c); return null; }),
       ...(spec.andSell ? [reply(`...Wait. Do you actually want to rent something?`,

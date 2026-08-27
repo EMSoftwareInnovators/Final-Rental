@@ -27,7 +27,10 @@ export const PAD_ACTIONS = {
   back: { label: 'Back / cancel', keys: ['PadB', 'Escape'], def: [1] },
   drop: { label: 'Put it down', keys: ['PadX', 'KeyG'], def: [2] },
   notes: { label: 'Notepad', keys: ['PadY', 'Tab'], def: [3] },
-  run: { label: 'Hurry', keys: ['PadLB', 'ShiftLeft'], def: [4, 10] },
+  /* On the left trigger. It used to be LB and L3; holding a stick click
+     down to run the length of the shop is hard on a thumb, and a trigger is
+     what a trigger is for. A trigger reads as pressed past halfway. */
+  run: { label: 'Hurry', keys: ['PadLT', 'ShiftLeft'], def: [6] },
   /* On the same button as interact by default, because that is how the
      keyboard behaves: E throws the bolt when you are looking at the door.
      RB keeps the from-anywhere version. */
@@ -40,7 +43,8 @@ export const PAD_ACTIONS = {
 };
 
 /** The actions worth putting in front of a player, in a sensible order. */
-export const BINDABLE = ['confirm', 'back', 'drop', 'notes', 'run', 'bolt', 'pause'];
+export const BINDABLE = ['confirm', 'back', 'drop', 'notes', 'run', 'bolt', 'pause',
+  'up', 'down', 'left', 'right'];
 
 /**
  * button index -> the actions on it, as the standard mapping lays it out.
@@ -84,15 +88,18 @@ const KNOWN_LAYOUTS = [
     id: 'xbox-macos',
     match: (id) => /xbox|045e|microsoft/i.test(id),
     mac: true,
+    /* Only the buttons somebody has actually sat down and read off this
+       machine. The first version of this filled in the rest from the
+       standard mapping, which is how LB ended up opening the notepad: a
+       guessed binding on an index nobody had checked. Anything not listed
+       does nothing until the player binds it, which is the right default
+       for a layout we are only half sure of. */
     binds: {
       1: ['confirm', 'bolt'],
       2: ['back'],
       3: ['drop'],
       5: ['notes'],
-      6: ['run'],
-      8: ['pause'],
       11: ['run'],
-      12: ['up'], 13: ['down'], 14: ['left'], 15: ['right'],
     },
   },
 ];
@@ -169,6 +176,8 @@ export class Input {
     this._laidOutFor = null;
     /** Live state, for the controller screen: which indices are down now. */
     this.padDownIndices = [];
+    /** True once axis 9 has read outside [-1,1], which only a hat does. */
+    this._hatSeenNeutral = false;
     this.padAxes = [];
     this.padButtonCount = 0;
     /** When set, the next button pressed is bound to this action instead. */
@@ -263,6 +272,7 @@ export class Input {
     if (this._laidOutFor !== pad.id) {
       this._laidOutFor = pad.id;
       this.padTrusted = pad.mapping === 'standard';
+      this._hatSeenNeutral = false;
       const known = this.padTrusted ? null
         : knownLayout(pad.id, typeof navigator !== 'undefined' ? navigator.platform : '');
       this.knownAs = known ? known.id : '';
@@ -340,19 +350,29 @@ export class Input {
       }
     }
     this.padDownIndices = live;
-    if (this._padDown.has('PadLB') || this._padDown.has('PadL3')) this.run = true;
+    /* Running comes in as ShiftLeft with everything else, folded in by
+       poll(). This used to look for held ids that the button loop stopped
+       producing when bindings became rebindable, so it had quietly done
+       nothing for a while. */
     /* Some pads report the D-pad as a hat switch on a ninth axis instead of
-       as four buttons. Fold that in so those pads can drive a menu too. */
+       as four buttons. Fold that in so those pads can drive a menu too --
+       but only once the axis has proved it really is a hat.
+
+       A hat at rest reads outside [-1, 1]: 3.29 is the usual value. An axis
+       that is not a hat at all sits at 0, which is dead centre of the range
+       this used to accept, and 0 decodes to "down". Every pad with ten or
+       more axes therefore had a phantom d-pad holding down. That is what
+       "the d-pad acts weird in menus" was. */
     if (ax.length > 9) {
       const hat = ax[9];
-      if (hat >= -1.2 && hat <= 1.2) {
+      if (hat > 1.05 || hat < -1.05) this._hatSeenNeutral = true;
+      if (this._hatSeenNeutral && hat >= -1.0 && hat <= 1.0) {
         const HAT = [PAD_ACTIONS.up.keys, PAD_ACTIONS.right.keys,
           PAD_ACTIONS.down.keys, PAD_ACTIONS.left.keys];
         // -1 is up, and it sweeps clockwise through the eight positions.
-        const oct = Math.round((hat + 1) * 3.5);
-        const live = hat > 1.05 ? -1 : oct;
+        const live = Math.round((hat + 1) * 3.5);
         HAT.forEach((keys, q) => {
-          const on = live >= 0 && (live === q * 2 || live === (q * 2 + 7) % 8 || live === (q * 2 + 1) % 8);
+          const on = live === q * 2 || live === (q * 2 + 7) % 8 || live === (q * 2 + 1) % 8;
           const id = 'Hat' + keys[1];
           if (on) {
             used = true;

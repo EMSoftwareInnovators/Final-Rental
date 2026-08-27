@@ -263,6 +263,13 @@ export function updateCustomer(c, dt, ctx) {
     /* ---- the ones who came in to do something else ---- */
     case CS.ACTING: {
       c.actTimer += dt;
+      /* Nobody stays all night. Even the ones you never speak to run out of
+         whatever brought them in -- otherwise a player who decides to
+         ignore one is stuck with him until closing forces the issue. */
+      if (c.actTimer > (c.special === 'SOVEREIGN' ? 600 : 420)) {
+        ctx.storm(c);
+        break;
+      }
       const spot = ACT_SPOT[c.act];
       if (spot) {
         if (!c.path && !c.parked && dist(c.x, c.z, spot.x, spot.z) > 0.4) {
@@ -312,6 +319,26 @@ export function updateCustomer(c, dt, ctx) {
           c.parked = false;
           setDest(c, b.x, b.z, ctx);
         }
+      }
+      /* He has been holding it for a while now and has no idea why. It goes
+         in the returns bin, which makes it the clerk's problem -- and he
+         does that whether or not anybody ever gets him out of the shop. */
+      if (c.act === 'TV' && c.tape && !c.errand) {
+        c.holdT = (c.holdT || 0) + dt;
+        if (c.holdT > 55) { c.holdT = 0; c.binRun = { phase: 'GO' }; }
+      }
+      if (c.binRun) {
+        const B = ctx.binSpot();
+        if (!c.path && dist(c.x, c.z, B.x, B.z) > 0.7) setDest(c, B.x, B.z, ctx);
+        B.t = 0;
+        c.binRun.t = (c.binRun.t || 0) + dt;
+        if (c.path && !step(c, dt, ctx) && c.binRun.t < 20) { performAct(c, dt); break; }
+        c.path = null;
+        if (c.tape) ctx.binTape(c.tape, c);
+        c.binRun = null;
+        c.parked = false;
+        performAct(c, dt);
+        break;
       }
       if (c.errand) {
         const E = c.errand;
@@ -430,23 +457,50 @@ export function updateCustomer(c, dt, ctx) {
     }
 
     case CS.TO_COUNTER: {
-      if (!c.path) {
-        const spot = ctx.claimCounterSpot(c);
-        c.targetSpot = spot;
-        setDest(c, spot.x, spot.z, ctx);
+      /* You do not have a place in the line until you reach the line.
+
+         This used to claim a place the moment somebody decided to head for
+         the counter, so a man who set off first from the far end of the
+         shop held first place while somebody standing next to the till
+         walked up and got put behind him. A queue is decided by who gets
+         there, not by who thought of it first. */
+      const tail = ctx.lineTail(c);
+      /* Re-aim only when the back of the line has actually moved. Rebuilding
+         the path every half second restarted it at its first waypoint, which
+         for anybody already under way is behind them -- so they shuffled on
+         the spot and never arrived anywhere. */
+      const moved = !c.tailAt || Math.hypot(c.tailAt.x - tail.x, c.tailAt.z - tail.z) > 0.35;
+      if (!c.path || moved) {
+        setDest(c, tail.x, tail.z, ctx);
+        c.tailAt = { x: tail.x, z: tail.z };
       }
-      if (step(c, dt, ctx)) { c.state = CS.WAITING; c.path = null; }
+      /* And a hard backstop. If the walk to the back of the line cannot be
+         completed -- somebody parked in the way, a route that will not
+         resolve -- they join it from where they are rather than grinding
+         against a counter for the rest of the night. WAITING walks them to
+         their proper place from wherever that turns out to be. */
+      c.approachT = (c.approachT || 0) + dt;
+      const arrived = step(c, dt, ctx);
+      if (arrived || dist(c.x, c.z, tail.x, tail.z) < 0.8 || c.approachT > 9) {
+        ctx.claimCounterSpot(c);
+        c.state = CS.WAITING; c.path = null; c.tailAt = null; c.approachT = 0;
+      }
       break;
     }
 
     case CS.WAITING: {
       // people shuffle forward as the queue moves
       const spot = ctx.claimCounterSpot(c);
-      if (spot !== c.targetSpot || dist(c.x, c.z, spot.x, spot.z) > 0.5) {
-        c.targetSpot = spot;
-        setDest(c, spot.x, spot.z, ctx);
-        step(c, dt, ctx);
-        break;
+      /* Settle properly on the spot. Half a metre of slack was fine when
+         people walked all the way to it before joining; now that they join
+         the line from wherever they reach it, that slack is where they
+         stayed -- half a metre off the window, out of reach of somebody
+         looking straight at the place they are supposed to be standing. */
+      if (spot !== c.targetSpot || dist(c.x, c.z, spot.x, spot.z) > 0.22) {
+        if (spot !== c.targetSpot) { c.targetSpot = spot; c.shuffleT = 0; setDest(c, spot.x, spot.z, ctx); }
+        c.shuffleT = (c.shuffleT || 0) + dt;
+        // Shuffling up should take a second or two, not the rest of the night.
+        if (c.shuffleT < 8) { step(c, dt, ctx); break; }
       }
       c.yaw = angleTowards(c.yaw, c.queueIndex === 0 ? 0 : 0.2, dt * 4);
       if (c.awaitingChange) {
