@@ -507,17 +507,32 @@ export function updateCustomer(c, dt, ctx) {
       if (!c.path || moved) {
         setDest(c, tail.x, tail.z, ctx);
         c.tailAt = { x: tail.x, z: tail.z };
+        c.approachBest = undefined; c.approachT = 0;
       }
-      /* And a hard backstop. If the walk to the back of the line cannot be
+      /* And a backstop. If the walk to the back of the line cannot be
          completed -- somebody parked in the way, a route that will not
          resolve -- they join it from where they are rather than grinding
          against a counter for the rest of the night. WAITING walks them to
-         their proper place from wherever that turns out to be. */
+         their proper place from wherever that turns out to be.
+
+         It has to be a backstop against a walk that is not happening, not
+         against a walk that is taking a while. Nine seconds flat is less
+         than it takes somebody slow to cross the shop from the far corner,
+         so they claimed a place in the line from over by the horror shelf
+         and then covered the rest of the floor already standing in it --
+         holding first place against somebody stood at the till, which is
+         the opposite of what a queue is for. Closing real ground resets
+         it; only genuinely getting nowhere runs it out. */
+      const gap = dist(c.x, c.z, tail.x, tail.z);
+      if (c.approachBest === undefined || gap < c.approachBest - 0.3) {
+        c.approachBest = gap; c.approachT = 0;
+      }
       c.approachT = (c.approachT || 0) + dt;
       const arrived = step(c, dt, ctx);
-      if (arrived || dist(c.x, c.z, tail.x, tail.z) < 0.8 || c.approachT > 9) {
+      if (arrived || gap < 0.8 || c.approachT > 9) {
         ctx.claimCounterSpot(c);
-        c.state = CS.WAITING; c.path = null; c.tailAt = null; c.approachT = 0;
+        c.state = CS.WAITING; c.path = null; c.tailAt = null;
+        c.approachT = 0; c.approachBest = undefined;
       }
       break;
     }

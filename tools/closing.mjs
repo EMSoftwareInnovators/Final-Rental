@@ -319,6 +319,42 @@ check('the one who actually reaches the counter first is first in the line',
   line.order && line.order[0] === 'Right There' && line.nearIndex === 0 && line.farIndex === 1,
   line.order ? line.order.join(' then ') : 'neither of them ever got there');
 
+/* Nor does a slow walker join it from the other end of the shop. The walk
+   to the back of the line had a nine-second backstop on it, and nine
+   seconds is less than it takes the slowest personality in the game to
+   cross the floor from the far corner -- so they took their place in the
+   queue while they were still up by the horror shelf and covered the rest
+   of the room standing in it, holding first place against somebody already
+   at the till. */
+const slowWalk = await ev(() => {
+  const g = window.__game;
+  const T = window.__tapes;
+  const far = [];
+  for (let trial = 0; trial < 400 && far.length < 12; trial++) {
+    g.customers.length = 0; g.queue.length = 0;
+    g.closing = false; g.elapsed = 0; g.door.locked = false;
+    const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+    // The slowest people in the shop are the ones this used to catch.
+    if (c.personality.speed > 0.75) continue;
+    c.tape = T.makeTape('HORROR', g.rng, { rewound: true });
+    c.script = 'rent'; c.hasMoney = true;
+    c.x = 1.0; c.z = 8.0; c.state = 'TO_COUNTER'; c.path = null;
+    g.customers.push(c);
+    for (let i = 0; i < 4000; i++) {
+      window.__cust.updateCustomer(c, 1 / 30, g.ctx);
+      if (c.state === 'WAITING') break;
+    }
+    far.push({ speed: +c.personality.speed.toFixed(2),
+      gap: +Math.hypot(c.x - 10.75, c.z - 0.8).toFixed(2) });
+  }
+  g.customers.length = 0; g.queue.length = 0;
+  const worst = far.reduce((a, b) => (b.gap > a.gap ? b : a), { gap: -1 });
+  return { n: far.length, worst };
+});
+check('a slow walker joins the line when they reach it, not when a timer says so',
+  slowWalk.n > 0 && slowWalk.worst.gap < 1.0,
+  `${slowWalk.n} slow walkers, worst joined ${slowWalk.worst.gap}m from the window`);
+
 /* And a line still forms properly when everybody starts from the same place. */
 const stack = await ev(() => {
   const g = window.__game;
