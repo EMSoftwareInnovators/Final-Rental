@@ -8,6 +8,7 @@
    are.
    ============================================================ */
 import { line } from './personality.js';
+import { traitBulletin } from './appearance.js';
 import { TAPE_TALK, SEEN_IT } from './chatter.js';
 import { GENRE_LABEL, GENRES, tapeLabel, lateFee, mediaWord } from './tapes.js';
 
@@ -1751,4 +1752,60 @@ export function specialRoot(c, ctx) {
     default:
       return idleRoot(c, ctx);
   }
+}
+
+/* ============================================================
+   THE SWEEP THAT FOUND NOTHING
+
+   You named him, the cruiser came, and he was gone before it got here.
+   That used to be two lines of text over an empty shop, which made the
+   right call feel like a wasted one. A deputy comes in and says it to
+   your face instead: nobody out there, and he is not telling you that you
+   were wrong -- he is telling you to keep the door in view.
+   ============================================================ */
+const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+export function buildSweepReport(officer, bulletin, ctx) {
+  const rng = ctx.rng;
+  const A = bulletin && bulletin.app;
+  /* Whatever you actually had written down. Reading back a detail nobody
+     has told you yet would be the bulletin leaking through him. */
+  const known = bulletin ? [...bulletin.known] : [];
+  const cite = known.length && A
+    ? traitBulletin(A, rng.pick(known))
+    : 'the description we put out';
+
+  const done = () => { ctx.sweepDone(); return null; };
+
+  const vigilant = () => say(officer, rng.pick([
+    `Here's where I land on it. You did the right thing and it didn't pay off tonight. That happens more than anybody wants to hear.\n\nKeep the door in front of you. If he comes back through it, you call again, and you don't wait to be sure.`,
+    `I'm not going to stand here and tell you it was nothing. You call it in, we come, that's the arrangement. Tonight the arrangement got beaten by about ninety seconds.\n\nStay where you can see the parade. Anything at all, you pick that phone up.`,
+    `Don't second-guess it. A man who walks out the second he hears a siren is a man who had a reason to.\n\nEyes on the door for the rest of your shift. I mean it.`,
+  ]), [reply(`Understood.`, () => done())]);
+
+  const matched = () => say(officer, rng.pick([
+    `For what it's worth — and I'm saying this as much for my report as for you — whoever you were looking at matched what we put out. ${cap(cite)}. All of it, straight down the sheet.\n\nThat isn't a coincidence I'm comfortable with.`,
+    `I'll tell you what I told dispatch. The description you gave back matched ours to the letter. ${cap(cite)}. Every line of it.\n\nPeople match one or two. They don't match all of it.`,
+    `You want to know if you got it wrong. You didn't. What you described and what's on our sheet are the same man — ${cite}, the lot.\n\nWhich is exactly why I'd rather he was in the back of my car right now.`,
+  ]), [
+    reply(`So he was here.`, () => say(officer,
+      `Somebody was here. Somebody who heard a siren and decided he had somewhere to be.\n\nI can't put that in front of a judge. I can put it in front of you.`,
+      [reply(`...Right.`, () => vigilant())])),
+    reply(`Then why isn't he in cuffs?`, () => say(officer,
+      `Because I need him in front of me, not in front of you. A description isn't a man. A man is a man.\n\nHe'll turn up. They always turn up.`,
+      [reply(`That's not comforting.`, () => vigilant())])),
+    reply(`What now?`, () => vigilant()),
+  ]);
+
+  return say(officer, rng.pick([
+    `Swept the parade twice. Both ends of the lot, the alley behind the laundrette, all of it.\n\nNobody. Not a soul out there who shouldn't be.`,
+    `We had two units on it inside of a minute. Nothing on the parade, nothing in the lot, nothing behind the units.\n\nHe isn't out there any more.`,
+    `I've been up and down that street and round the back twice over. It's empty out there.\n\nWhoever you saw is not on this block.`,
+  ]), [
+    reply(`He was standing right there.`, () => matched()),
+    reply(`You're saying I imagined him.`, () => say(officer,
+      `I'm saying no such thing. Sit down for a second and listen to what I'm actually telling you.`,
+      [reply(`...Go on.`, () => matched())])),
+    reply(`So that was for nothing.`, () => matched()),
+  ]);
 }

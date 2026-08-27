@@ -19,7 +19,7 @@ import { createCustomer, updateCustomer, CS, observeVisible, moodLabel, makeSpec
 import { specialById } from './specials.js';
 import { createKiller, updateKiller, KP, killerActive, killerInside, killerInView, addIntel } from './killer.js';
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
-import { DialogueRunner, buildOfficerIntro, talkTo, buildPhoneCall } from './dialogue.js';
+import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme } from './ui.js';
 import { randomAppearance, paintSkin, voicePitchOf, pronounOf, describeApart } from './appearance.js';
 import { OFFICER } from './personality.js';
@@ -82,6 +82,7 @@ export class Game {
     this.door = { locked: false, swing: 0, target: 0, holdOpen: 0 };
     this.storage = freshStorageDoor();
     this.officer = null;
+    this.sweep = null;
     this.killer = null;
     this.lights = 1; this.flickerAmt = 0; this.flickerT = 4;
     this.distress = 0; this.tension = 0;
@@ -218,6 +219,7 @@ export class Game {
       this.officer = null;
       this.officerDone = true;           // nothing to wait on; the clock runs
     }
+    this.sweep = null;
     this.briefingStarted = false;
 
     // the suspect
@@ -683,7 +685,11 @@ export class Game {
        which is not a decision, it is a shrug. Getting rid of him is now the
        player's job, on the player's time, and the shift resumes when the
        door shuts behind him. */
-    const holdClock = killerActive(this.killer) || !this.officerDone || this.grinderPresent();
+    /* A deputy who has walked in to tell you the parade was empty is
+       not the player's doing, so the shift does not pay for the walk to
+       the counter and the conversation. Same rule as the briefing. */
+    const holdClock = killerActive(this.killer) || !this.officerDone
+      || this.grinderPresent() || this.sweepPresent();
     if (!holdClock) this.elapsed += dt;
     this.updatePolice(dt);
 
@@ -711,6 +717,7 @@ export class Game {
       updatePlayer(this.player, h, i, this.ctx);
       this.updateRewinder(h);
       this.updateOfficer(h);
+      this.updateSweep(h);
       for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
       this.customers = this.customers.filter((c) => c.state !== CS.GONE);
       updateKiller(this.killer, h, this.ctx);
@@ -1315,6 +1322,7 @@ export class Game {
   people() {
     const out = this.customers.slice();
     if (this.officer && this.officer.state !== 'DONE') out.push(this.officer);
+    if (this.sweep && !this.sweep.hidden) out.push(this.sweep);
     if (this.killer && !this.killer.ent.hidden) out.push(this.killer.ent);
     if (this.arrest && this.arrest.deputy && !this.arrest.deputy.hidden) out.push(this.arrest.deputy);
     return out;
@@ -1776,12 +1784,14 @@ export class Game {
       P.eta = 0;
       if (P.fled) {
         /* Nothing to arrest. A man who walks out before the cruiser turns
-           the corner is a man the county cannot do anything about, and the
-           shift carries on with the door shut behind him. */
+           the corner is a man the county cannot do anything about.
+
+           It used to end there, on two lines of text over an empty shop,
+           which made getting it right feel like getting it wrong. A deputy
+           comes in and says it to your face now. */
         this.police = null;
         this.ui.setObjective('');
-        this.ui.toast(`The unit swept the parade and found nobody.`, '');
-        this.ui.toast(`Whoever that was is somebody else's problem now.`, '');
+        this.beginSweep();
         return;
       }
       this.beginArrest(P.target);
@@ -1959,6 +1969,93 @@ export class Game {
       }
       default: break;
     }
+  }
+
+  /* ============================================================
+     THE SWEEP THAT FOUND NOTHING
+
+     He heard the siren and left. The unit turns up to an empty parade,
+     and a deputy comes in to tell you so -- and to tell you that the man
+     you described and the man on their sheet are the same man, which is
+     the part worth walking inside to say.
+
+     Built on the same bones as the briefing visit: he lets himself in,
+     stands at the counter, and waits for you to actually be there rather
+     than shouting it across the shop.
+     ============================================================ */
+  beginSweep() {
+    if (this.sweep) return;
+    const app = this.night.officerApp || (this.officer && this.officer.app) || randomAppearance(this.rng);
+    const name = this.night.officerName || 'Deputy Hollis';
+    this.sweep = {
+      id: -3, name, app, personality: OFFICER, skin: paintSkin(app),
+      x: SPOTS.street.x - 1.2, y: 0, z: SPOTS.street.z - 1.2, yaw: 0, r: 0.30,
+      anim: makeAnim(), speed: 1.45, moveSpeed: 0, state: 'ARRIVE', observed: new Set(),
+      mood: 100, phoneLabel: 'The deputy', isKiller: false, timer: 0,
+      hidden: false, nagTimer: 3.0, waitTimer: 0, started: false,
+    };
+    this.sound.doorOpen(0);
+    this.ui.toast(`A county cruiser pulls up outside.`, '');
+  }
+
+  /** Is a deputy in the building on sweep business? The clock waits on him. */
+  sweepPresent() { return !!this.sweep && this.sweep.state !== 'DONE'; }
+
+  updateSweep(dt) {
+    const o = this.sweep;
+    if (!o || o.state === 'DONE') return;
+
+    if (o.state === 'ARRIVE') {
+      o.timer += dt;
+      if (o.timer < 1.2) { o.moveSpeed = 0; updateAnim(o.anim, dt, 0, o.app, {}); return; }
+      if (!o.path) o.path = [SPOTS.outsideDoor, { x: SPOTS.door.x, z: 0.85 }, SPOTS.officerStand];
+      if (this.followPath(o, dt)) { o.state = 'WAIT'; o.waitTimer = 0; o.nagTimer = 2.5; }
+      else if (o.z > -0.6 && !o.entered) { o.entered = true; this.openDoorFor(); }
+    } else if (o.state === 'WAIT') {
+      o.moveSpeed = 0;
+      o.yaw += angleDelta(o.yaw, Math.atan2(this.player.x - o.x, this.player.z - o.z)) * Math.min(1, dt * 3);
+      o.waitTimer += dt;
+      if (this.atCounter() && !this.dlg.active && !this.phone.active) {
+        o.state = 'TELL';
+      } else {
+        this.ui.setObjective('THE DEPUTY IS AT THE COUNTER', false);
+        o.nagTimer -= dt;
+        if (o.nagTimer <= 0) {
+          o.nagTimer = 11 + this.rng.range(0, 7);
+          this.ui.toast(`${o.name}: "${this.rng.pick(SWEEP_NAGS)}"`, '');
+          this.sound.blip(voicePitchOf(o.app), o.app.voice.rough);
+        }
+        /* He has a shift of his own. If you never come to the counter he
+           says the important half of it from where he is standing and
+           goes -- you still get told, you just get told worse. */
+        if (o.waitTimer > 150) {
+          this.ui.toast(`${o.name}: "Nobody out there. Whoever that was matched us to the letter."`, '');
+          this.ui.toast(`Keep your eyes on that door.`, 'bad');
+          this.sweepDone();
+        }
+      }
+    } else if (o.state === 'TELL') {
+      o.moveSpeed = 0;
+      this.ui.setObjective('', false);
+      o.yaw += (SPOTS.officerStand.yaw - o.yaw) * Math.min(1, dt * 4);
+      if (!o.started) {
+        o.started = true;
+        this.beginDialogue(o, buildSweepReport(o, this.night.bulletin, this.ctx));
+      }
+    } else if (o.state === 'LEAVE') {
+      if (!o.path) o.path = [{ x: SPOTS.door.x, z: 0.85 }, SPOTS.outsideDoor, { x: SPOTS.street.x - 2.0, z: SPOTS.street.z - 1.2 }];
+      if (this.followPath(o, dt)) { o.state = 'DONE'; o.hidden = true; this.sweep = null; }
+      else if (o.z < 1.0 && !o.exited) { o.exited = true; this.openDoorFor(); }
+    }
+    updateAnim(o.anim, dt, o.moveSpeed, o.app, { talking: this.speaking === o });
+  }
+
+  /** He has said his piece. Out he goes, and the shift picks back up. */
+  sweepDone() {
+    const o = this.sweep;
+    this.ui.setObjective('', false);
+    if (!o) return;
+    o.state = 'LEAVE'; o.path = null; o.pathI = 0; o.started = true;
   }
 
   /** The paperwork: what it cost, what it bought, and whether you carry on. */
@@ -2783,6 +2880,8 @@ export class Game {
       /* --- phone --- */
       phoneTargets: () => g.phoneTargets(),
       accuse: (t) => g.accuse(t),
+      /* The deputy who swept the parade has finished saying it. */
+      sweepDone: () => g.sweepDone(),
       hangUp: () => g.hangUp(),
 
       /* --- killer beats --- */
@@ -2957,6 +3056,16 @@ const OFFICER_NAGS = [
   `Whenever you're ready. This is county business.`,
   `Son. Over here.`,
   `Two minutes of your night. That's all I want.`,
+];
+
+/* He is not here to read a bulletin this time. He is here to tell you the
+   street is empty and that it should not have been. */
+const SWEEP_NAGS = [
+  `Clerk. I've got something you'll want to hear.`,
+  `When you're done there. It's about the call you made.`,
+  `Over here. Won't take a minute.`,
+  `I came in to say this to your face. So come here.`,
+  `You called us. Least you can do is listen to what we found.`,
 ];
 
 /** Fresh state for the back-room door at the top of a shift. */
