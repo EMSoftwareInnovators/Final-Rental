@@ -511,10 +511,71 @@ function seenIt(c, rng) {
   return rng.pick(SEEN_IT.opinion);
 }
 
+/* ============================================================
+   THE ONES OFF THE COACH
+
+   They all look the same and they are not all the same. About one in four
+   wants to tell you about the journey before they will let you ring
+   anything up, and they will take as long over it as you let them. The
+   line does not stop forming while they do.
+
+   You can cut them off. It costs you nothing but their good opinion, and
+   on a night with two dozen of them their good opinion is not the scarce
+   thing -- the counter is.
+   ============================================================ */
+const BUS_RAMBLE = [
+  [`We came up on the coach. Four hours. FOUR hours, and they stopped once, at a place with one bathroom.`,
+   `And the driver, right, the driver would not put the heat on. Said it was broken. It was not broken, because when we complained it came on.`,
+   `Anyway. Anyway! Sorry. What was I — yes. This.`],
+  [`Have you ever been on a coach with somebody who has brought their own egg sandwiches? Because I have. Today. For four hours.`,
+   `Nobody said anything. That's the part I can't get past. Twenty-odd people and not one of us said a word about the eggs.`,
+   `So that's where my head is at. Sorry. Yes. This one.`],
+  [`Is this the town with the water tower they painted? Somebody said there was a water tower.`,
+   `We've been through about six towns today and I could not tell you which was which. They all had a laundromat.`,
+   `Right. Sorry. I'm holding you up.`],
+  [`We're all together, if you're wondering. The whole coach. We've got matching coats, which was not my idea.`,
+   `It was Denise's idea. Denise is somewhere behind me and she can hear me saying this.`,
+   `Where was I. The film. Yes.`],
+  [`I'll be honest with you, I don't even want a film. But everybody's getting one and I'm not standing outside on my own.`,
+   `That's most decisions, though, isn't it. When you actually look at them.`,
+   `...Sorry. Long day. This one, please.`],
+];
+
+function busRamble(c, ctx, then) {
+  const rng = ctx.rng;
+  if (!c.rambleSet) c.rambleSet = rng.pick(BUS_RAMBLE);
+  const beats = c.rambleSet;
+
+  const go = (i) => {
+    if (i >= beats.length) { c.rambles = -1; return then(); }
+    return say(c, beats[i], [
+      reply(rng.pick([`Mm.`, `Right.`, `Go on.`]), () => go(i + 1)),
+      reply(rng.pick([`That does sound like a long day.`, `Four hours is a long time.`,
+        `I can imagine.`]), () => { ctx.mood(c, +6); return go(i + 1); }),
+      /* The line is the pressure. Cutting them off is the button that
+         exists because of it. */
+      reply(`I'm going to have to stop you. Look at the line.`, () => {
+        ctx.mood(c, -10);
+        c.rambles = -1;
+        return say(c, rng.pick([
+          `...Right. No, you're right. Sorry.`,
+          `Oh. Yes. Sorry, I do that.`,
+          `(they glance behind them and go slightly pink)`,
+        ]), [reply(`It's fine. Let's get you sorted.`, () => then())]);
+      }, { risk: true }),
+    ]);
+  };
+  return go(c.rambles || 0);
+}
+
 function rentRoot(c, ctx) {
   const rng = ctx.rng;
   const tape = c.tape;
   if (!tape) return idleRoot(c, ctx);
+  /* One of the coach party, and one of the ones who wants to talk about
+     it. Nothing gets rung up until that is dealt with, one way or the
+     other. */
+  if (c.fromBus && c.rambles >= 0) return busRamble(c, ctx, () => rentRoot(c, ctx));
   /* A price settled earlier -- the coupon man's free one, his thirty cents
      off -- travels with him to the counter rather than being rung up on the
      spot in the middle of an argument. */
@@ -1687,7 +1748,7 @@ export function specialRoot(c, ctx) {
           : n === 1 ? `I've been coming here eleven years. Eleven.`
             : `So you're calling me a liar. In front of people.`,
         [
-          reply(`It's a napkin. It's a napkin with a biro on it.`, () => (n >= 2 ? end() : push(n + 1)), { risk: true }),
+          reply(`It's a napkin. You wrote COUPON on a napkin in ballpoint pen.`, () => (n >= 2 ? end() : push(n + 1)), { risk: true }),
           reply(`Tell you what. One free rental. Go and pick it.`, () => {
             ctx.mood(c, +34);
             return goShopping(c, ctx, `See? SEE? The coupon works.`,

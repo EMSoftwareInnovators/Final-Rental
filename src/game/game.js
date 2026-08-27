@@ -21,7 +21,7 @@ import { createKiller, updateKiller, KP, killerActive, killerInside, killerInVie
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds } from './ui.js';
-import { randomAppearance, paintSkin, voicePitchOf, pronounOf, describeApart } from './appearance.js';
+import { randomAppearance, paintSkin, voicePitchOf, pronounOf, describeApart, randomName } from './appearance.js';
 import { OFFICER } from './personality.js';
 import { GENRE_LABEL, GENRES, makeTape, tapeLabel, mediaWord } from './tapes.js';
 
@@ -57,6 +57,10 @@ const CLOSING_LIMIT = 420;
    counter. Enough for both service positions and the end of the counter;
    nothing like enough for the shop floor. */
 const CORD_REACH = 4.6;
+
+/* Whatever "interact" speaks, for the one action that is held down rather
+   than tapped. Read off the binding table so it follows a rebind. */
+const INTERACT_KEYS = PAD_ACTIONS.confirm.keys.concat(['KeyE']);
 
 /* Her side of a call you only hear one half of. She came in loud and she
    does not stay loud, which is the whole shape of it. */
@@ -135,6 +139,8 @@ export class Game {
        room that is the only way of dealing with what came out of it. */
     this.popper = { running: false, spilled: 0 };
     this.spills = [];
+    this.puffs = [];
+    this.bus = null;
     this.vacuum = { out: false, held: false, x: 0, z: 0, yaw: 0, running: false };
     this.killer = null;
     this.lights = 1; this.flickerAmt = 0; this.flickerT = 4;
@@ -157,8 +163,19 @@ export class Game {
     this.actorMeshes = buildActorMeshes();
     this.solids = this.world.solids;
 
+    /* Losing the pointer means the player alt-tabbed or hit Escape, and
+       the shift should stop rather than carry on behind a window they are
+       not looking at.
+
+       It does NOT mean the lock we let go of on purpose, or one the
+       browser refused to hand back. Hanging up the phone asks for the
+       lock again, and a request made without a fresh user gesture is
+       simply denied -- which arrived here as "the pointer is not locked"
+       and paused the shift every time you put the receiver down. */
     this.input.onLockChange = (locked) => {
+      const ours = this.time - (this._lockAskedT || -99) < 0.6;
       if (locked) { this.wantLock = true; return; }
+      if (ours) return;
       if (this.state === ST.PLAY && !this.dlg.active && !this.phone.active) this.pause();
     };
     /* A pointer-lock request is only granted off the back of a user gesture,
@@ -171,7 +188,7 @@ export class Game {
     this.input.onGesture = () => {
       if (!this.wantLock || this.input.locked) return;
       if (this.state !== ST.PLAY || this.dlg.active || this.phone.active) return;
-      this.input.requestLock();
+      this.grabLock();
     };
     addEventListener('resize', () => this.layout());
     this.layout();
@@ -279,6 +296,8 @@ export class Game {
        room that is the only way of dealing with what came out of it. */
     this.popper = { running: false, spilled: 0 };
     this.spills = [];
+    this.puffs = [];
+    this.bus = null;
     this.vacuum = { out: false, held: false, x: 0, z: 0, yaw: 0, running: false };
     this.briefingStarted = false;
 
@@ -308,7 +327,7 @@ export class Game {
     this.ui.setHudVisible(true);
     this.ui.cinema(false);
     this.wantLock = true;
-    this.input.requestLock();
+    this.grabLock();
   }
 
   /* ============================================================
@@ -414,6 +433,12 @@ export class Game {
     else if (this.state === ST.QUIT) this.showQuitConfirm(this.quitSel);
     this._promptCache = null;
   }
+
+  /* Taking the pointer, and giving it back, on purpose.
+     Both are stamped so onLockChange can tell a lock we asked about from
+     one the player took away by alt-tabbing. */
+  grabLock() { this._lockAskedT = this.time; this.input.requestLock(); }
+  dropLock() { this._lockAskedT = this.time; this.input.exitLock(); }
 
   /* ---------------- title ---------------- */
   get titleItems() {
@@ -800,6 +825,8 @@ export class Game {
       this.updateHandedPhone(h);
       this.updatePizza(h);
       this.updatePopper(h);
+      this.updatePuffs(h);
+      this.updateBus(h);
       this.updateVacuum(h);
       for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
       this.customers = this.customers.filter((c) => c.state !== CS.GONE);
@@ -949,7 +976,7 @@ export class Game {
   pause() {
     if (this.state !== ST.PLAY) return;
     this.wantLock = false;
-    this.input.exitLock();
+    this.dropLock();
     this.ui.setPrompt('');
     this.ui.hideNotes(); this.notesOpen = false;
     this._heldTalk = this.phone.active ? 'phone' : this.dlg.active ? 'dlg' : null;
@@ -1022,7 +1049,7 @@ export class Game {
       this.ui.showDialogue(this.dlg.node, this.dlg.sel, this.ctx);
     } else {
       this.wantLock = true;
-      this.input.requestLock();
+      this.grabLock();
     }
     this._heldTalk = null;
   }
@@ -1431,8 +1458,19 @@ export class Game {
        care what is between you and the box. Nothing on the sales floor is
        reachable from in there. */
     const inBackRoom = this.player.z > D + 0.02;
+    /* The vacuum is reachable from whichever side of that wall it is
+       actually standing on. It lives in the back room, and the back-room
+       branch below used to list the door and the people in there and
+       nothing else -- so the one object in the building that deals with a
+       floor full of popcorn could not be picked up, from any angle, ever. */
+    const v = this.vacuum;
+    const vacTarget = (v.out && !v.held)
+      ? { kind: 'vacuum', aabb: { x0: v.x - 0.40, x1: v.x + 0.40, y0: 0, y1: 1.15, z0: v.z - 0.40, z1: v.z + 0.40 } }
+      : null;
+
     if (inBackRoom) {
       t.push({ kind: 'storage', aabb: { x0: SDOOR_X0 - 0.25, x1: SDOOR_X1 + 0.25, y0: 0.2, y1: 2.0, z0: D - 0.45, z1: D + 0.45 } });
+      if (vacTarget && v.z > D) t.push(vacTarget);
       for (const c of this.people()) {
         if (c.hidden || c.z < D) continue;
         const h = ACTOR_HEIGHT * c.app.height.scale;
@@ -1440,6 +1478,7 @@ export class Game {
       }
       return t;
     }
+    if (vacTarget && v.z <= D) t.push(vacTarget);
     for (const s of SHELVES) {
       t.push({ kind: 'shelf', genre: s.genre, shelf: s, aabb: { x0: s.x0 - 0.12, x1: s.x1 + 0.12, y0: 0.2, y1: s.top, z0: s.z0 - 0.12, z1: s.z1 + 0.12 } });
     }
@@ -1453,10 +1492,7 @@ export class Game {
     /* The cart itself, so there is something to switch off, and the
        vacuum wherever it happens to be standing. */
     t.push({ kind: 'popper', aabb: { x0: 12.14, x1: 13.0, y0: 0.8, y1: 1.9, z0: 5.70, z1: 6.62 } });
-    if (this.vacuum.out && !this.vacuum.held) {
-      const v = this.vacuum;
-      t.push({ kind: 'vacuum', aabb: { x0: v.x - 0.34, x1: v.x + 0.34, y0: 0, y1: 1.1, z0: v.z - 0.34, z1: v.z + 0.34 } });
-    }
+
     t.push({ kind: 'door', aabb: { x0: DOOR_X0 - 0.2, x1: DOOR_X1 + 0.2, y0: 0.2, y1: 2.1, z0: -0.35, z1: 0.35 } });
     t.push({ kind: 'storage', aabb: { x0: SDOOR_X0 - 0.25, x1: SDOOR_X1 + 0.25, y0: 0.2, y1: 2.0, z0: D - 0.45, z1: D + 0.45 } });
     for (const c of this.people()) {
@@ -1612,10 +1648,17 @@ export class Game {
           prompt = `${K()}Pull the back room door to`;
           act = () => this.toggleStorage();
         } else if (inside) {
-          // shut and standing on the inside: the only thing worth doing
-          prompt = `${K()}Throw the bolt`
-            + `\n<span class="sub">${glyph('bolt')} does it from anywhere in here &middot; press again to open up</span>`;
-          act = () => this.lockStorage();
+          /* Shut, and you are on the inside of it. Interact opens the
+             door, the way interact opens every other door in the
+             building. Bolting it is its own verb on its own key.
+
+             It used to be the other way round -- the only thing this
+             offered was the bolt -- so getting back out to the counter
+             meant bolting yourself in and then unbolting, and there was
+             no way to simply open the door you were standing behind. */
+          prompt = `${K()}Open the back room door`
+            + `\n<span class="sub">${glyph('bolt')} throws the bolt instead</span>`;
+          act = () => this.toggleStorage();
         } else {
           prompt = `${K()}Open the back room`;
           act = () => this.toggleStorage();
@@ -1818,7 +1861,7 @@ export class Game {
     this.speaking = person;
     this.dlg.start(person, node, (p) => this.endDialogue(p));
     this.ui.showDialogue(node, 0, this.ctx);
-    this.input.exitLock();
+    this.dropLock();
     if (person.observed) person.observed.add('voice');
   }
   endDialogue(p) {
@@ -1834,7 +1877,7 @@ export class Game {
       this.briefingStarted = false;
       if (p.state === 'BRIEF') { p.state = 'WAIT'; p.nagTimer = 4; }
     }
-    if (this.state === ST.PLAY) { this.wantLock = true; this.input.requestLock(); }
+    if (this.state === ST.PLAY) { this.wantLock = true; this.grabLock(); }
   }
   talkToPerson(c) {
     if (c === this.officer) {
@@ -1896,14 +1939,14 @@ export class Game {
     this.phone.start({ name: 'DISPATCH' }, node, () => { });
     this.player.frozen = true;
     this.ui.showPhone(node, 0);
-    this.input.exitLock();
+    this.dropLock();
   }
   hangUp() {
     this.phone.node = null;
     this.ui.hidePhone();
     this.player.frozen = false;
     this.sound.phoneHang();
-    if (this.state === ST.PLAY) { this.wantLock = true; this.input.requestLock(); }
+    if (this.state === ST.PLAY) { this.wantLock = true; this.grabLock(); }
   }
 
   /**
@@ -1918,7 +1961,7 @@ export class Game {
     this.ui.hidePhone();
     this.phone.node = null;
     this.player.frozen = false;
-    if (this.state === ST.PLAY) { this.wantLock = true; this.input.requestLock(); }
+    if (this.state === ST.PLAY) { this.wantLock = true; this.grabLock(); }
     this.sound.ringback();
 
     if (target.isKiller !== true) {
@@ -2435,7 +2478,7 @@ export class Game {
   ending(kind, data) {
     this.state = ST.ENDING;
     this.endKind = kind;
-    this.input.exitLock();
+    this.dropLock();
     this.ui.hideDialogue(); this.ui.hideNotes(); this.ui.hidePhone();
     this.ui.setHudVisible(false);
     this.ui.setObjective('');
@@ -2515,7 +2558,7 @@ export class Game {
     const grade = gradeNight(this.stats);
     this.grade = grade;
     this.state = ST.REPORT;
-    this.input.exitLock();
+    this.dropLock();
     this.ui.setHudVisible(false);
     this.ui.setObjective('');
     this.ui.cinema(true);
@@ -2725,6 +2768,11 @@ export class Game {
       M.m[5] = Math.min(1, k * 1.2);
       this.raster.drawMesh(this.world.spillMesh, M.m,
         { shade: lightAt(sp.x, 0.1, sp.z) * this.lights });
+    }
+    for (const q of this.puffs) {
+      setPosYaw(M.m, q.x, q.y, q.z, q.yaw);
+      this.raster.drawMesh(this.world.puffMesh, M.m,
+        { shade: lightAt(q.x, q.y, q.z) * this.lights });
     }
     const v = this.vacuum;
     if (!v.out) return;
@@ -3283,7 +3331,7 @@ export class Game {
     this.ui.hidePhone();
     this.phone.node = null;
     this.player.frozen = false;
-    if (this.state === ST.PLAY) { this.wantLock = true; this.input.requestLock(); }
+    if (this.state === ST.PLAY) { this.wantLock = true; this.grabLock(); }
     this.sound.blip(voicePitchOf(who.app), who.app.voice.rough);
     this.ui.toast(`You hand ${who.name} the receiver.`, 'good');
   }
@@ -3549,12 +3597,61 @@ export class Game {
       P.popT = 0.09 + this.rng() * 0.14;
       this.sound.popKernel();
     }
+    /* Corn coming over the front of the case: thrown up out of the
+       kettle, arcing out across the counter, and landing. It is what
+       makes the machine read as overflowing rather than as a box that
+       occasionally spawns a pile on the floor. */
+    P.puffT = (P.puffT || 0) - dt;
+    if (P.puffT <= 0) {
+      P.puffT = 0.05 + this.rng() * 0.07;
+      /* Out over the front of the case and down the clerk's side, which is
+         where it would actually go. The spread used to reach far enough
+         round that half of it flew into the back wall behind the cart. */
+      const a = this.rng.range(-1.0, 0.7);
+      const sp = this.rng.range(0.9, 2.3);
+      this.puffs.push({
+        x: 12.60 + this.rng.range(-0.16, 0.16),
+        y: 1.50,
+        z: 6.10 + this.rng.range(-0.14, 0.14),
+        vx: Math.sin(a) * sp * 0.7,
+        vz: -Math.cos(a) * sp,
+        vy: this.rng.range(1.4, 2.6),
+        spin: this.rng.range(-7, 7), yaw: this.rng() * 6.28,
+        t: 0,
+      });
+    }
     P.spillT = (P.spillT || 0) - dt;
     /* It piles up fast at first and then keeps going, so leaving it while
        you deal with him costs you real floor. */
     if (P.spillT <= 0 && this.spills.length < MAX_SPILLS) {
       P.spillT = 1.5 + this.rng() * 1.6;
       this.dropSpill();
+    }
+  }
+
+  /**
+   * The corn that is in the air right now.
+   *
+   * Simple ballistics and then it is gone -- where it lands is not what
+   * builds the mess up, the piles are. These are the ones you watch come
+   * over the glass while he stands there laughing.
+   */
+  updatePuffs(dt) {
+    const list = this.puffs;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const q = list[i];
+      q.t += dt;
+      q.vy -= 7.2 * dt;
+      q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+      q.yaw += q.spin * dt;
+      if (q.y <= 0.03) {
+        // it bounces once, badly, and stops being worth drawing
+        if (q.vy < -0.6 && !q.bounced) {
+          q.bounced = true; q.y = 0.03; q.vy = -q.vy * 0.28;
+          q.vx *= 0.4; q.vz *= 0.4;
+        } else { list.splice(i, 1); continue; }
+      }
+      if (q.t > 4) list.splice(i, 1);
     }
   }
 
@@ -3620,8 +3717,10 @@ export class Game {
   updateVacuum(dt) {
     const v = this.vacuum;
     if (!v.held) { v.running = false; return; }
-    const want = this.input.down.has('KeyE') || this.input.down.has('PadA')
-      || this.input.mouse[0];
+    /* Held, not tapped -- and held on whatever interact is bound to.
+       Naming two keys here meant rebinding interact left the vacuum
+       running on a button the player no longer uses. */
+    const want = INTERACT_KEYS.some((k) => this.input.down.has(k)) || this.input.mouse[0];
     if (want && !v.running) { v.running = true; this.sound.vacuumOn(); }
     if (!want && v.running) { v.running = false; this.sound.vacuumOff(); }
     if (!v.running) return;
@@ -3646,6 +3745,99 @@ export class Game {
         }
       }
     }
+  }
+
+  /* ============================================================
+     THE BUS
+
+     A coach comes off the highway and two dozen people get out of it,
+     and every one of them looks exactly the same -- same coat, same hair,
+     same everything, because they are all going to the same thing and
+     they have all dressed for it. They come through the door together,
+     they all want a film, and some of them will tell you about their
+     journey while the line behind them grows.
+
+     He does not work a night the bus comes. Two dozen identical people is
+     no night to be picking a face out of a room, and a man who wants to
+     be remembered as nobody in particular does not walk into a shop where
+     everybody already is. If he is in the building when the coach is due,
+     the coach waits -- it can circle the lot, or it can be a bit late.
+     ============================================================ */
+  /** Is the coach still to come, and can it come now? */
+  busDue() {
+    const N = this.night;
+    if (!N || this.bus || this.sim < N.busAt) return false;
+    if (this.closing) return false;
+    return true;
+  }
+
+  updateBus(dt) {
+    if (this.bus) {
+      /* They arrive over a handful of seconds rather than all landing on
+         one tile, which is a doorway full of people wedged in each other. */
+      const B = this.bus;
+      B.t += dt;
+      while (B.made < B.total && B.t > B.made * 0.55) {
+        this.customers.push(this.makeBusRider(B, B.made));
+        B.made++;
+      }
+      return;
+    }
+    if (!this.busDue()) return;
+
+    const k = this.killer;
+    /* He is in the shop, or on his way in. The coach is late tonight. */
+    if (k && k.plan.appears && (killerActive(k) || killerInside(k)
+      || (k.phase === KP.CUSTOMER && k.ent && !k.ent.hidden))) {
+      this.night.busAt = this.sim + 20;
+      return;
+    }
+    this.beginBus();
+  }
+
+  beginBus() {
+    const rng = this.rng;
+    /* One face, worn by all of them. */
+    const app = randomAppearance(rng);
+    this.bus = {
+      app, skin: paintSkin(app),
+      total: 18 + rng.int(9),
+      made: 0, t: 0,
+      /* Their name, which is also all the same, give or take. */
+      surname: randomName(rng, app.gender).split(' ')[1],
+    };
+    /* And he stays away. Not "hides" -- does not come. */
+    const k = this.killer;
+    if (k) { k.plan.appears = false; k.phase = KP.ABSENT; if (k.ent) k.ent.hidden = true; }
+    this.sound.doorChime();
+    this.ui.toast(`A coach pulls into the lot. It does not look like it is passing through.`, 'bad');
+    this.ui.toast(`They are all wearing the same coat.`, '');
+  }
+
+  /** One of them. They differ in temperament and in nothing else. */
+  makeBusRider(B, i) {
+    const rng = this.rng;
+    const c = createCustomer(rng, {
+      app: B.app,
+      name: `${randomName(rng, B.app.gender).split(' ')[0]} ${B.surname}`,
+      intent: 'RENT',
+    });
+    /* Same face, same coat, same everything -- and each of them their own
+       person underneath it, which is what makes some of them quick and
+       some of them the reason the line is not moving. */
+    c.fromBus = true;
+    c.x = SPOTS.street.x + rng.range(-3.2, 3.2);
+    c.z = SPOTS.street.z - 0.4 - (i % 5) * 0.5;
+    /* About one in four wants to tell you about the journey. */
+    c.rambles = rng.chance(0.26) ? 0 : -1;
+    return c;
+  }
+
+  /** Are we in the middle of it? The shop is a different place while we are. */
+  busPresent() {
+    if (!this.bus) return false;
+    return this.customers.some((c) => c.fromBus && !c.hidden
+      && c.state !== CS.GONE && c.state !== CS.LEAVING);
   }
 
   phoneTargets() {
@@ -3677,7 +3869,7 @@ export class Game {
         const e = k.ent;
         e.phoneLabel = killerInside(k)
           ? `THE ONE WHO JUST CAME THROUGH THE DOOR`
-          : `The one out on the pavement`;
+          : `The one out on the sidewalk`;
         out.push(e);
       }
     }

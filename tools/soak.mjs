@@ -826,6 +826,11 @@ await ev(() => {
   g.estT = 99; g.timeScale = 25;
   g.officerDone = true; if (g.officer) g.officer.state = 'DONE';
   g.killer.plan.appears = false; g.killer.phase = 'ABSENT';
+  /* And no coach. This is the check that a quiet night reaches the report;
+     two dozen people off a bus is not a quiet night, and the shift it makes
+     is a good deal longer than the window below allows for. The coach has
+     its own harness. */
+  g.night.busAt = Infinity;
 });
 let reached = false;
 let sawClosing = false;
@@ -844,6 +849,13 @@ for (let i = 0; i < 300; i++) {
     g.player.held.length = 0; g.bin.length = 0;
     g.counterSlots = g.counterSlots.map(() => null);
     g.rewinder.tape = null;
+    /* And deal with the popcorn, which closing now also waits on. If the
+       man who empties the tub into the kettle turns up on this night, the
+       shift cannot end with the machine running and the floor covered --
+       which is the point of him, and which left this check waiting for a
+       report that was never coming. */
+    if (g.popper.running) g.stopPopper();
+    g.spills.length = 0;
   });
   await wait(200);
 }

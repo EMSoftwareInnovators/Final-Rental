@@ -153,6 +153,41 @@ const moved2 = await ev(async () => {
 });
 check('so the camera works on the second night too', moved2 > 0.05, `yaw moved ${moved2.toFixed(3)}`);
 
+/* ---------- the back room door, from the inside ---------- */
+/* Standing behind it with it shut, the only thing on offer used to be the
+   bolt -- so getting back out to the counter meant bolting yourself in and
+   then unbolting, and there was no way to simply open the door you were
+   standing behind. Interact opens doors. Bolt is its own verb. */
+const doorInside = await ev(async () => {
+  const g = window.__game;
+  g.state = 'PLAY';
+  g.customers.length = 0;
+  g.storage.locked = false; g.storage.open = false; g.storage.broken = false;
+  g.player.x = 5.95; g.player.z = 10.2; g.player.yaw = Math.PI; g.player.pitch = 0;
+  for (let k = 0; k < 4; k++) await new Promise((r) => requestAnimationFrame(r));
+  const hover = g.hover && g.hover.kind;
+  const prompt = g.ui.el.prompt.textContent;
+  // and take it: interact must open, not bolt
+  g.toggleStorage();
+  return { hover, prompt: prompt.replace(/\s+/g, ' ').slice(0, 80),
+    open: g.storage.open, locked: g.storage.locked };
+});
+check('the back room door can be seen from inside', doorInside.hover === 'storage');
+check('and interact opens it rather than bolting you in',
+  /Open the back room door/.test(doorInside.prompt) && doorInside.open && !doorInside.locked,
+  doorInside.prompt);
+check('with the bolt named as the other thing you could do',
+  /throws the bolt/.test(doorInside.prompt));
+
+const boltKeys = await ev(() => {
+  const A = window.__input.PAD_ACTIONS;
+  const d = window.__input.defaultBinds();
+  return { bolt: A.bolt.def, confirm: A.confirm.def, onA: (d[0] || []).join('+') };
+});
+check('and the button that opens doors is not also the one that bolts them',
+  !boltKeys.bolt.includes(0) && !boltKeys.onA.includes('bolt'),
+  `bolt on ${boltKeys.bolt.join(',')}, select on ${boltKeys.confirm.join(',')} (${boltKeys.onA})`);
+
 console.log('\n--- errors ---');
 console.log(errors.length ? errors.join('\n\n') : '(none)');
 await browser.close();

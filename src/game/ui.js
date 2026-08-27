@@ -521,7 +521,7 @@ export function endingHtml(kind, data) {
   switch (kind) {
     case 'CAUGHT': {
       const where = data.offscreen
-        ? `<p>They took him on the pavement outside, before he reached the corner.</p>`
+        ? `<p>They took him on the sidewalk outside, before he reached the corner.</p>`
         : data.broke
           ? `<p>They came through the front while he was still working on the stock room door.</p>`
           : data.hid

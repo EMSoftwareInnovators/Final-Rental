@@ -164,6 +164,29 @@ const vac = await ev(() => {
 });
 check('the vacuum is not in the world until you open the back room',
   vac.beforeDoor === false && vac.afterUnlock === true);
+/* And you can actually look at it and pick it up, which for a while you
+   could not: the target list returns early in the back room, and the one
+   object in the building that deals with a floor full of popcorn was not
+   on the short list it returns. */
+const reach = await ev(async () => {
+  const g = window.__game;
+  g.vacuum.held = false;
+  const seen = [];
+  for (const [dx, dz, pitch] of [[0.9, -0.2, -0.6], [1.4, 0, -0.45], [0.6, 0, -0.8], [1.0, 0.6, -0.5]]) {
+    g.player.x = g.vacuum.x + dx; g.player.z = g.vacuum.z + dz;
+    g.player.yaw = Math.atan2(g.vacuum.x - g.player.x, g.vacuum.z - g.player.z);
+    g.player.pitch = pitch;
+    for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
+    seen.push((g.hover && g.hover.kind) || 'nothing');
+  }
+  const prompt = g.ui.el.prompt.textContent;
+  g.takeVacuum();                       // and pick it back up for what follows
+  return { seen, prompt: prompt.slice(0, 40), hits: seen.filter((k) => k === 'vacuum').length };
+});
+check('and it can be looked at from where it stands, in the back room',
+  reach.hits >= 3, reach.seen.join(', '));
+check('and looking at it offers to take it',
+  /Take the vacuum/.test(reach.prompt), reach.prompt);
 check('and it is in the back room, not on the shop floor',
   vac.inBackRoom, `standing at ${vac.home}`);
 check('you can pick it up and put it down again',
@@ -206,6 +229,16 @@ const clean = await ev(() => {
   };
 });
 check('holding it without running it cleans nothing', clean.idle === clean.started);
+/* And it runs off whatever interact is bound to, rather than two keys
+   written down here -- rebinding interact used to leave the vacuum
+   running on a button the player no longer uses. */
+const bound = await ev(() => {
+  const g = window.__game;
+  const A = window.__input.PAD_ACTIONS;
+  return { keys: A.confirm.keys, hasPadA: A.confirm.keys.includes('PadA') };
+});
+check('and it runs off the interact binding, not a hardcoded key',
+  bound.hasPadA, bound.keys.join(' '));
 check('and running it across the room from the mess cleans nothing', clean.away === clean.started);
 check('pushing it over the popcorn is what clears it',
   clean.left === 0, `${clean.started} piles down to ${clean.left}`);

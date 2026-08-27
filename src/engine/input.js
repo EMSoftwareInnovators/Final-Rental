@@ -40,10 +40,15 @@ export const PAD_ACTIONS = {
      a thumb, and a trigger is what a trigger is for. Which hand you reach
      with is nobody's business. A trigger reads as pressed past halfway. */
   run: { label: 'Hurry', keys: ['PadLT', 'ShiftLeft'], def: [6, 7] },
-  /* On the same button as interact by default, because that is how the
-     keyboard behaves: E throws the bolt when you are looking at the door.
-     RB keeps the from-anywhere version. */
-  bolt: { label: 'Throw the bolt', keys: ['PadRB', 'KeyF'], def: [0, 5] },
+  /* Its own button, and not the one that opens doors.
+
+     It used to sit on interact as well, which read as consistent with the
+     keyboard -- but it meant that the button you press to open the back
+     room door was also the button that bolts it, and which of the two you
+     got depended on where you were standing. Interact opens doors. This
+     bolts them, from anywhere in the back room, which is the whole point
+     of having it on a button of its own when somebody is coming. */
+  bolt: { label: 'Throw the bolt', keys: ['PadRB', 'KeyF'], def: [5] },
   pause: { label: 'Pause', keys: ['PadStart', 'Escape'], def: [9] },
   up: { label: 'Up', keys: ['PadUp', 'ArrowUp'], def: [12] },
   down: { label: 'Down', keys: ['PadDown', 'ArrowDown'], def: [13] },

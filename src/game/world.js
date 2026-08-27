@@ -340,6 +340,20 @@ export function buildWorld(T) {
   }
   const spillMesh = spillB.build();
 
+  /* One airborne clump, for the corn coming over the front of the case.
+     A pair of crossed quads so it has a face from any angle, blended so it
+     is a burst rather than a slab. */
+  const puffB = new MeshBuilder();
+  puffB.light = () => 1;
+  {
+    const R = 0.11;
+    puffB.quad([-R, -R, 0], [R, -R, 0], [R, R, 0], [-R, R, 0],
+      T.popBurst, [0, 0, 64, 64], F_BLEND | F_DOUBLE);
+    puffB.quad([0, -R, -R], [0, -R, R], [0, R, R], [0, R, -R],
+      T.popBurst, [0, 0, 64, 64], F_BLEND | F_DOUBLE);
+  }
+  const puffMesh = puffB.build();
+
   /* The vacuum out of the back room. An upright, the kind with a cloth bag
      up the handle -- 1996, and it has been in a stockroom since 1984. */
   const vacB = new MeshBuilder();
@@ -368,6 +382,7 @@ export function buildWorld(T) {
     mesh,
     boomMesh,
     spillMesh,
+    puffMesh,
     vacMesh,
     tvMesh, tvPos, tvTextures,
     cashMesh,

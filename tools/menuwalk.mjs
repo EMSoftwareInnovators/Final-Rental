@@ -52,6 +52,39 @@ await page.mouse.click(400, 300); await page.waitForTimeout(250);
 s2 = await st();
 check('a click does nothing in the pause menu',
   s2.s === 'PAUSE' && (await page.evaluate(() => window.__game.pauseSel)) === before, s2.s);
+/* Putting the receiver down asks for the pointer back, and a request made
+   without a fresh user gesture is simply refused -- which arrived at the
+   auto-pause as "the pointer is not locked" and paused the shift every
+   time you hung up. */
+const hangUps = await page.evaluate(async () => {
+  const g = window.__game;
+  const out = [];
+  for (const pick of ['Nothing|Never mind|Put it back|Sorry', 'long night', 'zzzz']) {
+    g.state = 'PLAY';
+    g.pickUpPhone();
+    let node = g.phone.node;
+    for (let k = 0; k < 10 && node; k++) {
+      const cs = node.choices || [];
+      if (!cs.length) break;
+      let i = cs.findIndex((r) => new RegExp(pick, 'i').test(r.label));
+      if (i < 0) i = cs.length - 1;
+      node = cs[i].fn ? cs[i].fn() : null;
+    }
+    for (let k = 0; k < 5; k++) await new Promise((r) => requestAnimationFrame(r));
+    out.push({ pick, state: g.state, frozen: g.player.frozen, active: g.phone.active });
+  }
+  return out;
+});
+check('hanging up the phone never pauses the shift',
+  hangUps.every((h) => h.state === 'PLAY'),
+  hangUps.map((h) => `${h.pick.slice(0, 10)}:${h.state}`).join(' '));
+check('and hands the shop back rather than leaving you frozen',
+  hangUps.every((h) => !h.frozen && !h.active));
+
+/* Back into the pause menu for what follows. */
+await page.keyboard.press('Escape'); await page.waitForTimeout(280);
+check('and the shift can still be paused afterwards', (await st()).s === 'PAUSE', (await st()).s);
+
 /* Quitting is the one thing in here you cannot take back, and it sits one
    row under "back to the counter". It asks first. */
 const key = async (k) => { await page.keyboard.press(k); await page.waitForTimeout(240); };

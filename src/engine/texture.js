@@ -839,18 +839,63 @@ export function buildTextures() {
   /* Loose corn, seen from above and from the side. Lighter and drier than
      the heap in the case, because it has been on the floor and trodden
      round, and with the carpet showing through the gaps. */
+  /* Loose kernels on the carpet: individual popped corn, not a drift.
+     Each one is drawn as a real piece -- a lumpy cluster of three or four
+     lobes with a shadow under it and a pale highlight on top -- because at
+     this resolution a field of soft blobs read as spilled porridge. */
   T.popSpill = makeTex(64, 64, (g, w, h) => {
     fill(g, '#1d3a3c', w, h);                          // the carpet under it
-    for (let i = 0; i < 150; i++) {
-      const x = R.int(w), y = R.int(h), r = 2 + R.int(4);
-      g.fillStyle = ['#e6dcbc', '#d2c49a', '#bcae86', '#f0e8ce'][R.int(4)];
+    const kernel = (x, y, r, a) => {
+      // the shadow it sits in
+      g.fillStyle = 'rgba(0,0,0,.34)';
+      g.beginPath(); g.ellipse(x + 0.6, y + r * 0.7, r * 1.05, r * 0.55, 0, 0, 7); g.fill();
+      // three or four lobes, which is what a popped kernel actually is
+      const lobes = 3 + R.int(2);
+      g.fillStyle = ['#e8dcb8', '#ded0a6', '#f2e8cc'][R.int(3)];
       g.beginPath();
-      // two overlapping lobes: popped corn is not a circle
-      g.arc(x, y, r, 0, 7);
-      g.arc(x + r * 0.7, y - r * 0.5, r * 0.75, 0, 7);
+      for (let i = 0; i < lobes; i++) {
+        const t = a + (i / lobes) * 6.283;
+        g.moveTo(x, y);
+        g.arc(x + Math.cos(t) * r * 0.52, y + Math.sin(t) * r * 0.52, r * 0.62, 0, 7);
+      }
+      g.fill();
+      // the crease, and the light on the top of it
+      g.fillStyle = 'rgba(150,120,70,.40)';
+      g.beginPath(); g.arc(x + r * 0.15, y + r * 0.20, r * 0.30, 0, 7); g.fill();
+      g.fillStyle = 'rgba(255,252,235,.75)';
+      g.beginPath(); g.arc(x - r * 0.34, y - r * 0.38, r * 0.26, 0, 7); g.fill();
+    };
+    /* Scattered, and wrapped round the edges so tiling never shows a seam
+       or a bald strip down the join. */
+    for (let i = 0; i < 26; i++) {
+      const x = R.int(w), y = R.int(h), r = 4 + R.int(3), a = R() * 6.283;
+      kernel(x, y, r, a);
+      if (x < r * 2) kernel(x + w, y, r, a);
+      if (x > w - r * 2) kernel(x - w, y, r, a);
+      if (y < r * 2) kernel(x, y + h, r, a);
+      if (y > h - r * 2) kernel(x, y - h, r, a);
+    }
+    // a few unpopped ones, because he emptied the whole tub in
+    for (let i = 0; i < 10; i++) {
+      g.fillStyle = '#8a6a34';
+      g.beginPath(); g.arc(R.int(w), R.int(h), 1.6, 0, 7); g.fill();
+    }
+    noise(g, w, h, 8);
+  });
+
+  /* The stuff in the air, coming over the front of the case. Mostly
+     transparent, so it reads as a burst rather than a wall. */
+  T.popBurst = makeTex(64, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    for (let i = 0; i < 34; i++) {
+      const x = R.int(w), y = R.int(h), r = 3 + R.int(3);
+      g.fillStyle = ['#f0e6c6', '#ded0a6', '#fbf4de'][R.int(3)];
+      g.beginPath();
+      g.arc(x, y, r * 0.62, 0, 7);
+      g.arc(x + r * 0.5, y - r * 0.4, r * 0.5, 0, 7);
+      g.arc(x - r * 0.45, y + r * 0.3, r * 0.44, 0, 7);
       g.fill();
     }
-    noise(g, w, h, 12);
   });
 
   /* -------- the vacuum from the back room -------- */

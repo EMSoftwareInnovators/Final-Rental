@@ -171,6 +171,11 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
   return {
     n, seed, rng, mode, length, bulletin, suspect, plan, schedule, caseFile,
     deputy, deputyAt, swarm: specials.swarm,
+    /* The bus. Once in a while a coach pulls in off the highway and two
+       dozen people who all look the same come through the door at once.
+       Never on the first couple of nights -- it needs a shift you already
+       know how to run before it means anything. */
+    busAt: busNight(rng, n) ? rng.range(length * 0.22, length * 0.58) : Infinity,
     calm: quiet, standDown: !!opts.standDown,
     officerApp: makeOfficerApp(rng),
     officerName: `Deputy ${randomName(rng).split(' ')[1]}`,
@@ -267,6 +272,10 @@ export function makeCaseFile(rng, n, suspect, opts = {}) {
     standDown: !!opts.standDown,
   };
 }
+
+/* How often the coach turns up. Rare enough to be an event, common enough
+   that a long run will see a few. */
+function busNight(rng, n) { return n >= 3 && rng.chance(0.13); }
 
 function sampleKeys(rng, keys, k) { return rng.sample(keys, Math.max(1, Math.min(k, keys.length - 1))); }
 
