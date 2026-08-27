@@ -192,8 +192,12 @@ export function buildWorld(T) {
   });
   // kick rail and the sign taped to the front
   mb.box(C.x0, 0, C.z0 - 0.03, C.x1, 0.09, C.z0, { all: { tex: T.wallLowerTrim, uv: [0, 0, 64, 16], sub: [5, 1, true] } });
-  mb.plate(10.25, 0.44, C.z0 - 0.012, 0.66, 0.33, 0, T.rewindSign, [0, 0, 64, 32], 0);
-  mb.plate(11.75, 0.44, C.z0 - 0.012, 0.64, 0.32, 0, T.lateFeeSign, [0, 0, 64, 32], 0);
+  /* Taped to the FRONT of the counter, so they are read from the shop floor
+     -- which is the -Z side, and that is yaw PI. At yaw 0 they were wound
+     for a reader standing behind the counter, so from where the customers
+     queue "PLEASE REWIND" came out as "DNIWER ESAELP". */
+  mb.plate(10.25, 0.44, C.z0 - 0.012, 0.66, 0.33, Math.PI, T.rewindSign, [0, 0, 64, 32], 0);
+  mb.plate(11.75, 0.44, C.z0 - 0.012, 0.64, 0.32, Math.PI, T.lateFeeSign, [0, 0, 64, 32], 0);
 
   /* Back counter behind the clerk. Only the face against the wall is
      skipped: the short end by the popcorn cart was being skipped too, and
@@ -208,9 +212,13 @@ export function buildWorld(T) {
 
   /* ---------------- counter props ---------------- */
   const P = PROPS;
+  /* The word only goes on the face the clerk reads it from. It used to be
+     on all four, and a word printed on all four sides of a box reads
+     backwards on two of them. */
   mb.box(P.bin.x0, P.bin.y0, P.bin.z0, P.bin.x1, P.bin.y1, P.bin.z1, {
-    all: { tex: T.binFront, uv: [0, 0, 64, 64] },
-    py: { tex: T.binFront, uv: [0, 0, 64, 20] },
+    all: { tex: T.binSide, uv: [0, 0, 64, 64] },
+    pz: { tex: T.binFront, uv: [0, 0, 64, 64] },
+    py: { tex: T.binSide, uv: [0, 0, 64, 20] },
   });
   mb.box(P.rewinder.x0, P.rewinder.y0, P.rewinder.z0, P.rewinder.x1, P.rewinder.y1, P.rewinder.z1, {
     all: { tex: T.rewinder, uv: [0, 0, 64, 64] },
@@ -668,7 +676,9 @@ function buildPopcornCart(mb, T, x0, z0, x1, z1) {
   // case roof and the lit marquee across the front
   mb.box(x0 - 0.03, CASE, z0 - 0.03, x1 + 0.03, TOP, z1 + 0.03, {
     all: { tex: T.popRed, uv: [0, 0, 64, 22] },
-    nx: { tex: T.popSign, uv: [0, 0, 64, 32], flags: F_EMIT },
+    /* Subdivided. A single quad this size is affine-mapped across its
+       whole width, so the lettering slid about as you walked past it. */
+    nx: { tex: T.popSign, uv: [0, 0, 64, 32], flags: F_EMIT, sub: [5, 2, false] },
   });
   mb.box(x0 + 0.06, TOP, z0 + 0.06, x1 - 0.06, TOP + 0.10, z1 - 0.06,
     { all: { tex: T.popGold, uv: [0, 0, 32, 12] } });
@@ -797,16 +807,25 @@ function buildShelf(mb, T, s) {
   // toe kick
   mb.box(s.x0 + 0.04, 0, s.z0 + 0.04, s.x1 - 0.04, 0.14, s.z1 - 0.04,
     { all: { tex: T.wallLowerTrim, uv: [0, 0, 64, 16], sub: [reps, 1, true] } });
-  // protruding shelf boards break up the flat spine wall
+  /* Protruding shelf boards, to break up the flat spine wall.
+
+     They are inset from the ends of the run and do not overhang the side
+     that is against a wall. They used to run the full length and stick out
+     three centimetres on BOTH faces, so the end of a gondola was a comb of
+     little tabs rather than a flat side panel -- and on the games wall the
+     inward set of tabs went straight through the wall. A real shelf's
+     boards sit between the uprights. */
   const levels = s.top > 2 ? 5 : 4;
+  const END = 0.05;                          // held back from the end panels
+  const OUT = 0.03;                          // proud of the browsing face
   for (let i = 1; i <= levels; i++) {
     const y = 0.14 + (s.top - 0.14) * (i / (levels + 0.4));
+    const face = { all: { tex: T.shelfWood, uv: [0, 0, 64, 8], sub: [reps, 1, true] } };
     if (s.axis === 'z') {
-      mb.box(s.x0 - 0.03, y, s.z0, s.x1 + 0.03, y + 0.035, s.z1,
-        { all: { tex: T.shelfWood, uv: [0, 0, 64, 8], sub: [reps, 1, true] } });
+      // a run against a wall is only browsed from +x, so only that side juts
+      mb.box(s.x0 - (s.wall ? 0 : OUT), y, s.z0 + END, s.x1 + OUT, y + 0.035, s.z1 - END, face);
     } else {
-      mb.box(s.x0, y, s.z0 - 0.03, s.x1, y + 0.035, s.z1 + 0.03,
-        { all: { tex: T.shelfWood, uv: [0, 0, 64, 8], sub: [reps, 1, true] } });
+      mb.box(s.x0 + END, y, s.z0 - OUT, s.x1 - END, y + 0.035, s.z1 + OUT, face);
     }
   }
   /* Header sign.

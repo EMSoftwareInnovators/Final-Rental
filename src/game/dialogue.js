@@ -1219,8 +1219,13 @@ function grind(c, ctx, spec) {
     return then;
   };
 
-  const beat = spec.beats[Math.min(spec.beats.length - 1,
-    spec.beats.length - 1 - Math.floor(c.resist / (spec.resist / spec.beats.length + 0.001)))];
+  /* Which beat he is on: how far you have got, mapped across the list.
+     This used to divide the other way round and came out at -1 on the very
+     first exchange, so the opening line of every one of these was the
+     word "undefined". */
+  const done = spec.resist - c.resist;
+  const beat = spec.beats[Math.max(0, Math.min(spec.beats.length - 1,
+    Math.floor(done * spec.beats.length / spec.resist)))];
 
   const cs = [
     reply(rng.pick(spec.firm), () => step(1, say(c, rng.pick(spec.give), [
@@ -1477,43 +1482,84 @@ export function specialRoot(c, ctx) {
     }
 
     /* ---------------- the sovereign citizen ---------------- */
-    case 'SOVEREIGN': {
-      const beat = (n) => {
-        const LINES = [
-          `Before we proceed. Am I being detained?`,
-          `I'm not a customer. I'm a man. There's a difference and it's a legal one.`,
-          `I never signed anything. Did I sign anything? You can't produce it, can you.`,
-          `The card in your machine has my name in capital letters. That's not me. That's a corporate fiction.`,
-          `I don't have a licence because I'm not engaged in commerce. I'm travelling.`,
-          `Under common law — and I'd ask you to look this up — a late fee is a penalty, and penalties require a court.`,
-        ];
-        if (n >= LINES.length) return finish();
-        return say(c, LINES[n], [
-          reply(rng.pick([`You're in a video shop.`, `Sir. This is a video shop.`, `None of that is a thing.`]),
-            () => beat(n + 1)),
-          reply(rng.pick([`Mm-hm. And the tape is three dollars.`, `Right. Three dollars.`, `Sure. Three dollars.`]),
-            () => beat(n + 1)),
-          reply(`I need you to step aside. There are people waiting.`, () => {
-            ctx.mood(c, -12);
-            return say(c, `They can wait. This is more important than a Tuesday.`, [
-              reply(`...`, () => beat(n + 1)),
-            ]);
-          }, { risk: true }),
-          reply(`Get out of my shop.`, () => { ctx.mood(c, -40); return out(); }, { risk: true }),
-        ]);
-      };
-      const out = () => say(c, `Noted. Recorded. You'll be hearing from a court that you do not recognise either.`, [
-        reply(`Goodnight.`, () => { ctx.storm(c); return null; }),
-      ]);
-      const finish = () => say(c, `...Fine. Three dollars. Under protest, and I want that noted.`, [
-        reply(`It's noted. Go and choose one.`, () => {
-          ctx.mood(c, +18);
-          return goShopping(c, ctx, `Under protest.`, { close: `Under protest. The counter's there.` });
-        }),
-        reply(`Actually, I'd rather you left.`, () => { ctx.leave(c); return null; }, { risk: true }),
-      ]);
-      return beat(0);
-    }
+    /* ---------------- the man with the folder ----------------
+       He is not in a hurry and he has brought paperwork. Every exchange is
+       a recitation, most of them long enough that you will consider walking
+       away, and there is a cooling-off period between them during which he
+       goes back to reading. Getting rid of him is a project. */
+    case 'SOVEREIGN':
+      return grind(c, ctx, {
+        resist: 16,
+        cool: 18,
+        beats: [
+          `Before we proceed. Am I being detained?\n\n(he opens a ring binder)\n\nI ask because under the Uniform Commercial Transactions Act of eighteen ninety-four, section four, subsection C, paragraph nine — and I have it here, I can read it to you, I will read it to you — "no man engaged in travel upon the common way shall be held to account by any agent of a corporate body except upon presentation of a wet-ink instrument bearing the seal of the county in which the alleged obligation is said to have arisen." No seal. No instrument. So. Am I being detained.`,
+          `I'm not a customer. I'm a man. There's a difference and it is a legal one, and it is set out in Bouvier's, which you have not read, at the entry for PERSON, natural, as distinguished from PERSON, corporate.\n\nWhen you say "customer" you are addressing a legal fiction. The fiction is spelled in capital letters. I am spelled in lower case. I have a document here, notarised, which severs my correspondence with the fiction, and I filed it with the county in March, and they wrote back, and the letter is in this binder behind the tab that says COUNTY.`,
+          `I never signed anything. Did I sign anything? You cannot produce it, because it does not exist, because I did not sign it.\n\nThe Statute of Frauds — and this is not fringe, this is first-year contract law, you can look it up in any library including the one two streets over which I have also had words with — requires a memorandum in writing signed by the party to be charged. I am the party to be charged. There is no memorandum. There is no writing. There is no signature. There is a man in a polo shirt and a cardboard box with a film in it.`,
+          `The card in your machine has my name on it in capital letters. That is not me. That is a corporate fiction created without my consent at the registration of my birth, and every transaction conducted against it is conducted against the fiction and not against the man.\n\nI have written to the Registrar. Three times. The third letter was certified. The green card came back with a squiggle on it that could be anybody. That squiggle is now the only evidence the state has that I exist, and I would like you to sit with that for a moment.`,
+          `I don't have a membership because I am not engaged in commerce. I am travelling.\n\nTravel is a right. Driving is a privilege. Renting is neither — renting is a bailment, and a bailment requires a bailor and a bailee and a meeting of minds, and my mind has not met yours and I would suggest it is not going to.\n\nI could produce the affidavit. I do have the affidavit. It runs to eleven pages and I have read it aloud at two town meetings.`,
+          `Under common law — and I would ask you to look this up rather than take my word for it, although you may take my word for it — a late fee is a penalty. Penalties require a court. You are not a court. You have a carpet and a popcorn machine.\n\nSee Farnsworth on the doctrine of liquidated damages, which holds that a stipulated sum bearing no reasonable relationship to actual loss is unenforceable as against public policy. Your actual loss on a videotape that sat in my house for six days is nothing. It is less than nothing. It was not going to be rented. Nobody wants it.`,
+          `I want to talk about the sign on your door.\n\n"We reserve the right to refuse service." That is an assertion of a right. Rights are not reserved by adhesive lettering. Rights are secured by instrument, and I do not see an instrument, I see a sticker, and a sticker is not a lawful notice under the Posting and Notice provisions of the Municipal Code, section eleven, which requires that any notice affecting the rights of the public be displayed in letters not less than two inches in height and countersigned by the clerk of the county.\n\nThose letters are one inch. I measured them. I have a tape measure in the car.`,
+          `You keep saying "policy". Policy is not law. A corporation may set policy for its employees; it may not set policy for a man.\n\nI would refer you to the Restatement, which nobody in this town has ever opened, on the distinction between a contract of adhesion and an agreement freely entered. Your policy is adhesion. I am not adhered. I am standing here of my own volition, which is more than can be said for you, since you are here for money, which is compulsion.`,
+          `Now. Since you have not answered my first question, I am going to take that as a no, and I would like it noted — and I will note it myself, in the binder, and I will date it — that at approximately eleven fourteen on this evening I asked whether I was being detained and received no lawful answer.\n\n(he writes for some time)\n\nHow do you spell your name? Not your first name. The one on the badge.`,
+          `Let me read you something. This is from the county's own bylaws, section nine, article four, and I obtained it under a records request that took eleven weeks and cost me forty-one dollars in copying:\n\n"No commercial premises within the district shall condition entry upon the surrender of any right otherwise held at law."\n\nYou are conditioning my entry upon my agreement to be a customer. A customer surrenders rights. Therefore your condition is void, and my presence here is lawful, and has been lawful this entire time, including during the portion where you sighed.`,
+          `I have been to four other establishments on this parade tonight and I have had this same conversation in three of them. The laundromat understood immediately. The laundromat has a woman working who has read the code.\n\nI mention this not to shame you but because I want you to understand that I am not confused and I am not unwell and I am not, as the man at the hardware store suggested, "one of those." I am simply correct, and being correct in a town like this one is a full-time occupation.`,
+          `Very well. I am going to leave. I want to be clear that I am leaving of my own volition and not under compulsion, and that my leaving does not constitute acquiescence, acceptance, admission, or waiver of any right, claim, or remedy, all of which are expressly reserved.\n\nWithout prejudice. UCC one dash three zero eight. You may write that down. I will wait.`,
+        ],
+        firm: [
+          `Sir. It's a video shop.`,
+          `None of that is a thing here.`,
+          `I need you to leave.`,
+          `I'm going to stop you there.`,
+          `That's not what any of that means.`,
+        ],
+        firmer: [
+          `Out. Before I pick up the phone.`,
+          `You are leaving now, one way or the other.`,
+          `I am not listening to another word of this.`,
+        ],
+        reason: [
+          `Mm-hm. And the tape is three dollars.`,
+          `Right. Three dollars.`,
+          `I need you to step aside. There are people waiting.`,
+          `Nothing you have said has been about a film.`,
+          `Sir, I have a queue.`,
+        ],
+        give: [
+          `...I'll allow that you have answered part of it.`,
+          `Noted. Under protest, but noted.`,
+          `(he turns a page and does not look up)\n\nContinue.`,
+          `That is the first reasonable thing anybody in this building has said.`,
+          `I am prepared to move on. Not to concede. To move on.`,
+        ],
+        dig: [
+          `Now that. That is a threat, and a threat is an assault in some jurisdictions, and I am going to write down the time.`,
+          `You have just made this take considerably longer. I hope you understand that.`,
+          `(he closes the binder, then opens it again at a different tab)\n\nRight. Let's start at the beginning.`,
+        ],
+        deflect: [
+          `They can wait. This is more important than a Tuesday.`,
+          `The queue is a symptom. I am addressing the cause.`,
+          `Three dollars is the number. It is not the issue. You keep giving me the number.`,
+          `I am not here about a film. I have never been here about a film.`,
+        ],
+        brush: [
+          `(he is reading, and holds up one finger without looking at you)`,
+          `One moment. I am at a part.`,
+          `(he has found a new tab and appears to be underlining)`,
+          `Mm. I will be with you.`,
+        ],
+        gone: [
+          `Noted. Recorded. Reserved. You'll be hearing from a court that you do not recognise either.`,
+          `Without prejudice, all rights reserved, and I'll be back on Thursday with the laminated one.`,
+        ],
+        andSell: () => say(c, `...Fine. Three dollars. Under protest, and I want that noted.`, [
+          reply(`It's noted. Go and choose one.`, () => {
+            ctx.mood(c, +18);
+            return goShopping(c, ctx, `Under protest.`, { close: `Under protest. The counter's there.` });
+          }),
+          reply(`We're closed to you. Goodnight.`, () => { ctx.storm(c); return null; }, { risk: true }),
+        ]),
+      });
 
     /* ---------------- the shelf auditor ---------------- */
     case 'AUDITOR': {

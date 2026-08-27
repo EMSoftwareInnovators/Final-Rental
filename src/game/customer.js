@@ -508,6 +508,35 @@ export function updateCustomer(c, dt, ctx) {
     }
 
     case CS.LEAVING: {
+      /* He does not leave without his music. He walks back to it, crouches,
+         turns it off -- the shop goes quiet there, not the moment he agreed
+         to go -- picks it up, and only then heads for the door. */
+      if (c.packUp) {
+        const B = c.packUp;
+        if (B.phase === 'GO') {
+          if (!c.path && dist(c.x, c.z, B.x, B.z) > 0.45) setDest(c, B.x, B.z, ctx);
+          B.t = (B.t || 0) + dt;
+          if (c.path && !step(c, dt, ctx) && B.t < 14) break;
+          c.path = null;
+          B.phase = 'STOP'; B.t = 0;
+          c.yaw = angleTowards(c.yaw, Math.atan2(B.x - c.x, B.z - c.z), dt * 6);
+        }
+        // crouched over it, reaching for the switch
+        B.t += dt;
+        c.moveSpeed = 0;
+        const k = Math.min(1, B.t / 0.5);
+        c.anim.bob = -0.16 * k; c.anim.lean = 0.42 * k;
+        c.anim.armL = 0.9 * k; c.anim.armR = 0.9 * k;
+        c.anim.headPitch = 0.5 * k;
+        if (!B.off && B.t > 0.9) { B.off = true; ctx.boomboxUp(c); }
+        if (B.t > 1.9) {
+          c.packUp = null;
+          c.anim.bob = 0; c.anim.lean = 0; c.anim.headPitch = 0;
+          c.anim.armL = 0; c.anim.armR = 0;
+        }
+        updateAnim(c.anim, dt, c.moveSpeed, c.app, { keep: true });
+        break;
+      }
       /* They used to stop a couple of paces past the kerb and blink out of
          existence in full view of the window. They now walk off down the
          pavement, left or right, and are only removed once they are past

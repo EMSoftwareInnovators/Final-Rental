@@ -426,75 +426,96 @@ export function buildTextures() {
     g.strokeStyle = '#4a6072'; g.strokeRect(2.5, 2.5, w - 5, h - 5);
     noise(g, w, h, 9); grime(g, w, h, 0.2);
   });
+  /* The same bin without the lettering, for the three sides nobody reads. */
+  T.binSide = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#20303a', w, h);
+    g.fillStyle = '#0a1218'; g.fillRect(8, 12, 48, 12);      // slot
+    g.strokeStyle = '#4a6072'; g.strokeRect(2.5, 2.5, w - 5, h - 5);
+    noise(g, w, h, 9); grime(g, w, h, 0.2);
+  });
 
   /* -------- wall telephone, built from parts --------
      A 1980s beige wall set: body, keypad, a separate handset lying in
      its cradle, and a coiled cord that hangs off the bottom.           */
-  /* A desk set, not a wall unit. Charcoal rather than the office cream it
-     used to be: on a small object under the strip lights, cream clipped to
-     white and the whole thing read as a blank slab on the counter. */
+  /* -------- the telephone --------
+     A beige desk set of the kind that sat on every counter in 1996: warm
+     off-white plastic gone slightly yellow, a dark grey keypad well with
+     twelve square light keys, and the shop's own number on a paper card
+     under a plastic window in the middle of the dial. Charcoal read as a
+     black slab from across the room; beige reads as a telephone. */
+  const BEIGE = '#cfc3a4';
   T.phoneBody = makeTex(64, 64, (g, w, h) => {
-    fill(g, '#2f3134', w, h);
-    g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(0, 0, w, 3);
-    g.fillStyle = 'rgba(0,0,0,.34)'; g.fillRect(0, h - 6, w, 6);
-    g.fillStyle = 'rgba(0,0,0,.16)'; g.fillRect(0, 0, 3, h); g.fillRect(w - 3, 0, 3, h);
-    // parting line around the shell
-    g.fillStyle = 'rgba(0,0,0,.40)'; g.fillRect(0, Math.round(h * 0.55), w, 1);
-    noise(g, w, h, 5); grime(g, w, h, 0.20);
+    fill(g, BEIGE, w, h);
+    g.fillStyle = 'rgba(255,255,255,.16)'; g.fillRect(0, 0, w, 4);
+    g.fillStyle = 'rgba(0,0,0,.22)'; g.fillRect(0, h - 7, w, 7);
+    // the seam where the two halves of the shell meet
+    g.fillStyle = 'rgba(0,0,0,.26)'; g.fillRect(0, Math.round(h * 0.52), w, 1);
+    g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(0, Math.round(h * 0.52) + 1, w, 1);
+    noise(g, w, h, 4); grime(g, w, h, 0.22);
   });
-  /* The top face, seen from above. The cradle is its own raised strip now,
-     so this is all keypad: twelve keys and the little card window. */
+  /* The top face: keypad well on the near half, card window above it. */
   T.phoneKeys = makeTex(64, 64, (g, w, h) => {
-    fill(g, '#33363a', w, h);
-    g.fillStyle = '#1b1e22'; g.fillRect(6, 14, 40, 44);
+    fill(g, BEIGE, w, h);
+    // recessed well the keys sit in
+    g.fillStyle = '#8f866f'; g.fillRect(9, 17, 46, 43);
+    g.fillStyle = '#43403a'; g.fillRect(11, 19, 42, 39);
     const glyph = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
-    g.textAlign = 'center'; g.textBaseline = 'middle';
+    const sub = ['', 'ABC', 'DEF', 'GHI', 'JKL', 'MNO', 'PRS', 'TUV', 'WXY', '', 'OPER', ''];
+    g.textAlign = 'center'; g.textBaseline = 'alphabetic';
     for (let r = 0; r < 4; r++) {
       for (let c = 0; c < 3; c++) {
-        const x = 9 + c * 12.5, y = 16 + r * 10.5;
-        g.fillStyle = '#cfc9bb'; g.fillRect(x, y, 11, 8.5);
-        g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(x, y + 7.1, 11, 1.4);
-        g.fillStyle = '#15171a'; g.font = 'bold 7px "Courier New",monospace';
-        g.fillText(glyph[r * 3 + c], x + 5.5, y + 3.9);
+        const x = 13 + c * 13.6, y = 21 + r * 9.4;
+        g.fillStyle = '#e6dfcb'; g.fillRect(x, y, 11.6, 7.6);      // key top
+        g.fillStyle = 'rgba(0,0,0,.30)'; g.fillRect(x, y + 6.6, 11.6, 1.0);
+        g.fillStyle = 'rgba(255,255,255,.45)'; g.fillRect(x, y, 11.6, 0.8);
+        g.fillStyle = '#26241f'; g.font = 'bold 6px "Courier New",monospace';
+        g.fillText(glyph[r * 3 + c], x + 5.8, y + 5.2);
+        if (sub[r * 3 + c]) {
+          g.fillStyle = '#6b6455'; g.font = '2.6px "Courier New",monospace';
+          g.fillText(sub[r * 3 + c], x + 5.8, y + 7.4);
+        }
       }
     }
-    // the little paper window where the shop's own number is written
-    g.fillStyle = '#d9d2bf'; g.fillRect(8, 3, 36, 8);
-    g.fillStyle = '#4a4438'; g.font = '5px "Courier New",monospace';
-    g.textAlign = 'left'; g.fillText('555-0114', 10, 7.4);
-    g.fillStyle = '#8c1d0e'; g.fillRect(50, 16, 8, 8);
-    noise(g, w, h, 4);
+    // number card under its little plastic window
+    g.fillStyle = '#9c937c'; g.fillRect(8, 4, 48, 11);
+    g.fillStyle = '#f2ecd9'; g.fillRect(10, 6, 44, 7);
+    g.fillStyle = '#3a3630';
+    g.font = '4.6px "Courier New",monospace';
+    g.fillText('SUNSET VIDEO  555-0114', 32, 11.6);
+    noise(g, w, h, 3); grime(g, w, h, 0.10);
   });
-  /* The top of the cradle strip: two moulded hooks and the well between. */
+  /* The cradle strip: two moulded hooks with the well between them. */
   T.phoneCradle = makeTex(32, 64, (g, w, h) => {
-    fill(g, '#2b2e32', w, h);
-    g.fillStyle = 'rgba(0,0,0,.40)'; g.fillRect(3, 6, w - 6, h - 12);
-    g.fillStyle = '#191c20'; g.fillRect(5, 8, w - 10, 12); g.fillRect(5, h - 20, w - 10, 12);
-    g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(5, 8, w - 10, 2);
-    g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(5, h - 20, w - 10, 2);
-    noise(g, w, h, 4);
+    fill(g, BEIGE, w, h);
+    g.fillStyle = '#a89d82'; g.fillRect(3, 5, w - 6, h - 10);
+    g.fillStyle = '#8b8168'; g.fillRect(5, 9, w - 10, 13); g.fillRect(5, h - 22, w - 10, 13);
+    g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(5, 9, w - 10, 1.6);
+    g.fillStyle = 'rgba(255,255,255,.22)'; g.fillRect(5, h - 22, w - 10, 1.6);
+    // the little plunger the handset presses down
+    g.fillStyle = '#6f6858'; g.fillRect(w / 2 - 3, h / 2 - 4, 6, 8);
+    noise(g, w, h, 3); grime(g, w, h, 0.14);
   });
   T.phoneHandset = makeTex(64, 64, (g, w, h) => {
-    fill(g, '#26282b', w, h);
-    g.fillStyle = 'rgba(255,255,255,.13)'; g.fillRect(0, 0, w, 5);
-    g.fillStyle = 'rgba(0,0,0,.36)'; g.fillRect(0, h - 8, w, 8);
-    // earpiece perforations at each end
-    g.fillStyle = '#0e1012';
+    fill(g, '#c8bc9c', w, h);
+    g.fillStyle = 'rgba(255,255,255,.20)'; g.fillRect(0, 0, w, 6);
+    g.fillStyle = 'rgba(0,0,0,.26)'; g.fillRect(0, h - 9, w, 9);
+    // earpiece and mouthpiece perforations
+    g.fillStyle = '#5b5446';
     for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
       g.fillRect(7 + i * 4, 22 + j * 4, 2, 2);
       g.fillRect(w - 15 + i * 4, 22 + j * 4, 2, 2);
     }
-    noise(g, w, h, 5); grime(g, w, h, 0.16);
+    noise(g, w, h, 4); grime(g, w, h, 0.20);
   });
   T.phoneCord = makeTex(32, 64, (g, w, h) => {
     g.clearRect(0, 0, w, h);
-    g.strokeStyle = '#23262a'; g.lineWidth = 3;
+    g.strokeStyle = '#bdb094'; g.lineWidth = 3;
     for (let y = 2; y < h - 2; y += 5) {
       g.beginPath();
       g.ellipse(w / 2, y, 7, 2.6, 0, 0, Math.PI);
       g.stroke();
     }
-    g.strokeStyle = 'rgba(0,0,0,.45)'; g.lineWidth = 1;
+    g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 1;
     for (let y = 4; y < h - 2; y += 5) { g.beginPath(); g.moveTo(w / 2 - 7, y); g.lineTo(w / 2 + 7, y); g.stroke(); }
   });
   T.phone = T.phoneBody;

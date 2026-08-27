@@ -180,6 +180,12 @@ const trees = await ev(() => {
   const g = window.__game;
   const D = window.__dlg;
   const out = [];
+  /* Fixed rolls for the walk. The trees pick their wording at random, so
+     the same node yields different text on each replay and a count of
+     distinct lines drifts run to run -- which makes a threshold on it a
+     coin toss rather than a check. */
+  const realRng = g.rng;
+  g.rng = window.__mathx.makeRng(0x5EED);
   for (const sp of window.__specials.specialRoster()) {
     const lines = new Set(), replies = new Set();
     let nodes = 0, exits = 0, sales = 0, deadEnds = 0, blown = false;
@@ -219,6 +225,7 @@ const trees = await ev(() => {
       sample: Array.from(lines)[0] || '',
     });
   }
+  g.rng = realRng;
   return out;
 });
 
@@ -255,7 +262,7 @@ check('and mashing one button always reaches the end of the conversation',
    by design -- they are worn down across many of them, with a cooling-off
    period in between, which is what the grind checks above walk end to end.
    Everybody else can be got out of the shop in one go. */
-const GRINDERS = ['REEKER', 'SMOKER'];
+const GRINDERS = ['REEKER', 'SMOKER', 'SOVEREIGN'];
 check('every one of them has a way out of the shop',
   trees.filter((t) => !GRINDERS.includes(t.id)).every((t) => t.exits > 0),
   trees.filter((t) => !t.exits && !GRINDERS.includes(t.id)).map((t) => t.id).join(' ')
@@ -329,17 +336,29 @@ const boom = await ev(async () => {
   g.player.x = 1.0; g.player.z = 9.0;
   g.updateBoomboxAudio();
   const far = g.sound.boom ? g.sound.boom.out.gain.value : -1;
+  const boxAt = [g.boombox.x, g.boombox.z];
   g.player.x = g.boombox.x; g.player.z = g.boombox.z + 0.4;
   g.updateBoomboxAudio();
   await new Promise((r) => setTimeout(r, 300));
   const near = g.sound.boom ? g.sound.boom.out.gain.value : -1;
-  // and he takes it with him
+  /* And he takes it with him -- on foot. Telling him to go should NOT make
+     it vanish off the floor and reappear under his arm. */
   g.ctx.leave(c);
-  const afterLeave = { box: !!g.boombox, playing: !!g.sound.boom, carrying: c.carrying };
+  const told = { box: !!g.boombox, playing: !!g.sound.boom, carrying: c.carrying,
+    packing: !!c.packUp };
+  // let him walk back to it, switch it off and pick it up
+  let quietAt = -1;
+  for (let i = 0; i < 4000; i++) {
+    window.__cust.updateCustomer(c, 1 / 20, g.ctx);
+    if (quietAt < 0 && !g.sound.boom) quietAt = +(i / 20).toFixed(1);
+    if (!c.packUp && c.carrying === 'BOOMBOX') break;
+  }
+  const afterLeave = { box: !!g.boombox, playing: !!g.sound.boom, carrying: c.carrying,
+    quietAt, at: [+c.x.toFixed(2), +c.z.toFixed(2)] };
   g.timeScale = 1;
   g.sound.muted = true;
   g.customers.length = 0;
-  return { seen: [...new Set(seen)], playing, musicWhileCarrying, far, near, afterLeave };
+  return { seen: [...new Set(seen)], playing, musicWhileCarrying, far, near, afterLeave, told, box: boxAt };
 });
 check('he walks in carrying it', boom.seen.some((s) => /ENTERING\/BOOMBOX/.test(s)));
 check('and it is silent until he has put it down', !boom.musicWhileCarrying);
@@ -351,32 +370,39 @@ check('the music is running', boom.playing === true);
 check('and it is coming from the machine, not from your head',
   boom.near > boom.far && boom.far >= 0,
   `${boom.far.toFixed(3)} across the shop, ${boom.near.toFixed(3)} standing over it`);
-check('he takes it with him when he goes, and the shop goes quiet',
-  !boom.afterLeave.box && !boom.afterLeave.playing && boom.afterLeave.carrying === 'BOOMBOX');
+check('telling him to go does not teleport it into his hands',
+  boom.told.box && boom.told.playing && boom.told.carrying !== 'BOOMBOX' && boom.told.packing,
+  `still on the floor and playing: ${boom.told.box && boom.told.playing}`);
+check('he walks back to it, switches it off and picks it up',
+  !boom.afterLeave.box && !boom.afterLeave.playing && boom.afterLeave.carrying === 'BOOMBOX'
+  && Math.hypot(boom.afterLeave.at[0] - boom.box[0], boom.afterLeave.at[1] - boom.box[1]) < 1.2,
+  `off after ${boom.afterLeave.quietAt}s, standing at ${boom.afterLeave.at.join(',')}`);
 
 /* ---------- 4a3. the two who will not be told ---------- */
 const grindTest = await ev(() => {
   const g = window.__game;
   const D = window.__dlg;
   const out = {};
-  for (const id of ['REEKER', 'SMOKER']) {
+  for (const id of ['REEKER', 'SMOKER', 'SOVEREIGN']) {
     const c = window.__cust.makeSpecial(g.rng, window.__specials.specialById(id));
     c.x = 4; c.z = 4; c.state = 'ACTING';
     g.customers.push(c);
     const lines = new Set();
-    let rounds = 0, brushed = 0, wait = 0;
+    let rounds = 0, brushed = 0, wait = 0, chars = 0, undef = 0;
     // Lean on him, over and over, the way a player would.
     while (c.state !== 'LEAVING' && rounds < 60) {
       rounds++;
       let node = D.talkTo(c, g.ctx, { atCounter: false });
-      if (node && node.text) lines.add(node.text);
+      if (node && node.text) { lines.add(node.text); chars += node.text.length; }
+      if (node && (node.text === undefined || /undefined/.test(String(node.text)))) undef++;
       // take the firm option, then close the exchange
       let steps = 0;
       while (node && (node.choices || []).length && steps < 6) {
         steps++;
         const r = node.choices[0];
         node = r.go ? r.go() : (r.fn ? r.fn() : null);
-        if (node && node.text) lines.add(node.text);
+        if (node && node.text) { lines.add(node.text); chars += node.text.length; }
+        if (node && node.text === undefined) undef++;
       }
       if (c.brushT > 0) {
         brushed++;
@@ -384,14 +410,16 @@ const grindTest = await ev(() => {
         c.brushT = 0;                     // stand in for waiting him out
       }
     }
+    // 62 characters a second is the typewriter's rate.
     out[id] = { rounds, brushed, lines: lines.size, left: c.state === 'LEAVING',
-      wait: Math.round(wait), resist: c.resist };
+      wait: Math.round(wait), resist: c.resist, undef,
+      minutes: +(((chars / 62) + wait) / 60).toFixed(1) };
     const k = g.customers.indexOf(c);
     if (k >= 0) g.customers.splice(k, 1);
   }
   return out;
 });
-for (const id of ['REEKER', 'SMOKER']) {
+for (const id of ['REEKER', 'SMOKER', 'SOVEREIGN']) {
   const r = grindTest[id];
   check(`${id.toLowerCase()}: he goes in the end`, r.left, `after ${r.rounds} goes`);
   check(`${id.toLowerCase()}: but not quickly`, r.rounds >= 6, `${r.rounds} separate exchanges`);
@@ -399,7 +427,16 @@ for (const id of ['REEKER', 'SMOKER']) {
     r.brushed >= 4 && r.wait >= 60,
     `brushed you off ${r.brushed} times, ${r.wait}s of waiting him out`);
   check(`${id.toLowerCase()}: with plenty to say while he does it`, r.lines >= 12, `${r.lines} lines`);
+  check(`${id.toLowerCase()}: and every beat of it is written`, r.undef === 0);
 }
+/* He is a project. Reading his paperwork at him and waiting him out between
+   goes is the better part of ten minutes, which is the point of him. */
+check('the man with the folder takes literal minutes',
+  grindTest.SOVEREIGN.minutes >= 5,
+  `${grindTest.SOVEREIGN.minutes} minutes across ${grindTest.SOVEREIGN.rounds} exchanges`);
+check('and considerably longer than the other two',
+  grindTest.SOVEREIGN.minutes > grindTest.REEKER.minutes * 1.8,
+  `${grindTest.REEKER.minutes} / ${grindTest.SMOKER.minutes} / ${grindTest.SOVEREIGN.minutes} minutes`);
 
 const stink = await ev(async () => {
   const g = window.__game;

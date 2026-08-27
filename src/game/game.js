@@ -2535,7 +2535,9 @@ export class Game {
         g.ui.toast(`${c.name} has lost patience.`, 'bad');
       },
       storm: (c) => {
-        if (g.boombox && g.boombox.owner === c.id) g.ctx.boomboxUp(c);
+        if (g.boombox && g.boombox.owner === c.id) {
+          c.packUp = { x: g.boombox.x, z: g.boombox.z, phase: 'GO', t: 0, off: false };
+        }
         g.stats.stormedOut++;
         c.leaving = true; c.rushing = true; c.state = CS.LEAVING; c.path = null;
         g.releaseCounterSpot(c);
@@ -2543,8 +2545,12 @@ export class Game {
         g.ui.toast(`${c.name} walked out.`, 'bad');
       },
       leave: (c) => {
-        // Whatever he brought in, he takes back out.
-        if (g.boombox && g.boombox.owner === c.id) g.ctx.boomboxUp(c);
+        /* Whatever he brought in, he takes back out -- on foot. It used to
+           reappear under his arm the instant he agreed to go, which is not
+           how carrying something works. */
+        if (g.boombox && g.boombox.owner === c.id) {
+          c.packUp = { x: g.boombox.x, z: g.boombox.z, phase: 'GO', t: 0, off: false };
+        }
         /* And whatever he picked up and forgot about goes in the returns
            bin on the way past, which makes it the clerk's problem. */
         if (c.special === 'SMOKER' && c.tape && !c.checkedOut) {
