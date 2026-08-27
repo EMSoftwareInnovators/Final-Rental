@@ -198,9 +198,43 @@ function step(c, dt, ctx) {
   return false;
 }
 
+/**
+ * Close the last bit by hand.
+ *
+ * A route can run out short of where it was going -- somebody standing on
+ * the end of it, a corner the graph does not describe -- and a customer who
+ * only ever moves along a route then stands wherever it stopped. Usually
+ * that is against the counter, a foot from the window, close enough to look
+ * like they are at it and far enough that they are not. This walks the
+ * remaining gap directly, sliding off whatever is in the way.
+ */
+function directStep(c, dt, ctx, to) {
+  const dx = to.x - c.x, dz = to.z - c.z;
+  const d = Math.hypot(dx, dz);
+  if (d < 0.02) return true;
+  const sp = c.speed * 0.85;
+  const nx = c.x + (dx / d) * Math.min(d, sp * dt);
+  const nz = c.z + (dz / d) * Math.min(d, sp * dt);
+  const [px, pz] = collide(nx, nz, c.r, ctx.solids, ctx.doorPassable(c));
+  const moved = Math.hypot(px - c.x, pz - c.z);
+  c.x = px; c.z = pz;
+  c.moveSpeed = moved / Math.max(dt, 0.0001);
+  if (d > 0.05) c.yaw = angleTowards(c.yaw, Math.atan2(dx, dz), dt * 6);
+  return d < 0.02;
+}
+
 /* ---------------- per-frame update ---------------- */
 export function updateCustomer(c, dt, ctx) {
   const rng = ctx.rng;
+  /* Standing still is the default.
+
+     step() was the only thing that ever zeroed this, so the moment somebody
+     stopped being walked anywhere -- settled on their place in the queue,
+     say -- their last recorded speed stayed on the books forever, and the
+     rig kept playing the walk cycle at it. Anybody who had hurried to the
+     counter stood at the window sprinting on the spot for the rest of the
+     night. Whoever moves this frame will say so; everybody else is still. */
+  c.moveSpeed = 0;
   if (c.stenchGripe > 0) c.stenchGripe -= dt;
   // The two who will not be told go back to what they were doing between
   // goes, and are not listening again for a while.
@@ -491,17 +525,36 @@ export function updateCustomer(c, dt, ctx) {
     case CS.WAITING: {
       // people shuffle forward as the queue moves
       const spot = ctx.claimCounterSpot(c);
-      /* Settle properly on the spot. Half a metre of slack was fine when
-         people walked all the way to it before joining; now that they join
-         the line from wherever they reach it, that slack is where they
-         stayed -- half a metre off the window, out of reach of somebody
-         looking straight at the place they are supposed to be standing. */
-      if (spot !== c.targetSpot || dist(c.x, c.z, spot.x, spot.z) > 0.22) {
-        if (spot !== c.targetSpot) { c.targetSpot = spot; c.shuffleT = 0; setDest(c, spot.x, spot.z, ctx); }
+      /* Compare the place, not the object.
+
+         Only the person at the window gets handed the same object twice;
+         everybody further back is handed a freshly built one on every
+         single frame, so an identity test said "your spot has changed"
+         thirty times a second, tore up the route each time, and left them
+         walking on the spot at the counter forever. Which is the customer
+         who would not stop shuffling next to the till.
+
+         Settle properly on it, too. Half a metre of slack was fine when
+         people walked all the way to the spot before joining the line; now
+         that they join it from wherever they reach it, that slack is where
+         they stayed -- out of reach of somebody looking straight at the
+         place they are supposed to be standing. */
+      const moved = !c.targetSpot || dist(c.targetSpot.x, c.targetSpot.z, spot.x, spot.z) > 0.05;
+      const off = c.targetSpot ? dist(c.x, c.z, c.targetSpot.x, c.targetSpot.z) : Infinity;
+      if (moved || off > 0.22) {
+        if (moved) { c.targetSpot = { x: spot.x, z: spot.z }; c.shuffleT = 0; setDest(c, spot.x, spot.z, ctx); }
         c.shuffleT = (c.shuffleT || 0) + dt;
-        // Shuffling up should take a second or two, not the rest of the night.
-        if (c.shuffleT < 8) { step(c, dt, ctx); break; }
+        /* Follow the route, and when it runs out before the spot does, walk
+           the rest of the way directly. Giving up here was what left people
+           parked against the counter a foot short of the window -- near
+           enough to look served, far enough that they could not be. */
+        if (step(c, dt, ctx)) directStep(c, dt, ctx, c.targetSpot);
+        // and if it is taking absurdly long, try the route again from here
+        if (c.shuffleT > 6) { c.shuffleT = 0; setDest(c, c.targetSpot.x, c.targetSpot.z, ctx); }
+        break;
       }
+      // Whatever they were hurrying for, they have arrived.
+      c.rushing = false;
       c.yaw = angleTowards(c.yaw, c.queueIndex === 0 ? 0 : 0.2, dt * 4);
       if (c.awaitingChange) {
         // they are not going anywhere until the drawer opens

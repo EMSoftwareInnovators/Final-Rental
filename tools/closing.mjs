@@ -337,6 +337,68 @@ const ignoredEnds = await ev(() => {
 check('so a player who simply ignores him is not stuck forever either',
   ignoredEnds.cleared, `he gave up after ${ignoredEnds.minutes} minutes`);
 
+/* ---------- 4b4. nobody parks against the counter ---------- */
+const settle = await ev(() => {
+  const g = window.__game;
+  const T = window.__tapes;
+  const out = { stuck: [], running: [], notServable: [] };
+  g.closing = false; g.elapsed = 0; g.door.locked = false;
+
+  // Queues of every length, started from awkward places -- including right
+  // up against the counter face, which is where they used to wedge.
+  const starts = [
+    [10.6, 1.05], [11.9, 1.05], [9.2, 1.05], [12.4, 1.0],
+    [6.0, 2.2], [1.0, 8.0], [10.75, 0.4], [8.9, 1.1],
+  ];
+  for (let n = 1; n <= 4; n++) {
+    for (const [sx, sz] of starts) {
+      g.customers.length = 0; g.queue.length = 0;
+      const crowd = [];
+      for (let i = 0; i < n; i++) {
+        const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+        c.tape = T.makeTape('HORROR', g.rng, { rewound: true });
+        c.script = 'rent'; c.hasMoney = true;
+        c.x = i === 0 ? sx : 6.0 + i * 0.4;
+        c.z = i === 0 ? sz : 2.2;
+        c.state = 'TO_COUNTER'; c.path = null;
+        if (i % 2) c.rushing = true;
+        g.customers.push(c); crowd.push(c);
+      }
+      for (let i = 0; i < 12000; i++) {
+        crowd.forEach((c) => window.__cust.updateCustomer(c, 1 / 30, g.ctx));
+        if (crowd.every((c) => c.state === 'WAITING')) break;
+      }
+      /* Let them settle, then watch. A customer shuffling into place moves
+         for a moment and stops; one that is oscillating never stops, so
+         count the frames each of them is moving on rather than the total,
+         and look at the worst of them. */
+      const busy = crowd.map(() => 0);
+      const SETTLE = 400, WATCH = 200;
+      for (let i = 0; i < SETTLE + WATCH; i++) {
+        crowd.forEach((c) => window.__cust.updateCustomer(c, 1 / 30, g.ctx));
+        if (i >= SETTLE) crowd.forEach((c, j) => { if (c.moveSpeed > 0.02) busy[j]++; });
+      }
+      const moving = Math.max(...busy) > WATCH * 0.1 ? Math.max(...busy) : 0;
+      const tag = `${n}@${sx},${sz}`;
+      crowd.forEach((c) => {
+        const off = c.targetSpot ? Math.hypot(c.x - c.targetSpot.x, c.z - c.targetSpot.z) : 99;
+        if (off > 0.3) out.stuck.push(`${tag} off by ${off.toFixed(2)}`);
+      });
+      if (moving) out.running.push(`${tag} still moving on ${moving} of 200 frames`);
+      const front = g.queue[0];
+      if (front && g.cannotServe(front)) out.notServable.push(`${tag} ${g.cannotServe(front)}`);
+    }
+  }
+  g.customers.length = 0; g.queue.length = 0;
+  return out;
+});
+check('everybody in the line ends up on their spot, from anywhere',
+  settle.stuck.length === 0, settle.stuck.slice(0, 3).join(' | ') || '32 lines settled');
+check('and stops walking once they are on it',
+  settle.running.length === 0, settle.running.slice(0, 3).join(' | ') || 'nobody jogging on the spot');
+check('and the one at the front can always actually be served',
+  settle.notServable.length === 0, settle.notServable.slice(0, 3).join(' | '));
+
 /* ---------- 4c. a cartridge is not a tape ---------- */
 const words = await ev(() => {
   const g = window.__game;

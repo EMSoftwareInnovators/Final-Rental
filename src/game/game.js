@@ -1018,9 +1018,12 @@ export class Game {
     if (!c || c === this.officer) return '';
     if (c.state === CS.TALKING) return '';
     if (c.awaitingChange) return '';
+    /* A little slack on the radius. The window is one spot but a person is
+       not a point, and somebody who has come round the end of the counter
+       can settle a few inches off it without having failed to arrive. */
     const atWindow = c.queueIndex === 0
       && (c.state === CS.WAITING || c.state === CS.TO_COUNTER)
-      && Math.hypot(c.x - SPOTS.service.x, c.z - SPOTS.service.z) < 1.1;
+      && Math.hypot(c.x - SPOTS.service.x, c.z - SPOTS.service.z) < 1.45;
     if (atWindow) return '';
     if (c.queueIndex > 0) return 'waiting in line';
     return 'not at the counter';
