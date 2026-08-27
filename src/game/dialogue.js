@@ -1131,6 +1131,21 @@ export function buildPhoneCall(ctx) {
 
   const hang = () => { ctx.hangUp(); return null; };
 
+  /* There is a woman at the counter who wants the regional manager, and
+     the regional manager is a man forty minutes away who went to bed at
+     ten. Ringing him is its own little errand and it does not work first
+     time; see managerCall() below. */
+  const karen = ctx.wantsManager && ctx.wantsManager();
+  const managerRow = karen && !ctx.managerConnected()
+    ? [reply(`Call the regional manager.`, () => managerCall(ctx, karen), { risk: false })]
+    : [];
+
+  if (!suspects.length && managerRow.length) {
+    return say(OP, `(dial tone)`, managerRow.concat([
+      reply(`Put it back down.`, () => hang()),
+    ]));
+  }
+
   if (!suspects.length) {
     return say(OP, `Nine-one-one, what's your emergency?`, [
       reply(`...Nothing. Sorry. Wrong number.`, () => hang()),
@@ -1148,9 +1163,82 @@ export function buildPhoneCall(ctx) {
 
   const choose = () => say(OP, `Nine-one-one. Go ahead.`,
     suspects.map((s) => reply(s.phoneLabel, () => confirm(s), { risk: true }))
+      .concat(managerRow)
       .concat([reply(`Never mind. Sorry.`, () => hang())]));
 
   return choose();
+}
+
+/* ============================================================
+   RINGING THE REGIONAL MANAGER
+
+   Half past eleven on a Friday. He is forty minutes away, he has a wife,
+   a machine, and a teenage daughter, and he went to bed at ten. You do
+   not get him on the first go and you do not get him on the second.
+
+   Each attempt is a separate call: you put the receiver down, and if you
+   want him you pick it up and try again. Which is exactly the amount of
+   effort the woman at the counter is worth.
+   ============================================================ */
+const MANAGER_MISSES = [
+  { who: 'THE LINE',
+    text: `(it rings. And rings. Eleven times, twelve.)\n\n(nobody is going to pick that up)`,
+    outs: [`Put it down.`, `...Once more, later.`] },
+  { who: 'A MACHINE',
+    text: `"Hi! You've reached the Vandeveldes. We can't come to the phone —"\n\n(a child shouting somewhere behind it)\n\n"— so leave it after the beep!"`,
+    outs: [`I'm not leaving this on a machine.`, `(hang up)`] },
+  { who: 'A WOMAN',
+    text: `"...Hello?"\n\n(she has been asleep. You can hear that she has been asleep.)\n\n"He's in bed. Whatever it is, it's in bed with him. Call the office Monday."`,
+    outs: [`It's about the store on Delaney.`, `Sorry to have woken you.`] },
+  { who: 'A TEENAGER',
+    text: `"...What."\n\n(long pause)\n\n"He's asleep. I'm asleep. Everyone in this house is asleep except you."`,
+    outs: [`Could you wake him?`, `...Right. Sorry.`] },
+  { who: 'THE LINE',
+    text: `(engaged)\n\n(somebody in that house has taken it off the hook)`,
+    outs: [`(put it down)`, `I'll try again.`] },
+];
+
+const MANAGER_ANSWERS = [
+  `"...Vandevelde."\n\n(a man sitting up in the dark, getting his voice on)\n\n"It's — what time is it. Who is this?"`,
+  `"Yeah. Yeah, hello."\n\n(he sounds like he has come down a flight of stairs to do this)\n\n"Somebody had better be robbing me."`,
+  `"This is Vandevelde."\n\n(entirely awake, and not pleased about it)\n\n"You're one of my stores. Which one."`,
+];
+
+function managerCall(ctx, karen) {
+  const rng = ctx.rng;
+  const n = ctx.managerAttempt();        // 1, 2, 3... and it counts up
+  const hang = () => { ctx.hangUp(); return null; };
+
+  /* He answers on the third go at the earliest, and always by the fifth.
+     Any less and the errand is nothing; any more and it is a slot
+     machine. */
+  const gotHim = n >= 5 || (n >= 3 && rng.chance(0.55));
+
+  if (!gotHim) {
+    const miss = MANAGER_MISSES[(n - 1) % MANAGER_MISSES.length];
+    const M = { name: miss.who, voicePitch: 1.0, rough: 0.35 };
+    return say(M, miss.text, miss.outs.map((o) => reply(o, () => hang())));
+  }
+
+  ctx.managerConnect();
+  const M = { name: 'D. VANDEVELDE', voicePitch: 0.88, rough: 0.5 };
+  const over = (line) => say(M, line, [
+    reply(`There's a customer here who'd like to speak to you.`, () => handOff()),
+    reply(`I'm going to put someone on.`, () => handOff()),
+  ]);
+
+  const handOff = () => say(M, rng.pick([
+    `"...You're going to WHAT."\n\n(a long breath)\n\n"Fine. Put her on. Put her on."`,
+    `"A customer. At half eleven at night. Of course there is."\n\n"Go on then."`,
+    `"Right." \n\n(you can hear him deciding to be a professional about it)\n\n"Put her on, son."`,
+  ]), [
+    reply(`Hold the line.`, () => {
+      ctx.toast(`He's on the line. ${karen ? karen.name : 'She'} needs to be within reach of the cord.`, 'good');
+      return null;
+    }),
+  ]);
+
+  return over(rng.pick(MANAGER_ANSWERS));
 }
 
 /* ============================================================
@@ -1313,6 +1401,16 @@ export function specialRoot(c, ctx) {
        She does rent something. It just takes a while to get there. */
     case 'OFFENDED':
       return offendedRoot(c, ctx);
+
+    /* ---------------- the manager ----------------
+       Talking to her achieves nothing, on purpose. Her complaint is not
+       with you and you cannot fix it -- there is no light on the back of
+       the building and you do not own the building. Every reply is a
+       variation on "I'd like to speak to your manager", and the only
+       thing that ends it is a man forty minutes away, asleep, whose
+       phone number is on a card by the register. */
+    case 'MANAGER':
+      return managerRoot(c, ctx);
 
     /* ---------------- the smell ----------------
        He does not think he smells. He thinks you have a problem with him,
@@ -2052,6 +2150,118 @@ function offendedRoot(c, ctx) {
   }
   /* Come back to her mid-story and she picks up where she left off. */
   return pivot();
+}
+
+/* ============================================================
+   THE ONE WHO WANTS A MANAGER
+
+   She is not angry with the clerk and says so, repeatedly, which somehow
+   makes it worse. She is angry about the lot: no light on the back of the
+   building, an alley nobody can see into, and a woman followed to her car
+   on this parade in March. None of that is yours to fix and she knows it.
+   That is why she wants somebody it IS.
+
+   So the conversation is a wall on purpose. Everything you say gets the
+   same answer in different words. The only thing that moves her is the
+   receiver, with a man on the other end of it who can write to a
+   landlord.
+   ============================================================ */
+const KAREN_WALL = [
+  `I'd like to speak to your manager, please.`,
+  `Then I'd like the number of somebody who does have a manager.`,
+  `You're being very reasonable and I'm not going to be moved by it.`,
+  `I'm not leaving until I've spoken to somebody above you.`,
+  `This is not about you. I have said that four times now.`,
+  `Somebody signs the lease on this building. I want that person.`,
+  `A district manager. A regional. Whatever you call them. Get me one.`,
+  `I'll stand here all night. I've got nowhere I'd rather be, apparently.`,
+  `Is there a card? There's always a card. Behind the register, usually.`,
+  `You have a phone right there. I can see it from here.`,
+];
+
+const KAREN_WHY = [
+  `Because there is no light on the back of this building. None. The whole lot is a black hole after nine o'clock.`,
+  `Because a woman was followed to her car on this parade in March and nothing has changed since. Not one thing.`,
+  `Because I park in that lot. My daughter parks in that lot. And you can't see the alley from anywhere.`,
+  `Because I've told the laundrette and I've told the barber and they both said the same thing you're saying.`,
+];
+
+function managerRoot(c, ctx) {
+  const rng = ctx.rng;
+  if (c.karenAsked === undefined) { c.karenAsked = 0; c.karenTold = false; }
+  c.karenAsked++;
+  /* Per conversation. The wall does not come down -- she leaves holding a
+     receiver or she does not leave -- but a wall you can walk away from is
+     still a wall, and a conversation that cannot be ended is a bug rather
+     than a character. Say the same thing enough times and she stops
+     saying it and just stands there. */
+  c.karenRound = 0;
+
+  const standing = () => say(c, rng.pick([
+    `We're going round. I'll stop, then.\n\n(she folds her arms and looks at the phone on your back counter)`,
+    `Right. I'll wait, and you'll do whatever you were going to do.\n\n(she does not leave)`,
+    `(she stops answering you, and looks past you at the phone)`,
+  ]), [reply(`...`, () => null)]);
+
+  /* Once she has told you what it is actually about she stops explaining
+     and goes back to the wall, because explaining was never the point. */
+  const wall = (lead) => {
+    c.karenRound++;
+    if (c.karenRound > 6) return standing();
+    return say(c, `${lead ? lead + '\n\n' : ''}${rng.pick(KAREN_WALL)}`, [
+    reply(`I'm the only person here. There is no manager on site.`,
+      () => wall(rng.pick([`(she nods, and does not move)`, `I understand that. And?`,
+        `Then you'll appreciate my difficulty.`]))),
+    reply(`Ma'am, there's nothing I can do about the parking lot.`,
+      () => wall(rng.pick([`No. There isn't.`, `Correct. Which is why I'm not asking you.`,
+        `I know. I'm not asking YOU.`]))),
+    reply(`What is this actually about?`, () => why()),
+    reply(`I'm going to have to ask you to leave.`, () => {
+      ctx.mood(c, -10);
+      return wall(rng.pick([
+        `No, I don't think so. I'm a customer standing in a shop.`,
+        `You can ask. I'm not going.`,
+        `On what grounds? I've raised my voice at nobody.`,
+      ]));
+    }, { risk: true }),
+      reply(`...`, () => null),
+    ]);
+  };
+
+  const why = () => {
+    c.karenTold = true;
+    return say(c, rng.pick(KAREN_WHY), [
+      reply(`That's fair. I still can't fix it.`, () => {
+        ctx.mood(c, +8);
+        return wall(`No. But somebody can.`);
+      }),
+      reply(`I'll mention it.`, () => say(c,
+        `To who? You'll mention it to who?\n\nThat's what I'm asking for. The person you'd mention it to.`,
+        [reply(`...`, () => wall(null))])),
+      reply(`Nobody's told me any of this.`, () => say(c,
+        `No. They wouldn't have. That's rather the shape of the whole thing.`,
+        [reply(`Right.`, () => wall(null))])),
+    ]);
+  };
+
+  if (c.karenAsked === 1) {
+    return say(c, rng.pick([
+      `Good evening. I'd like to speak to your manager, please.`,
+      `Are you the manager? ...No. No, you're not, are you. Who is?`,
+      `Before you say anything: this is not a complaint about you.\n\nI'd like your manager.`,
+    ]), [
+      reply(`That'd be me. There's nobody else on tonight.`, () => wall(
+        `Then somebody above you. There's always somebody above you.`)),
+      reply(`What's the problem?`, () => why()),
+      reply(`It's nearly midnight, ma'am.`, () => wall(
+        `It is. And I'm still here, which should tell you something.`)),
+    ]);
+  }
+  return wall(rng.pick([
+    `(she has not moved)`,
+    `Have you got that number yet?`,
+    `I'm still here.`,
+  ]));
 }
 
 /* ============================================================

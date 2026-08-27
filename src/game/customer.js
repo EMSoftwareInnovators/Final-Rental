@@ -167,6 +167,10 @@ export const ACT_SPOT = {
      since nothing could ever be sold to him, the queue behind him never
      moved again for the rest of the night. */
   WINDOW: { x: 11.6, z: 0.62, yaw: -0.55 },
+  /* Further along the same counter, past the arguer, so the two of them
+     can be in the shop at once without standing in each other. Still
+     inside the phone flex, which she is going to need. */
+  RAIL: { x: 12.35, z: 0.66, yaw: -0.30 },
 };
 
 /* ---------------- movement ---------------- */

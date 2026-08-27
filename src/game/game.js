@@ -45,6 +45,24 @@ const SHELVE_TIME = 1.5;
    Seven minutes of shop-floor time is several transactions' worth. */
 const CLOSING_LIMIT = 420;
 
+/* How far the phone flex goes, in metres from the cradle on the back
+   counter. Enough for both service positions and the end of the counter;
+   nothing like enough for the shop floor. */
+const CORD_REACH = 4.6;
+
+/* Her side of a call you only hear one half of. She came in loud and she
+   does not stay loud, which is the whole shape of it. */
+const MANAGER_CALL_BEATS = [
+  `Yes — hello. Am I speaking to the regional manager? ...Right. Right.`,
+  `No, the young man has been perfectly polite. That isn't what this is about.`,
+  `It's the LOT. It's the lot and the alley behind it. There's no light back there at all.`,
+  `Because a woman was followed to her car on this parade in March, that's why.`,
+  `...No. No, I know it isn't his to fix. That's why I asked for you.`,
+  `A light. One light, on the back of the building. That's the whole of it.`,
+  `...You'll put it in writing. To the landlord. On Monday.`,
+  `Well. Thank you. That's — thank you. I've been trying to say that to somebody for a month.`,
+];
+
 export class Game {
   constructor() {
     this.canvas = document.getElementById('screen');
@@ -83,6 +101,8 @@ export class Game {
     this.storage = freshStorageDoor();
     this.officer = null;
     this.sweep = null;
+    /* The phone on the back counter, and how far its cord goes. */
+    this.managerCall = null;
     this.killer = null;
     this.lights = 1; this.flickerAmt = 0; this.flickerT = 4;
     this.distress = 0; this.tension = 0;
@@ -220,6 +240,7 @@ export class Game {
       this.officerDone = true;           // nothing to wait on; the clock runs
     }
     this.sweep = null;
+    this.managerCall = null;
     this.briefingStarted = false;
 
     // the suspect
@@ -689,7 +710,7 @@ export class Game {
        not the player's doing, so the shift does not pay for the walk to
        the counter and the conversation. Same rule as the briefing. */
     const holdClock = killerActive(this.killer) || !this.officerDone
-      || this.grinderPresent() || this.sweepPresent();
+      || this.grinderPresent() || this.sweepPresent() || this.managerBusy();
     if (!holdClock) this.elapsed += dt;
     this.updatePolice(dt);
 
@@ -718,6 +739,7 @@ export class Game {
       this.updateRewinder(h);
       this.updateOfficer(h);
       this.updateSweep(h);
+      this.updateHandedPhone(h);
       for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
       this.customers = this.customers.filter((c) => c.state !== CS.GONE);
       updateKiller(this.killer, h, this.ctx);
@@ -1456,6 +1478,18 @@ export class Game {
       }
       case 'person': {
         const c = tgt.c;
+        /* The receiver is live and she is the one who asked for it. That
+           beats anything else you could say to her -- and there is nothing
+           else you could say to her that helps. */
+        const MC = this.managerCall;
+        if (MC && MC.connected && !MC.handedTo && c.special === 'MANAGER') {
+          const near = this.cordReaches(c);
+          prompt = near
+            ? `${K()}Hand ${c.name} the phone\n<span class="sub">the regional manager is on the line</span>`
+            : `<span class="sub">the cord will not reach ${c.name}</span>`;
+          if (near) act = () => this.handOverPhone(c);
+          break;
+        }
         const m = c === this.officer ? null : moodLabel(c);
         const why = this.cannotServe(c);
         prompt = `${K()}Talk to ${c.name}`
@@ -2882,6 +2916,22 @@ export class Game {
       accuse: (t) => g.accuse(t),
       /* The deputy who swept the parade has finished saying it. */
       sweepDone: () => g.sweepDone(),
+
+      /* --- the woman who wants a manager --- */
+      /** Who, if anyone, is standing here asking for one. */
+      wantsManager: () => g.wantsManager(),
+      /** Which go at ringing him this is. Counts up across the night. */
+      managerAttempt: () => {
+        g.managerCall = g.managerCall || { attempts: 0, connected: false, handedTo: null };
+        g.managerCall.attempts++;
+        return g.managerCall.attempts;
+      },
+      managerConnected: () => !!(g.managerCall && g.managerCall.connected),
+      managerConnect: () => {
+        g.managerCall = g.managerCall || { attempts: 1, connected: false, handedTo: null };
+        g.managerCall.connected = true;
+      },
+      toast: (text, kind) => g.ui.toast(text, kind || ''),
       hangUp: () => g.hangUp(),
 
       /* --- killer beats --- */
@@ -2980,6 +3030,95 @@ export class Game {
   releaseCounterSpot(c) {
     const i = this.queue.indexOf(c);
     if (i >= 0) this.queue.splice(i, 1);
+  }
+
+  /* ============================================================
+     THE CORD
+
+     It is a wired phone on the back counter and it is 1996, so the
+     receiver goes as far as the flex goes and not one inch further. That
+     is most of the counter -- both service positions and the end of it --
+     and none of the shop floor. Somebody who wants to speak to the
+     regional manager has to come and stand where the phone can reach.
+     ============================================================ */
+  cordReaches(who) {
+    if (!who) return false;
+    const P = PROPS.phone;
+    const px = (P.x0 + P.x1) / 2, pz = (P.z0 + P.z1) / 2;
+    return Math.hypot(who.x - px, who.z - pz) <= CORD_REACH;
+  }
+
+  /**
+   * Put the receiver in somebody's hand.
+   *
+   * The line has to be live, they have to be within the flex, and after
+   * that it is their conversation and not yours -- which is the whole
+   * point of the woman who wants a manager. You cannot fix her problem.
+   * You can hand her somebody who is paid more than you.
+   */
+  handOverPhone(who) {
+    const M = this.managerCall;
+    if (!M || !M.connected || M.handedTo) return;
+    if (!this.cordReaches(who)) {
+      this.ui.toast(`The cord won't reach that far.`, 'bad');
+      this.sound.error();
+      return;
+    }
+    M.handedTo = who;
+    who.onPhone = true;
+    who.phoneT = 0;
+    this.ui.hidePhone();
+    this.phone.node = null;
+    this.player.frozen = false;
+    if (this.state === ST.PLAY) { this.wantLock = true; this.input.requestLock(); }
+    this.sound.blip(voicePitchOf(who.app), who.app.voice.rough);
+    this.ui.toast(`You hand ${who.name} the receiver.`, 'good');
+  }
+
+  /**
+   * Her half of a call you can only hear one side of.
+   *
+   * It runs on its own once the receiver is in her hand: a long, quiet,
+   * increasingly deflated conversation with a man in a dressing gown
+   * forty minutes away, and then she puts it down and goes.
+   */
+  updateHandedPhone(dt) {
+    const M = this.managerCall;
+    if (!M || !M.handedTo) return;
+    const c = M.handedTo;
+    if (c.hidden || c.state === CS.GONE) { this.managerCall = null; return; }
+    c.phoneT += dt;
+    const beats = MANAGER_CALL_BEATS;
+    const step = Math.floor(c.phoneT / 7.5);
+    if (step !== c._phoneStep && step < beats.length) {
+      c._phoneStep = step;
+      this.sound.blip(voicePitchOf(c.app), c.app.voice.rough);
+      this.ui.toast(`${c.name}: "${beats[step]}"`, '');
+    }
+    if (c.phoneT > 7.5 * beats.length + 3) {
+      c.onPhone = false;
+      this.sound.phoneHang();
+      this.ui.toast(`She puts the receiver down. Gently, which is new.`, 'good');
+      this.ctx.mood(c, +40);
+      this.ctx.leave(c);
+      this.managerCall = null;
+    }
+  }
+
+  /** Is somebody mid-call with the regional manager? The clock waits. */
+  managerBusy() {
+    const M = this.managerCall;
+    return !!(M && M.handedTo && M.handedTo.onPhone);
+  }
+
+  /** Who in the shop is standing here demanding one. */
+  wantsManager() {
+    for (const c of this.customers) {
+      if (c.special !== 'MANAGER' || c.hidden) continue;
+      if (c.state === CS.LEAVING || c.state === CS.GONE) continue;
+      return c;
+    }
+    return null;
   }
 
   phoneTargets() {

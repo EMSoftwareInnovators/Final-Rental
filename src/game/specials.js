@@ -610,6 +610,52 @@ export const SPECIALS = [
       noMoney: [`I've got it. Somewhere. Don't rush me.`],
     },
   },
+
+  /* ---------------------------------------------------------- */
+  /* Her complaint is not with you and there is nothing you can do about
+     it, which is exactly why talking is useless. She wants the manager,
+     and the manager is a regional man forty minutes away who is asleep.
+     Getting him on the line takes several goes; handing her the receiver
+     takes a cord that will only reach so far. */
+  {
+    id: 'MANAGER',
+    name: 'Cheryl Vandermeer',
+    tag: 'would like to speak to the manager',
+    act: 'RAIL',
+    nuisance: null,
+    complaints: [
+      `She's been asking for a manager for six minutes. There isn't one.`,
+      `Ma'am, he IS the person working here.`,
+      `Is she going to be much longer? Some of us have jobs at seven.`,
+      `I don't think she wants a manager. I think she wants a witness.`,
+    ],
+    app: {
+      gender: 'f', height: 'average', build: 'average', facial: 'clean', glasses: 'square',
+      hat: 'none', gait: 'brisk', carry: 'none', smell: 'cologne', voice: 'loud',
+      hair: { id: 'blond', name: 'blond', hex: '#b99553', dark: '#8f7038', style: 'short',
+        styleName: 'short and layered', label: 'Blond hair, short and layered',
+        bulletin: 'blond hair, short, layered' },
+      jacket: { id: 'camel', name: 'cream', hex: '#b6ab8c', kind: 'wool overcoat' },
+      pants: { id: 'black', name: 'black', hex: '#1a1a1e' },
+      shirt: { id: 'maroon', name: 'maroon', hex: '#4a1a1e' },
+      skin: '#e8c39e',
+    },
+    ...BASE,
+    patience: 900, irascibility: 0.9, honesty: 0.9, chattiness: 1, wealth: 1,
+    lines: {
+      wait: [`I'll wait right here. Don't mind me.`, `(she has not moved)`],
+      angry: [`Do NOT take that tone. I have been perfectly reasonable.`],
+      bye: [`Thank you. That is all I wanted. Someone who could actually DO something.`],
+      thanks: [`Well. Finally.`],
+      smalltalk: [`How late do they make you stay? On your own?`],
+      greetRent: [`I'm not here to rent anything.`],
+      greetReturn: [`This isn't about a tape.`],
+      feeAccept: [`I'll pay it, and I'll be mentioning it.`],
+      feeDispute: [`Absolutely not.`],
+      feeWaived: [`As it should be.`],
+      noMoney: [`That's hardly the issue here.`],
+    },
+  },
 ];
 
 /* Built once. Every night sees the same faces. */

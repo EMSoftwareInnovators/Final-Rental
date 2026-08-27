@@ -154,14 +154,46 @@ const spots = await ev(() => {
      supposed to be standing on. */
   const S = window.__cust.ACT_SPOT;
   const want = {};
-  for (const k of ['DANCE', 'TV', 'PHONE', 'WINDOW']) want[k] = [S[k].x, S[k].z];
+  /* Every fixed spot in the table, so adding somebody with somewhere new
+     to be does not quietly go unchecked. */
+  for (const k of Object.keys(S)) if (S[k]) want[k] = [S[k].x, S[k].z];
   return g.customers.filter((c) => want[c.act]).map((c) => ({
     act: c.act, d: +Math.hypot(c.x - want[c.act][0], c.z - want[c.act][1]).toFixed(2),
   }));
 });
-check('the boombox, the television, the phone call and the arguer each have their own spot',
-  spots.length === 4 && spots.every((s) => s.d < 0.9),
-  spots.map((s) => `${s.act} ${s.d}m off`).join(' '));
+/* And they are each somewhere different. Two people assigned the same
+   spot stand inside one another, which is what happened the day the
+   woman who wants a manager was given the arguer's place at the counter. */
+const spotClash = await ev(() => {
+  const S = window.__cust.ACT_SPOT;
+  const used = [];
+  for (const sp of window.__specials.specialRoster()) {
+    if (!sp.act || !S[sp.act]) continue;
+    used.push({ id: sp.id, act: sp.act, x: S[sp.act].x, z: S[sp.act].z });
+  }
+  const bad = [];
+  for (let i = 0; i < used.length; i++) {
+    for (let j = i + 1; j < used.length; j++) {
+      const d = Math.hypot(used[i].x - used[j].x, used[i].z - used[j].z);
+      if (d < 0.62) bad.push(`${used[i].id}/${used[j].id} ${d.toFixed(2)}m apart`);
+    }
+  }
+  return { n: used.length, bad };
+});
+check('no two of them are sent to stand in the same place',
+  spotClash.bad.length === 0, spotClash.bad.join(' | ') || `${spotClash.n} with a fixed spot`);
+/* However many of them have a fixed place to be, they all get to it.
+   The count used to be written down here as four, which went red the day
+   a fifth person was given somewhere to stand. */
+/* Only the ones with a FIXED place. The wanderers -- the smell, the
+   auditor -- have an act and no spot, and drift the aisles on purpose. */
+const nFixed = await ev(() => {
+  const S = window.__cust.ACT_SPOT;
+  return window.__specials.specialRoster().filter((sp) => sp.act && S[sp.act]).length;
+});
+check('everybody with somewhere fixed to be is standing on it',
+  spots.length === nFixed && spots.every((s) => s.d < 0.9),
+  `${spots.length} of ${nFixed}: ${spots.map((s) => `${s.act} ${s.d}m off`).join(' ')}`);
 
 // The nuisances draw complaints from anyone else in the shop.
 const gripes = await ev(() => {
@@ -302,12 +334,19 @@ check('and mashing one button always reaches the end of the conversation',
    period in between, which is what the grind checks above walk end to end.
    Everybody else can be got out of the shop in one go. */
 const GRINDERS = ['REEKER', 'SMOKER', 'SOVEREIGN'];
-/* Three shapes, and everybody is one of them: shown the door, sold
-   something and sent off to the shelves, or worn down over many
-   conversations. The woman who is offended about the offence is the
-   middle one -- she has no exit line at all, because she leaves the way
-   any customer leaves, having bought a film. */
-const noWayOut = trees.filter((t) => !t.exits && !t.sales && !GRINDERS.includes(t.id));
+/* Four shapes, and everybody in the roster is one of them.
+     - shown the door, by a branch that calls leave()
+     - sold something, and out through the counter like any customer
+       (the woman who is offended about the offence has no exit line at
+       all: she leaves having bought a film)
+     - worn down across many conversations, with a cooling-off period
+     - handed a telephone (the woman who wants a manager, whose way out
+       is not in her dialogue tree at all -- talking to her is a wall on
+       purpose, and tools/manager.mjs is what proves the phone works)
+   What must never happen is a fifth shape: somebody with no way out. */
+const BY_PHONE = ['MANAGER'];
+const noWayOut = trees.filter((t) => !t.exits && !t.sales
+  && !GRINDERS.includes(t.id) && !BY_PHONE.includes(t.id));
 check('every one of them has a way out of the shop',
   noWayOut.length === 0,
   noWayOut.map((t) => t.id).join(' ') || 'nobody in the roster is a dead end');
