@@ -765,6 +765,21 @@ export class Game {
         if (!this.notesOpen) this.ui.hideNotes();
       }
     }
+    /* Putting down what you are carrying, wherever you happen to be
+       looking.
+
+       This used to live at the bottom of the interaction pass, which
+       returns early twice before it -- once when the browser has not
+       given us the pointer, and once when the reticle is not on anything.
+       So pushing the vacuum across an empty stretch of floor and pressing
+       drop did nothing at all, and neither did dropping a tape while
+       looking at a wall. What is in your hands is not a question about
+       what you are looking at. */
+    if (i.hit('KeyG')) {
+      if (this.vacuum.held) this.dropVacuum();
+      else if (topTape(this.player)) this.dropHeld();
+    }
+
     // Throwing the bolt is the one thing you may need to do without lining
     // up a crosshair first, so it gets its own key anywhere in the room.
     /* The from-anywhere bolt. If the reticle is already on the door then
@@ -1714,13 +1729,6 @@ export class Game {
     } else {
       if (this.hold) { this.hold = null; this.ui.setHold(0); }
       if (act && (this.input.hit('KeyE') || this.input.mousePressed[0])) act();
-    }
-    /* Putting things down. The vacuum is a thing you are holding as much
-       as a tape is, and until now there was no way to let go of it -- you
-       picked it up and pushed it round for the rest of the shift. */
-    if (this.input.hit('KeyG')) {
-      if (this.vacuum.held) this.dropVacuum();
-      else if (held) this.dropHeld();
     }
   }
 

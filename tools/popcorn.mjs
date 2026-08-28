@@ -192,40 +192,56 @@ check('and it is in the back room, not on the shop floor',
 check('you can pick it up and put it down again',
   vac.held && vac.dropped, `put down at ${vac.where}`);
 
-/* And with the button a player would actually reach for. dropVacuum()
-   existed and nothing called it -- you picked the thing up and pushed it
-   around for the rest of the shift. */
-const putDown = await ev(async () => {
+/* And with the button a player would actually reach for, from a real
+   keystroke, while looking at nothing in particular -- which is the case
+   that was broken. The drop used to sit at the bottom of the interaction
+   pass, which returns early when the reticle is not on anything, so
+   pushing the vacuum over open floor and pressing drop did nothing. */
+const stare = async (where) => ev(async (w) => {
   const g = window.__game;
-  g.vacuum.held = true;
-  g.player.x = 8.0; g.player.z = 4.0;
-  // let a frame draw before reading the HUD, which is written each frame
+  g.player.x = w.x; g.player.z = w.z; g.player.yaw = w.yaw; g.player.pitch = w.pitch || 0;
   for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
-  const saidWhileHeld = g.ui.el.hands.textContent;
-  g.input.pressed.add('KeyG');
+  return (g.hover && g.hover.kind) || null;
+}, where);
+
+await ev(() => { window.__game.vacuum.held = true; window.__game.state = 'PLAY'; });
+// stand in the middle of the floor looking up at the ceiling: nothing to hover
+const looking = await stare({ x: 6.6, z: 4.6, yaw: 0, pitch: 0.85 });
+const heldLine = await ev(() => window.__game.ui.el.hands.textContent);
+await page.keyboard.press('KeyG');
+await page.waitForTimeout(220);
+const dropped = await ev(() => ({
+  held: window.__game.vacuum.held,
+  at: [+window.__game.vacuum.x.toFixed(2), +window.__game.vacuum.z.toFixed(2)],
+}));
+check('the reticle is on nothing at all', looking === null, `hovering ${looking}`);
+check('and the drop key still puts the vacuum down',
+  dropped.held === false, `still held: ${dropped.held}`);
+check('where you were standing', Math.hypot(dropped.at[0] - 6.6, dropped.at[1] - 4.6) < 0.5,
+  `left at ${dropped.at}`);
+check('and the hands line said how to let go of it',
+  /THE VACUUM/.test(heldLine) && /puts it down/.test(heldLine),
+  heldLine.replace(/\s+/g, ' ').slice(0, 80));
+
+/* A tape had the same hole in it: dropping one while facing a wall. */
+const tapeDrop = await ev(async () => {
+  const g = window.__game;
+  const T = window.__tapes;
+  g.vacuum.held = false;
+  g.player.held.length = 0;
+  window.__tapes.takeTape ? 0 : 0;
+  g.player.held.push(T.makeTape('HORROR', g.rng, { rewound: true }));
+  g.player.x = 6.6; g.player.z = 4.6; g.player.yaw = 0; g.player.pitch = 0.85;
   for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
-  const after = { held: g.vacuum.held, at: [+g.vacuum.x.toFixed(2), +g.vacuum.z.toFixed(2)] };
-  // and it is a thing in the world again, where you left it
-  g.player.x = g.vacuum.x + 1.0; g.player.z = g.vacuum.z - 0.3;
-  g.player.yaw = Math.atan2(g.vacuum.x - g.player.x, g.vacuum.z - g.player.z);
-  g.player.pitch = -0.55;
-  for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
-  return {
-    saidWhileHeld, after,
-    hover: g.hover && g.hover.kind,
-    prompt: g.ui.el.prompt.textContent.slice(0, 40),
-  };
+  return { before: g.player.held.length, hover: (g.hover && g.hover.kind) || null };
 });
-check('the drop button puts the vacuum down',
-  putDown.after.held === false, `still held: ${putDown.after.held}`);
-check('it lands where you were standing, not back in the store room',
-  Math.hypot(putDown.after.at[0] - 8.0, putDown.after.at[1] - 4.0) < 0.5,
-  `left at ${putDown.after.at}`);
-check('and can be picked straight back up',
-  putDown.hover === 'vacuum' && /Take the vacuum/.test(putDown.prompt), putDown.prompt);
-check('and the hands line says how to run it and how to let go',
-  /THE VACUUM/.test(putDown.saidWhileHeld) && /puts it down/.test(putDown.saidWhileHeld),
-  putDown.saidWhileHeld.replace(/\s+/g, ' ').slice(0, 80));
+await page.keyboard.press('KeyG');
+await page.waitForTimeout(220);
+const tapeAfter = await ev(() => window.__game.player.held.length);
+check('and a tape can be put down facing a wall too',
+  tapeDrop.before === 1 && tapeAfter === 0,
+  `held ${tapeDrop.before} -> ${tapeAfter}, hovering ${tapeDrop.hover}`);
+
 await ev(() => { window.__game.takeVacuum(); });
 
 /* ---------- 6. and it actually cleans up ---------- */
