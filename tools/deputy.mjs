@@ -227,7 +227,7 @@ const pronouns = await ev(() => {
       else { out.m++; if (!out.sample.m) out.sample.m = x.caseFile.moreDetail; }
     }
   }
-  // and the expander itself, both ways, over every tokenised line
+  // and the expander itself, both ways, over every tokenized line
   const male = { gender: { id: 'm' } }, fem = { gender: { id: 'f' } };
   let pairs = 0, differ = 0;
   for (const pool of [B.MORE_DETAIL, B.DIFFERENT_MAN]) {
@@ -247,7 +247,7 @@ check('nights come in both flavours', pronouns.m > 20 && pronouns.f > 20,
 check('and no line ever reaches the player with a token still in it',
   pronouns.leftovers === 0 && pronouns.wrong.length === 0,
   pronouns.wrong.join(' | ') || `${pronouns.leftovers} leftovers`);
-check('every tokenised line reads differently for a woman',
+check('every tokenized line reads differently for a woman',
   pronouns.pairs > 12 && pronouns.differ === pronouns.pairs,
   `${pronouns.differ} of ${pronouns.pairs} change`);
 console.log('      M: ' + String(pronouns.sample.m).slice(0, 88));

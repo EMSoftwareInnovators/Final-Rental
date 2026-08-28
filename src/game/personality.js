@@ -292,7 +292,7 @@ export const ARCHETYPES = [
       greetRent: [`I'll take this, though I've seen it. On a screen. A real one.`],
       feeAccept: [`Naturally. The cost of art.`],
       feeDispute: [`Your ledger is wrong. Mine isn't.`],
-      feeWaived: [`Civilised. Thank you.`],
+      feeWaived: [`Civilized. Thank you.`],
       noMoney: [`I've an account. Somewhere. Under a different name.`],
       thanks: [`Mm. Adequate.`],
       wait: [`Do carry on.`],
@@ -331,7 +331,7 @@ export const ARCHETYPES = [
       feeAccept: [`Yep. Cash alright?`],
       feeDispute: [`I was in Ohio. Physically in Ohio.`],
       feeWaived: [`You're alright. You're alright.`],
-      noMoney: [`Company card's frozen till Monday.`],
+      noMoney: [`Company card's frozen until Monday.`],
       thanks: [`Preciate you.`],
       wait: [`I got nothin' but road ahead of me.`],
       angry: [`Hey. Hey. Watch the tone, kid.`],
@@ -423,7 +423,7 @@ export const OFFICER = P('OFFICER', {
 });
 
 /* The bulk of the writing lives in chatter.js. Fold it on here so the
-   table above stays a table of behaviour rather than a wall of dialogue. */
+   table above stays a table of behavior rather than a wall of dialogue. */
 for (const a of ARCHETYPES) {
   const extra = EXTRA_LINES[a.id];
   if (!extra) continue;

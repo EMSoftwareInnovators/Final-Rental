@@ -1,5 +1,5 @@
 /* ============================================================
-   audio.js -- every sound is synthesised. No samples, no files.
+   audio.js -- every sound is synthesized. No samples, no files.
    Fluorescent hum, a rewinder motor, a rotary phone, dialogue
    blips pitched per character, and a dread bed that tightens as
    the night goes wrong.
@@ -247,7 +247,7 @@ export class Sound {
      a reel of tape whipping through a guide, and a bearing that is not
      quite true -- so: a motor whine that climbs as the take-up reel fills
      and its diameter grows, a tape-rush band above it, a slow flutter from
-     the off-centre reel, and a solenoid clack at each end.               */
+     the off-center reel, and a solenoid clack at each end.               */
   rewindStart() {
     if (!this.ready || this.rewindNode || this.muted) return;
     const ctx = this.ctx, t0 = this.t;
@@ -340,7 +340,7 @@ export class Sound {
    * Not the ringback you hear down a line you have dialled -- this is the
    * bell in the set itself. A 1996 desk phone still has a real gong in it:
    * two hammers, a shade out of tune with each other, struck about twenty
-   * times a second for two seconds, with the whole thing sat in a plastic
+   * times a second for two seconds, with the whole thing sitting in a plastic
    * box that takes the top off it.
    */
   phoneBell() {

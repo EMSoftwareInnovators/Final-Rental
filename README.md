@@ -89,11 +89,13 @@ first. Everyone has a fuse and the length of it depends on who they are — the
 commuter who is double-parked is not the retiree who wants to tell you about her
 sister's dog — and somebody who runs out of patience walks out.
 
-**Money is paper.** Nothing goes straight into the till. They hand you a bill,
+**Money is paper.** Nothing goes straight into the register. They hand you a bill,
 it sits in your hand until you walk it to the register and ring it up, and if
 they gave you a twenty for a three dollar rental they are standing at your
 counter until you count their change back out of the drawer. Cash still in your
-hand at the end of the night is cash you have to explain.
+hand at the end of the night is cash you have to explain. What is in the drawer
+is not on the HUD either — walk over and count it, and it tells you what came in
+tonight and what is out on accounts.
 
 Some of them do not have any money at all, and what you do about that is up to
 you — an account, a partial payment, a free rental out of your own numbers, or a
@@ -116,7 +118,7 @@ and would like to renew their license. You can explain, or you can play along
 and see how far it goes — playing along makes them love you, and people who love
 you buy things.
 
-Others are in the right shop with the wrong idea entirely: the tape that has to
+Others are in the right store with the wrong idea entirely: the tape that has to
 work in a Betamax, the one returned to the wrong chain, the customer who believes
 renting is just buying very slowly, and the man who has brought his entire VCR in
 on a cart because yours does not make the noise.
@@ -133,13 +135,13 @@ minutes:
 - A sovereign citizen with a folder, reading you statutes that do not exist, for
   as long as you let him.
 - A man contacted in his sleep by people who do not use telephones, who needs to
-  get into a basement this shop has never had. Refusing does not work. An
+  get into a basement this store has never had. Refusing does not work. An
   address for the *other* Sunset, across town, does.
 - A woman who is not offended by the thing — she is offended that anybody else
-  was — and who talks herself round to her sister's gravy and then rents a film.
+  was — and who talks herself around to her sister's gravy and then rents a movie.
 - A woman who wants your manager. Talking is a wall. The regional manager is
   forty minutes away and asleep, and the phone cord only reaches the counter.
-- A man who rings first and orders a pizza, then turns up to collect it. The only
+- A man who calls first and orders a pizza, then turns up to collect it. The only
   thing that ends it is a real pizza, on your counter, with his toppings on it.
 - A man who gets behind your counter and empties the popcorn tub into the
   kettle, and then it is on your floor and the vacuum is in the back room.
@@ -147,7 +149,7 @@ minutes:
 **The coach.** Once in a while a bus comes off the highway and three or four
 dozen people get out of it, and every one of them looks exactly the same,
 because they are all going to the same thing and have all dressed for it. They
-come through the door together and they all want a film. About one in four wants
+come through the door together and they all want a movie. About one in four wants
 to tell you about the journey first. He does not work a night the coach comes.
 
 ---
@@ -162,7 +164,7 @@ the end of a long run.
 That is harder, not easier. A short list is quick to clear somebody against. A
 long one means every ordinary customer matches four or five of it, and the
 question stops being *does he match* and becomes *does he match all of it* —
-which takes time you do not have with three people in the queue.
+which takes time you do not have with three people in line.
 
 - **Look at people.** Standing in front of someone takes in the obvious things —
   sex, height, build, hair, coat, whatever is on their face and in their hands.
@@ -175,7 +177,7 @@ which takes time you do not have with three people in the queue.
   calmest person who will talk to you all night. He will ask you questions. How
   you answer them changes how long you have later.
 - **If you are sure:** lock the front door, then pick up the phone. Dispatch
-  reads back everyone in the shop, each described so no two of them read alike.
+  reads back everyone in the store, each described so no two of them read alike.
   The deadbolt only buys minutes. Locking it is not the win; the phone is.
 - **If you are wrong:** they put a regular customer face down on the carpet in
   front of six people, and the district manager drives in at two in the morning
@@ -201,7 +203,7 @@ you.
 
 | | |
 |---|---|
-| ![The shop](docs/shots/02-the-shop.png) | ![The counter](docs/shots/03-the-counter.png) |
+| ![The store](docs/shots/02-the-store.png) | ![The counter](docs/shots/03-the-counter.png) |
 | *Sunset Video, from just inside the door* | *A tape in your hand, one in the rewinder, three people waiting* |
 | ![The notepad](docs/shots/04-the-notepad.png) | ![The aisles](docs/shots/05-the-aisles.png) |
 | *The bulletin, held against whoever is in front of you* | *Seven runs, and people who take their time over them* |
@@ -209,6 +211,22 @@ you.
 | *He tips the whole tub in. The whole tub.* | *Four dozen people who all look the same* |
 | ![The phone](docs/shots/06-the-phone.png) | ![The storefront](docs/shots/09-the-storefront.png) |
 | *Dispatch. Once you roll a unit, it is on the record.* | *4412 Delaney Ave* |
+
+Those are all taken through the tape, which is how the game ships. The same
+nine are in [`docs/shots/clean`](docs/shots/clean) with the VHS emulation
+switched off — no quantization, no dither, no chroma bleed, no scanlines —
+which is what the renderer itself puts out, and what the OPTIONS screen gives
+you if you turn the tape off.
+
+| | |
+|---|---|
+| ![The counter, clean](docs/shots/clean/03-the-counter.png) | ![The storefront, clean](docs/shots/clean/09-the-storefront.png) |
+| *The same frame with the tape switched off* | *And the same again* |
+
+Both sets come out of `tools/shots.mjs`, which sets each scene up through the
+simulation, lets it settle, and photographs it at the renderer's highest
+internal resolution. Nothing is composited and nothing is posed by hand that
+the game would not pose itself.
 
 ---
 
@@ -230,17 +248,17 @@ the hardware of a classic PlayStation rather than imitate it with a filter:
   waist and slopes at the shoulders, an eight-sided skull with one flat panel
   for the face, limbs that thin toward the wrist. Build and sex are baked into
   separate meshes rather than squashed in with a scale factor, so "heavy set"
-  and "thin, narrow shoulders" read from across the shop, which they have to.
+  and "thin, narrow shoulders" read from across the store, which they have to.
 - **Affine texture mapping.** UVs are interpolated linearly in screen space with
   no perspective correction, so textures swim across large surfaces. The period
   fix was to subdivide big polygons, so the floor, ceiling, walls, counter faces
-  and doors are built as grids of roughly one-metre tiles — which is why they
+  and doors are built as grids of roughly one-meter tiles — which is why they
   are.
 - **Per-vertex shading with black fog** folded into a single interpolated scalar,
   so the whole shading step is two multiplies per pixel. There are no lightmaps
   and no per-pixel lights; the store's nine fluorescents are baked into vertex
   colors at build time.
-- **Nearest-neighbour texels**, a 1/z depth buffer, near-plane clipping, and
+- **Nearest-neighbor texels**, a 1/z depth buffer, near-plane clipping, and
   blend modes for the glass.
 
 `src/engine/postfx.js` is the tape deck on top: 15-bit color quantization with a
@@ -254,9 +272,9 @@ Everything renders into a 320×240 buffer and is scaled up with nearest-neighbor
 ### Sound
 
 `src/engine/audio.js` is Web Audio and nothing else — no samples. The chime over
-the door, the ratchet of the rewinder, the till, the bell inside the telephone,
+the door, the ratchet of the rewinder, the register, the bell inside the telephone,
 kernels going off one at a time in the popcorn kettle, the vacuum, and the music
-out of the boombox are all synthesised as the game runs.
+out of the boombox are all synthesized as the game runs.
 
 ### Tests
 

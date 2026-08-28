@@ -11,9 +11,9 @@ import { pickPersonality, line } from './personality.js';
 import { GENRES, makeTape, tapeLabel } from './tapes.js';
 import { LOST_PREMISES, DIM_PREMISES } from './dialogue.js';
 
-/** How far along the pavement somebody has to get before they stop existing.
+/** How far along the sidewalk somebody has to get before they stop existing.
     The storefront glass ends at x = 0 and x = 13, so this is comfortably
-    past the frame from anywhere inside the shop. */
+    past the frame from anywhere inside the store. */
 const DESPAWN_X = 11.5;
 
 export const CS = {
@@ -104,8 +104,8 @@ export function createCustomer(rng, opts = {}) {
  *
  * Same face, same coat, same problem, every time they turn up -- so the
  * appearance and personality come straight off the roster rather than
- * being rolled, and they carry an `act`: a thing they do in the shop
- * instead of queueing politely.
+ * being rolled, and they carry an `act`: a thing they do in the store
+ * instead of waiting in line politely.
  */
 export function makeSpecial(rng, sp) {
   const c = createCustomer(rng, {
@@ -140,7 +140,7 @@ export function makeSpecial(rng, sp) {
 }
 
 /**
- * Is the shop currently unbearable?
+ * Is the store currently unbearable?
  *
  * Two of the regulars make the place genuinely hard to stand in -- the one
  * who has not washed and the one who smells like a bonfire in a hedge. An
@@ -161,25 +161,25 @@ export const ACT_SPOT = {
      floor -- its screen points along (0.58, -0.81) -- and he used to stand
      at 2.3, 2.8, which is nearly ninety degrees off that. He was beside
      the thing, staring up past the side of the tube. This puts him on the
-     screen's axis, a couple of metres out, looking up at it. */
+     screen's axis, a couple of meters out, looking up at it. */
   TV: { x: 3.00, z: 1.05, yaw: -1.00 },
   LINGER: null,          // wanders the shelves
   AUDIT: null,           // wanders the shelves, slowly, tutting
   PHONE: { x: 8.4, z: 4.6, yaw: 0.4 },
   /* At the end of the counter, alongside the window rather than in front of
      it. He is in the way, which is the point, but the line can still move
-     past him -- he used to take the head of the queue and hold it, and
-     since nothing could ever be sold to him, the queue behind him never
+     past him -- he used to take the head of the line and hold it, and
+     since nothing could ever be sold to him, the line behind him never
      moved again for the rest of the night. */
   WINDOW: { x: 11.6, z: 0.62, yaw: -0.55 },
   /* Further along the same counter, past the arguer, so the two of them
-     can be in the shop at once without standing in each other. Still
+     can be in the store at once without standing in each other. Still
      inside the phone flex, which she is going to need. */
   RAIL: { x: 12.35, z: 0.66, yaw: -0.30 },
   /* At the front window, left of the door, watching the street.
-     He is not queueing -- he is not buying anything you sell, he is
+     He is not in line -- he is not buying anything you sell, he is
      waiting on a car. The counter frontage is full anyway: the service
-     window and three queue places already run the length of it. */
+     window and three line places already run the length of it. */
   HATCH: { x: 7.05, z: 0.45, yaw: Math.PI },
   /* In front of the popcorn cart -- which is behind the counter, on the
      clerk's side, where a customer has absolutely no business being. That
@@ -253,10 +253,10 @@ export function updateCustomer(c, dt, ctx) {
   /* Standing still is the default.
 
      step() was the only thing that ever zeroed this, so the moment somebody
-     stopped being walked anywhere -- settled on their place in the queue,
+     stopped being walked anywhere -- settled on their place in line,
      say -- their last recorded speed stayed on the books forever, and the
      rig kept playing the walk cycle at it. Anybody who had hurried to the
-     counter stood at the window sprinting on the spot for the rest of the
+     counter stood at the window sprinting in place for the rest of the
      night. Whoever moves this frame will say so; everybody else is still. */
   c.moveSpeed = 0;
   if (c.stenchGripe > 0) c.stenchGripe -= dt;
@@ -265,7 +265,7 @@ export function updateCustomer(c, dt, ctx) {
   if (c.brushT > 0) c.brushT -= dt;
 
   /* Somebody who is owed change goes to the window and stays there. It used
-     to be handled inside the queue state alone, which meant anyone paid
+     to be handled inside the line state alone, which meant anyone paid
      anywhere else -- a special, mid-floor -- was owed money in a state that
      had no idea what to do about it, and simply wandered off with it. */
   if (c.awaitingChange && c.changeDue > 0.001
@@ -278,8 +278,8 @@ export function updateCustomer(c, dt, ctx) {
 
   switch (c.state) {
     case CS.ARRIVING: {
-      // Spread along the pavement rather than stacking on one flagstone --
-      // on a busy night the queue outside jams itself before the door does.
+      // Spread along the sidewalk rather than stacking on one flagstone --
+      // on a busy night the line outside jams itself before the door does.
       if (!c.path) {
         setDest(c, SPOTS.outsideDoor.x + (c.id % 5 - 2) * 0.34,
           SPOTS.outsideDoor.z - (c.id % 3) * 0.28, ctx);
@@ -319,8 +319,8 @@ export function updateCustomer(c, dt, ctx) {
          night puts through that door and wildly untrue of a coach party.
          Four dozen people cannot all be inside within five seconds of the
          first one, so most of them were declared inside while still on the
-         pavement -- and then tried to browse from out there, and could not
-         walk through the front of the shop to do it. */
+         sidewalk -- and then tried to browse from out there, and could not
+         walk through the front of the store to do it. */
       const arrived = step(c, dt, ctx);
       /* Past the threshold is inside. Waiting to reach the destination
          first is what made the doorway a funnel -- once you are through
@@ -409,7 +409,7 @@ export function updateCustomer(c, dt, ctx) {
       }
       /* He has been holding it for a while now and has no idea why. It goes
          in the returns bin, which makes it the clerk's problem -- and he
-         does that whether or not anybody ever gets him out of the shop. */
+         does that whether or not anybody ever gets him out of the store. */
       if (c.act === 'TV' && c.tape && !c.errand) {
         c.holdT = (c.holdT || 0) + dt;
         if (c.holdT > 55) { c.holdT = 0; c.binRun = { phase: 'GO' }; }
@@ -548,8 +548,8 @@ export function updateCustomer(c, dt, ctx) {
 
          This used to claim a place the moment somebody decided to head for
          the counter, so a man who set off first from the far end of the
-         shop held first place while somebody standing next to the till
-         walked up and got put behind him. A queue is decided by who gets
+         store held first place while somebody standing next to the register
+         walked up and got put behind him. A line is decided by who gets
          there, not by who thought of it first. */
       const tail = ctx.lineTail(c);
       /* Re-aim only when the back of the line has actually moved. Rebuilding
@@ -570,11 +570,11 @@ export function updateCustomer(c, dt, ctx) {
 
          It has to be a backstop against a walk that is not happening, not
          against a walk that is taking a while. Nine seconds flat is less
-         than it takes somebody slow to cross the shop from the far corner,
+         than it takes somebody slow to cross the store from the far corner,
          so they claimed a place in the line from over by the horror shelf
          and then covered the rest of the floor already standing in it --
-         holding first place against somebody stood at the till, which is
-         the opposite of what a queue is for. Closing real ground resets
+         holding first place against somebody standing at the register, which is
+         the opposite of what a line is for. Closing real ground resets
          it; only genuinely getting nowhere runs it out. */
       const gap = dist(c.x, c.z, tail.x, tail.z);
       if (c.approachBest === undefined || gap < c.approachBest - 0.3) {
@@ -591,7 +591,7 @@ export function updateCustomer(c, dt, ctx) {
     }
 
     case CS.WAITING: {
-      // people shuffle forward as the queue moves
+      // people shuffle forward as the line moves
       const spot = ctx.claimCounterSpot(c);
       /* Compare the place, not the object.
 
@@ -600,9 +600,9 @@ export function updateCustomer(c, dt, ctx) {
          single frame, so an identity test said "your spot has changed"
          thirty times a second, tore up the route each time, and left them
          walking on the spot at the counter forever. Which is the customer
-         who would not stop shuffling next to the till.
+         who would not stop shuffling next to the register.
 
-         Settle properly on it, too. Half a metre of slack was fine when
+         Settle properly on it, too. Half a meter of slack was fine when
          people walked all the way to the spot before joining the line; now
          that they join it from wherever they reach it, that slack is where
          they stayed -- out of reach of somebody looking straight at the
@@ -648,7 +648,7 @@ export function updateCustomer(c, dt, ctx) {
            line is not the imposition it is for somebody who came in on
            their own. They do not run down and they do not storm out --
            four dozen people all losing patience at once would empty the
-           shop through the one door just as you got on top of it, which
+           store through the one door just as you got on top of it, which
            is the opposite of what the coach is for. */
         break;
       }
@@ -667,11 +667,11 @@ export function updateCustomer(c, dt, ctx) {
         /* Running out of patience has to end in them going.
 
            It used to fire once, set a flag, and stop -- and because the
-           flag was the guard, nothing ever happened again. A queue whose
+           flag was the guard, nothing ever happened again. A line whose
            head could not be served (a special parked at the window, say)
            stood there for the rest of the night with a mood of minus three
            hundred, and everybody behind it stood there too. Nobody in a
-           video shop waits forever. */
+           video store waits forever. */
         if (c.mood <= 0 && !c.wentAngry) {
           c.wentAngry = true;
           c.fuse = 18 + rng() * 22;
@@ -694,7 +694,7 @@ export function updateCustomer(c, dt, ctx) {
 
     case CS.LEAVING: {
       /* He does not leave without his music. He walks back to it, crouches,
-         turns it off -- the shop goes quiet there, not the moment he agreed
+         turns it off -- the store goes quiet there, not the moment he agreed
          to go -- picks it up, and only then heads for the door. */
       if (c.packUp) {
         const B = c.packUp;
@@ -722,9 +722,9 @@ export function updateCustomer(c, dt, ctx) {
         updateAnim(c.anim, dt, c.moveSpeed, c.app, { keep: true });
         break;
       }
-      /* They used to stop a couple of paces past the kerb and blink out of
+      /* They used to stop a couple of paces past the curb and blink out of
          existence in full view of the window. They now walk off down the
-         pavement, left or right, and are only removed once they are past
+         sidewalk, left or right, and are only removed once they are past
          the edge of the storefront and well behind the glass. */
       if (!c.path) {
         ctx.releaseCounterSpot(c);
@@ -734,7 +734,7 @@ export function updateCustomer(c, dt, ctx) {
       }
       if (step(c, dt, ctx)) {
         if (c.leg === 1) {
-          // turn along the pavement and keep going until they are gone
+          // turn along the sidewalk and keep going until they are gone
           c.leg = 2;
           setDest(c, SPOTS.street.x + c.exitSide * DESPAWN_X, SPOTS.street.z - 0.9, ctx);
         } else {
@@ -778,7 +778,7 @@ export function updateCustomer(c, dt, ctx) {
 }
 
 /**
- * What an act looks like from across the shop.
+ * What an act looks like from across the store.
  *
  * These are the only customers you can identify by silhouette alone,
  * which is the point of them: the dancing is visible from the counter.

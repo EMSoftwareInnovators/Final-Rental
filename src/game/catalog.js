@@ -1,7 +1,7 @@
 /* ============================================================
    catalog.js -- what is actually on the shelves.
 
-   A video shop is a wall of titles, and a wall of fifteen titles
+   A video store is a wall of titles, and a wall of fifteen titles
    reads as a prop. Each genre here is a hand-written core -- the
    ones with jokes in them -- plus a generated run built from
    genre-specific grammars, so a shelf has hundreds of plausible
@@ -251,7 +251,7 @@ const TARGET = 300;
 
 function build() {
   const out = {};
-  // one fixed seed: the shop stocks the same films every night it opens
+  // one fixed seed: the store stocks the same movies every night it opens
   const rng = makeRng(0x5A17E5);
   for (const genre of Object.keys(CORE)) {
     const seen = new Set(CORE[genre].map((t) => t.toUpperCase()));

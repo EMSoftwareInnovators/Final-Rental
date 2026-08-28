@@ -2,7 +2,7 @@
    chatter.js -- the rest of what people say.
 
    personality.js holds each archetype's core handful of lines, so
-   that file stays readable as a table of behaviour. This one holds
+   that file stays readable as a table of behavior. This one holds
    the bulk: everything else that comes out of their mouths, merged
    onto the archetype at load. Split out because it is writing, not
    design, and it will only ever get longer.
@@ -26,7 +26,7 @@ export const EXTRA_LINES = {
       `Got a hunch about this one. Talk me out of it.`,
       `Same as always — something I've probably already seen.`,
       `I'll take this. And if it's terrible I'm telling you about it Thursday.`,
-      `This one. My neighbour won't shut up about it.`,
+      `This one. My neighbor won't shut up about it.`,
       `Evening. Give me the usual damage.`,
     ],
     feeAccept: [
@@ -50,7 +50,7 @@ export const EXTRA_LINES = {
     thanks: [
       `Appreciate it. Don't work too late.`,
       `Thanks. Say hi to whoever's on tomorrow.`,
-      `Cheers. You're good at this, you know.`,
+      `Thanks. You're good at this, you know.`,
     ],
     wait: [`I'm in no hurry.`, `Whenever you're ready.`, `Don't rush on my account.`],
     angry: [
@@ -68,7 +68,7 @@ export const EXTRA_LINES = {
       `I keep meaning to ask what happened to the fella who used to work Fridays.`,
       `The heating in this place has never once worked, has it.`,
       `Somebody's put a shopping cart in the creek again. Third one this year.`,
-      `Half the parade's shut by ten now. You're the only light on this side.`,
+      `Half the block's shut by ten now. You're the only light on this side.`,
       `I drove past twice before I saw you were open. You want a bigger sign.`,
     ],
   },
@@ -180,7 +180,7 @@ export const EXTRA_LINES = {
     bye: [`I'll be back with the coupon. It doesn't expire. I checked.`],
     smalltalk: [
       `You know the place across the bridge does five nights for the price of two.`,
-      `Your popcorn machine costs more to run than it makes. I did the maths.`,
+      `Your popcorn machine costs more to run than it makes. I did the math.`,
       `Free membership is a loss leader. I know what a loss leader is.`,
       `Membership should be free after five years. That's just loyalty.`,
     ],
@@ -246,7 +246,7 @@ export const EXTRA_LINES = {
     smalltalk: [
       `They shot part of one about ten miles from here. Real barn. It's still there.`,
       `Everyone keeps saying the news thing is "like a movie." It isn't. Movies have an ending.`,
-      `Your horror shelf is alphabetical by director and it has RUINED me for other shops.`,
+      `Your horror shelf is alphabetical by director and it has RUINED me for other stores.`,
       `There's a version of this with a different last shot. Nobody believes me.`,
       `The scariest thing on this shelf is the one with the cheapest box. Every time.`,
       `Somebody rented the whole bottom row of that shelf last month. All eleven. Who does that?`,
@@ -402,7 +402,7 @@ export const EXTRA_LINES = {
     angry: [
       `Do you know how long I have been standing at this counter? DO YOU?`,
       `Your name. I want your name and I want it spelled.`,
-      `This is the single worst run business on this parade and I include the laundromat.`,
+      `This is the single worst run business on this block and I include the laundromat.`,
       `I would like this ENTIRE INTERACTION on record.`,
     ],
     bye: [`This isn't finished.`, `You'll hear about this.`],
@@ -450,7 +450,7 @@ export const EXTRA_LINES = {
     ],
     feeAccept: [`Naturally. The cost of art is chiefly administrative.`],
     feeDispute: [`Your ledger is mistaken. Mine, I'm afraid, is not.`],
-    feeWaived: [`Civilised. There's hope for the format yet.`],
+    feeWaived: [`Civilized. There's hope for the format yet.`],
     noMoney: [`I have an account somewhere. Possibly under a name I no longer use.`],
     thanks: [`Mm. Adequate.`, `Acceptable.`],
     wait: [`Do carry on. I'm admiring the lighting, which is dreadful.`],
@@ -466,7 +466,7 @@ export const EXTRA_LINES = {
     smalltalk: [
       `Your Drama section is a landfill, and I say that with real affection.`,
       `Everything on that wall was made by four studios. Four. Doesn't that trouble you?`,
-      `The best thing in this shop is on the bottom shelf with a cracked case.`,
+      `The best thing in this store is on the bottom shelf with a cracked case.`,
       `There's a version of this with eleven more minutes and it's a different film entirely.`,
       `You've a copy of something extraordinary in here and you've priced it at ninety-nine cents.`,
     ],
@@ -512,7 +512,7 @@ export const EXTRA_LINES = {
     feeAccept: [`Yep. Cash alright?`, `Fair's fair. Here.`],
     feeDispute: [`I was in Ohio. Physically. In Ohio.`],
     feeWaived: [`You're alright. Not everybody is.`],
-    noMoney: [`Company card's frozen till Monday and payroll's a joke.`],
+    noMoney: [`Company card's frozen until Monday and payroll's a joke.`],
     thanks: [`'Preciate you.`, `Good man.`],
     wait: [`I got nothing but road ahead. Take your time.`],
     angry: [`Hey. Watch the tone. I've had a long one.`],
@@ -542,11 +542,11 @@ export const EXTRA_LINES = {
       `I'll wait. I've waited longer for less.`,
     ],
     angry: [`This is the worst run one of these I have ever set foot in.`],
-    bye: [`I'll come back when you're better organised.`],
+    bye: [`I'll come back when you're better organized.`],
     smalltalk: [
       `How late are you open? For the other thing, I mean.`,
       `Have they moved? They've moved, haven't they. Nobody tells anybody anything.`,
-      `Is there parking round the back or is that for staff?`,
+      `Is there parking around the back or is that for staff?`,
       `Is there another one of these on the other side of town? There must be.`,
     ],
   },
@@ -575,7 +575,7 @@ export const EXTRA_LINES = {
       `Why is it called a feature? What's the rest of it, then?`,
       `Is the man on the box the same man every time or do they get different ones?`,
       `Do the actors know we're watching? Not now. But in general.`,
-      `Where does the film go when the tape's rewound? Does it go back to the start of itself?`,
+      `Where does the movie go when the tape's rewound? Does it go back to the start of itself?`,
     ],
   },
 };
@@ -583,8 +583,8 @@ export const EXTRA_LINES = {
 /* ============================================================
    WHAT THEY THINK OF THE THING IN THEIR HAND
 
-   The rule: if somebody is going to talk about a film, it is the
-   film they are actually holding. Nobody discusses a comedy while
+   The rule: if somebody is going to talk about a movie, it is the
+   movie they are actually holding. Nobody discusses a comedy while
    clutching a slasher.
    ============================================================ */
 
@@ -592,7 +592,7 @@ export const EXTRA_LINES = {
 export const TAPE_TALK = {
   HORROR: [
     `Is this one of the mean ones, or one of the silly ones? I can only do silly tonight.`,
-    `The box says "the most terrifying film ever made." They all say that.`,
+    `The box says "the most terrifying movie ever made." They all say that.`,
     `My brother saw this at a sleepover in eighty-nine and he's still odd about it.`,
     `Does anything happen to the dog in this? Just the dog. That's all I ask.`,
     `I'm going to watch this with every light in the house on and I'm not ashamed.`,
@@ -643,7 +643,7 @@ export const SEEN_IT = {
   yes: [
     `Three times. I keep renting it anyway.`,
     `Twice. Once properly and once asleep.`,
-    `Saw it at the drive-in when it came out. Different film on a small screen.`,
+    `Saw it at the drive-in when it came out. Different movie on a small screen.`,
     `I've seen it. I'm renting it for somebody who hasn't and I want to watch their face.`,
   ],
   no: [

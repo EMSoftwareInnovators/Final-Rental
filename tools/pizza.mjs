@@ -1,4 +1,4 @@
-/* A man rings the video shop and orders a pizza. He is not confused about
+/* A man rings the video store and orders a pizza. He is not confused about
    the number -- he is certain -- and the only thing that ends it is a real
    pizza on the counter with his toppings on it. */
 import { chromium } from 'playwright-core';
@@ -74,7 +74,7 @@ const rang = await ev(() => {
 });
 check('the phone rings at you, over and over',
   rang.rings >= 2, `${rang.rings} rings in ten seconds`);
-check('and the shop says so', /PHONE IS RINGING/.test(rang.obj), rang.obj);
+check('and the store says so', /PHONE IS RINGING/.test(rang.obj), rang.obj);
 check('picking it up gets the caller, not dispatch',
   rang.who === 'A MAN ON A PAYPHONE' && rang.phase === 'ANSWERED', `${rang.who}, ${rang.phase}`);
 console.log('      "' + rang.opener.replace(/\n/g, ' ').slice(0, 90) + '"');
@@ -88,7 +88,7 @@ const insisted = await ev(() => {
     window.__helpers.reset();
     g.beginPizzaCall(window.__specials.specialById('PIZZA'));
     for (let i = 0; i < 60; i++) g.updatePizza(1 / 30);
-    // tell him, every single time, that this is a video shop
+    // tell him, every single time, that this is a video store
     const said = window.__helpers.walk(D.buildPhoneCall(g.ctx), /video|wrong number|don't (do|sell)|no kitchen/i);
     out.runs.push({ phase: g.pizza.phase, said, wants: g.pizza.wants });
   }
@@ -99,7 +99,7 @@ const insisted = await ev(() => {
   out.unheard = { phase: g.pizza.phase, came: !!g.pizza.customer };
   return out;
 });
-check('telling him it is a video shop does not stop him ordering',
+check('telling him it is a video store does not stop him ordering',
   insisted.runs.every((r) => r.phase === 'ORDERED'),
   `${insisted.runs.filter((r) => r.phase === 'ORDERED').length} of ${insisted.runs.length}`);
 check('and every order has something normal and something insane on it',
@@ -141,7 +141,7 @@ check('he turns up a while after the call, not instantly',
   !wall.none && wall.arrived > 15, `${wall.arrived}s later`);
 check('and waits at the window watching for a car, not in the line',
   wall.act === 'HATCH', `${wall.act} at ${wall.at}`);
-check('nothing you say to him gets him out of the shop',
+check('nothing you say to him gets him out of the store',
   wall.gone === 0, `${wall.gone} of 20 conversations moved him`);
 check('and arguing with him costs you', wall.mood < 90, `mood ${wall.mood}`);
 check('with no hole in any of it', wall.holes === 0);
@@ -167,7 +167,7 @@ const raw = await ev(() => {
   g.beginPizzaCall(window.__specials.specialById('PIZZA'));
   for (let i = 0; i < 60; i++) g.updatePizza(1 / 30);
   for (let k = 0; k < 10; k++) walk(D.buildPizzaOrder(g.ctx), 0);
-  for (let k = 0; k < 10; k++) walk(D.buildPizzaParlour(g.ctx), 0);
+  for (let k = 0; k < 10; k++) walk(D.buildPizzaParlor(g.ctx), 0);
   window.__helpers.walk(D.buildPhoneCall(g.ctx));
   for (let i = 0; i < 4000 && !g.pizza.customer; i++) g.updatePizza(1 / 30);
   const c = g.pizza.customer;
@@ -180,8 +180,8 @@ const raw = await ev(() => {
 check('no line of his shows a backslash-n instead of a line break',
   raw.bad.length === 0, raw.bad.join(' | ') || `${raw.lines} lines checked`);
 
-/* ---------- 4. the parlour has not got half of it ---------- */
-const parlour = await ev(() => {
+/* ---------- 4. the parlor has not got half of it ---------- */
+const parlor = await ev(() => {
   const g = window.__game;
   const D = window.__dlg;
   const out = [];
@@ -194,7 +194,7 @@ const parlour = await ev(() => {
     const c = g.pizza.customer;
     c.x = 7.05; c.z = 0.45; c.state = 'ACTING'; c.parked = true;
 
-    // first call to the parlour
+    // first call to the parlor
     let n = D.buildPhoneCall(g.ctx);
     let row = (n.choices || []).find((r) => /Bertucci/.test(r.label));
     const heard = row ? window.__helpers.walk(row.fn()) : '';
@@ -217,17 +217,17 @@ const parlour = await ev(() => {
   }
   return out;
 });
-check('the parlour is on the phone list once he is in the shop',
-  parlour.every((r) => r.hadRow), `${parlour.filter((r) => r.hadRow).length} of ${parlour.length}`);
+check('the parlor is on the phone list once he is in the store',
+  parlor.every((r) => r.hadRow), `${parlor.filter((r) => r.hadRow).length} of ${parlor.length}`);
 check('and they have never got the strange half of what he asked for',
-  parlour.every((r) => r.refused === r.wants.odd),
-  [...new Set(parlour.map((r) => r.refused))].slice(0, 4).join(', '));
+  parlor.every((r) => r.refused === r.wants.odd),
+  [...new Set(parlor.map((r) => r.refused))].slice(0, 4).join(', '));
 check('so he has to choose again, out of what they do have',
-  parlour.every((r) => r.agreed && r.agreed !== r.wants.odd),
-  [...new Set(parlour.map((r) => r.agreed))].join(', '));
+  parlor.every((r) => r.agreed && r.agreed !== r.wants.odd),
+  [...new Set(parlor.map((r) => r.agreed))].join(', '));
 check('and ringing them back is what actually puts it in an oven',
-  parlour.every((r) => r.phase === 'COOKING' && r.cook > 30),
-  `${parlour.filter((r) => r.phase === 'COOKING').length} of ${parlour.length} cooking`);
+  parlor.every((r) => r.phase === 'COOKING' && r.cook > 30),
+  `${parlor.filter((r) => r.phase === 'COOKING').length} of ${parlor.length} cooking`);
 
 /* ---------- 5. somebody brings it, he pays, they both go ---------- */
 const delivered = await ev(() => {

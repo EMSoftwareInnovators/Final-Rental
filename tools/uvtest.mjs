@@ -98,7 +98,7 @@ function check(label, got, want) {
   check('screen bottom-right-> texture bottom-right', sample(rz, 38, 39), 'WHITE(tex BR)');
 }
 
-/* ---- Case 5: plate(), which is what every sign in the shop is ----
+/* ---- Case 5: plate(), which is what every sign in the store is ----
    A plate is double-sided, so it is never culled -- which means getting the
    winding wrong does not hide it, it mirrors it. The counter signs read
    "3SA3J9" for exactly this reason. Each yaw is checked from the side it is

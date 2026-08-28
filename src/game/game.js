@@ -50,12 +50,12 @@ const SHELVE_TIME = 1.5;
 /* How long somebody who was already inside at midnight gets to finish up
    before they give up and go home. Deliberately far longer than anything
    should take: it exists so a shift can always end, not to hurry anyone.
-   Seven minutes of shop-floor time is several transactions' worth. */
+   Seven minutes of store-floor time is several transactions' worth. */
 const CLOSING_LIMIT = 420;
 
-/* How far the phone flex goes, in metres from the cradle on the back
+/* How far the phone flex goes, in meters from the cradle on the back
    counter. Enough for both service positions and the end of the counter;
-   nothing like enough for the shop floor. */
+   nothing like enough for the store floor. */
 const CORD_REACH = 4.6;
 
 /* Whatever "interact" speaks, for the one action that is held down rather
@@ -68,7 +68,7 @@ const INTERACT_KEYS = PAD_ACTIONS.confirm.keys.concat(['KeyE']);
    front of the service window, so it is between the two of them. */
 const PIZZA_DROP = { x: 10.75, z: 0.95 };
 
-/* The machine will bury the shop if you let it, but not past the point
+/* The machine will bury the store if you let it, but not past the point
    where the frame rate is the horror. */
 const MAX_SPILLS = 26;
 
@@ -77,7 +77,7 @@ const MAX_SPILLS = 26;
 const SPILL_CLEAR = 0.34;
 
 /* Where a line longer than the counter goes. Three rows across the front
-   of the shop, clear of the aisles, which start at z 3.2. It doubles back
+   of the store, clear of the aisles, which start at z 3.2. It doubles back
    on itself rather than running out of the building. */
 const QUEUE_ROWS = [0.84, 1.78, 2.72];
 const QUEUE_X0 = 2.00, QUEUE_X1 = 7.60, QUEUE_STEP = 0.86;
@@ -97,7 +97,7 @@ const MANAGER_CALL_BEATS = [
   `Yes — hello. Am I speaking to the regional manager? ...Right. Right.`,
   `No, the young man has been perfectly polite. That isn't what this is about.`,
   `It's the LOT. It's the lot and the alley behind it. There's no light back there at all.`,
-  `Because a woman was followed to her car on this parade in March, that's why.`,
+  `Because a woman was followed to her car on this block in March, that's why.`,
   `...No. No, I know it isn't his to fix. That's why I asked for you.`,
   `A light. One light, on the back of the building. That's the whole of it.`,
   `...You'll put it in writing. To the landlord. On Monday.`,
@@ -157,7 +157,7 @@ export class Game {
     this.distress = 0; this.tension = 0;
     this.staticFrame = 0; this.staticT = 0;
     this.shake = 0;
-    this.till = 0;
+    this.drawer = 0;
     this._lastTyped = -1;
   }
 
@@ -236,7 +236,7 @@ export class Game {
     });
     this.rng = this.night.rng;
     /* Two clocks.
-       `sim` is real time on the shop floor: it runs from the moment you
+       `sim` is real time on the store floor: it runs from the moment you
        take the counter and it is what customers and the killer are
        scheduled against.
        `elapsed` is the clock over the door, and it does not start until
@@ -261,7 +261,7 @@ export class Game {
     this.counterSlots = COUNTER_SLOTS.map(() => null);
     this.bin = [];
     this.rewinder = { tape: null, t: 0, dur: 20, done: false, running: false };
-    this.till = 0;
+    this.drawer = 0;
     this.owedTotal = 0;
     this.stats = {
       served: 0, rentalsRung: 0, feesCollected: 0, feesWaived: 0,
@@ -282,7 +282,7 @@ export class Game {
     this.blipT = 0;
     this.staticFrame = 0; this.staticT = 0;
 
-    /* The deputy. He is no longer waiting on the pavement when the shift
+    /* The deputy. He is no longer waiting on the sidewalk when the shift
        starts; he turns up when he turns up, and there may well be two
        people at the counter when he does. */
     if (this.night.deputy) {
@@ -683,7 +683,7 @@ export class Game {
      This used to be a single dolly toward the door, timed so that the
      deputy walked in behind you. He does not arrive with you any more, so
      the shot is the clerk's own: a beat held on the storefront from across
-     the pavement while the sign buzzes, then a walk in under the sign, and
+     the sidewalk while the sign buzzes, then a walk in under the sign, and
      the doors close behind you.                                          */
   updateEstablish(dt) {
     this.estT += dt;
@@ -721,7 +721,7 @@ export class Game {
       this._estSound = false; this._estChime = false; this._estStep = 0;
       /* Hand over standing exactly where the camera stopped, just inside
          the door. Cutting to behind the counter made the shot look like it
-         had teleported you across the shop; the walk to the till is now
+         had teleported you across the store; the walk to the register is now
          yours, and it is the first thing you do on shift. */
       const at = { x: p.x, z: Math.max(p.z, 0.62), yaw: p.yaw, pitch: p.pitch };
       this.player = createPlayer();
@@ -814,7 +814,7 @@ export class Game {
        which is not a decision, it is a shrug. Getting rid of him is now the
        player's job, on the player's time, and the shift resumes when the
        door shuts behind him. */
-    /* A deputy who has walked in to tell you the parade was empty is
+    /* A deputy who has walked in to tell you the block was empty is
        not the player's doing, so the shift does not pay for the walk to
        the counter and the conversation. Same rule as the briefing. */
     const holdClock = killerActive(this.killer) || !this.officerDone
@@ -830,9 +830,9 @@ export class Game {
        timeScale, so a fast-forward hands the simulation whole seconds at a
        time. Walking is integrated per step and arrival is "within 16cm of
        the waypoint" -- give that a six second step and a customer covers
-       eight metres in one go, sails past the waypoint, gets pushed back off
+       eight meters in one go, sails past the waypoint, gets pushed back off
        a wall, and oscillates around the doorway forever without ever
-       arriving. A shop full of people who cannot find the exit is what that
+       arriving. A store full of people who cannot find the exit is what that
        looks like from the outside.
 
        Input, the HUD and the interaction ray stay at one per frame: they
@@ -873,7 +873,10 @@ export class Game {
 
     // ---- HUD ----
     this.ui.setClock(clockString(this.elapsed, this.night.length), this.nightNo, holdClock);
-    this.ui.setTill(this.till);
+    /* The drawer is not on the HUD. Walking to the register and counting
+       it says more than a number in the corner ever did -- what is in it
+       tonight AND what is owed on accounts -- and this is a game about
+       being at the counter rather than reading a dashboard. */
     this.ui.setHands(this.player.held, this.rewinder, this.player, this.changeOwedOut(), this.vacuum);
     if (this.notesOpen) this.ui.showNotes(this.night.bulletin, this.player.lookTarget);
 
@@ -885,7 +888,7 @@ export class Game {
    * Midnight, and what still has to happen before you can go home.
    *
    * The clock reaching the end of the shift used to end the night on the
-   * spot, mid-sentence, with three people in the queue and a tape still in
+   * spot, mid-sentence, with three people in line and a tape still in
    * the rewinder. Midnight is a lock on the door instead, and only that:
    * nobody else comes in, and the shift is not over until the last customer
    * is out of the building one way or another and every tape is back in a
@@ -906,14 +909,14 @@ export class Game {
 
     /* Midnight turns the sign round; it does not clear the room.
 
-       This used to march the whole shop out at the stroke of twelve, which
+       This used to march the whole store out at the stroke of twelve, which
        meant a woman four feet from the counter with a tape in her hand and
        her money out got turned round and sent home, and the last minutes of
        a shift were spent watching people you had been serving all night
        file past you. Anybody who was inside before the bolt went across
        still gets to pick something out and pay for it.
 
-       All they are told is that the shop is shutting, which makes them
+       All they are told is that the store is shutting, which makes them
        settle for the aisle they are already standing in rather than doing
        another lap. After that they finish in their own time, and they leave
        when they are done, the way they would have anyway. */
@@ -933,8 +936,8 @@ export class Game {
       }
     }
 
-    /* "Out of the shop" means out through the front door, not gone from the
-       simulation. They carry on down the pavement afterwards, well out of
+    /* "Out of the store" means out through the front door, not gone from the
+       simulation. They carry on down the sidewalk afterwards, well out of
        the window, and the shift used to sit there waiting for that -- a
        silent half minute staring at an empty room. */
     const inside = this.customers.filter((c) => !c.hidden && c.state !== CS.GONE && c.z > 0.15);
@@ -949,7 +952,7 @@ export class Game {
     if (inside.length || strays.n || mess || popping) {
       this.closingClear = 0;
       const bits = [];
-      if (inside.length) bits.push(`${inside.length} still in the shop`);
+      if (inside.length) bits.push(`${inside.length} still in the store`);
       if (strays.n) bits.push(`${strays.n} ${strays.word} not shelved`);
       if (popping) bits.push(`the popper is still on`);
       if (mess) bits.push(`popcorn all over the floor`);
@@ -1024,7 +1027,7 @@ export class Game {
    *
    * Quitting from the pause menu is one button away from resuming, and it
    * is the only thing in the game you cannot undo -- the night goes, and
-   * whatever you had worked out about who is in the shop goes with it. It
+   * whatever you had worked out about who is in the store goes with it. It
    * asks first, and the cursor starts on "no".
    */
   showQuitConfirm(sel = 0) {
@@ -1107,7 +1110,7 @@ export class Game {
     if (d.holdOpen <= 0) d.fromInside = false;
     /* A thrown deadbolt stops people getting IN. It does not stop anybody
        already inside working the thumb latch and walking out -- and the
-       leaves have to swing when they do, or the shop empties at closing
+       leaves have to swing when they do, or the store empties at closing
        time with everybody walking through a shut door. The rule the doors
        are drawn by and the rule people are moved by are the same rule. */
     d.target = (d.holdOpen > 0 && (!d.locked || d.fromInside)) ? 1.25 : 0;
@@ -1175,7 +1178,7 @@ export class Game {
      He is a man with a bulletin to read out, not a cutscene. He arrives
      part-way through the shift, walks to the counter, and then waits --
      silently -- until the clerk is actually standing there. Being ambushed
-     by a wall of dialogue from across the shop while three people queue
+     by a wall of dialogue from across the store while three people wait
      was never the intent.                                                */
   updateOfficer(dt) {
     const o = this.officer;
@@ -1249,7 +1252,7 @@ export class Game {
    *
    * Business happens at the counter, at the front of the line. You could
    * previously check somebody out from the middle of the SCI-FI aisle,
-   * which made the queue -- and everyone's patience with it -- decorative.
+   * which made the line -- and everyone's patience with it -- decorative.
    */
   cannotServe(c) {
     if (!c || c === this.officer) return '';
@@ -1272,7 +1275,7 @@ export class Game {
    * The arguer, the smell and the man at the television. Somebody on their
    * way out through the door does not count -- the clock starts again the
    * moment the last of them is leaving, not when they finish crossing the
-   * pavement.
+   * sidewalk.
    */
   grinderPresent() {
     for (const c of this.customers) {
@@ -1329,7 +1332,7 @@ export class Game {
   }
 
   /* ---------------- spawning ----------------
-     Scheduled against the shop-floor clock, not the one over the door: the
+     Scheduled against the store-floor clock, not the one over the door: the
      store does not stop having customers because a deputy is talking. */
   spawnDue() {
     // Once the door is shut for the night nobody else comes in.
@@ -1342,8 +1345,8 @@ export class Game {
       if (s.special) {
         const sp = specialById(s.special);
         if (sp && sp.id === 'PIZZA') {
-          /* He does not walk in. He rings first, from the payphone
-             outside the laundrette, and turns up afterwards. */
+          /* He does not walk in. He calls first, from the payphone
+             outside the laundromat, and turns up afterwards. */
           this.beginPizzaCall(sp);
           continue;
         }
@@ -1356,7 +1359,7 @@ export class Game {
       this.customers.push(c);
     }
     /* And when the rota runs dry, people keep turning up anyway, because a
-       video shop at half eleven on a Friday is not empty. The planned rota
+       video store at half past eleven on a Friday is not empty. The planned rota
        is what the night is built around -- the decoys, the specials, the
        one who might be him -- and this is the ordinary traffic on top of
        it, right up to the moment the door is shut. */
@@ -1401,13 +1404,13 @@ export class Game {
 
   /**
    * Two things the killer state machine can't see: the player wandering out
-   * onto his pavement, and the player actually laying eyes on him.
+   * onto his sidewalk, and the player actually laying eyes on him.
    */
   /**
    * Laying eyes on him.
    *
    * This used to raise a banner reading THERE IS SOMEONE OUTSIDE, which in
-   * a video shop on a main road is true of most of the evening and told the
+   * a video store on a main road is true of most of the evening and told the
    * player, in so many words, that the man under the streetlamp was the one.
    * Nothing is announced now. The lights dip, the hum drops out of the
    * room, and you are left to decide for yourself whether that shape at the
@@ -1624,14 +1627,14 @@ export class Game {
         } else if (this.player.changeInHand > 0.001) {
           prompt = `${K()}Put $${this.player.changeInHand.toFixed(2)} back in the drawer\n<span class="sub">nobody waiting on it</span>`;
           act = () => {
-            this.till = round2(this.till + this.player.changeInHand);
+            this.drawer = round2(this.drawer + this.player.changeInHand);
             this.ui.toast(`Returned $${this.player.changeInHand.toFixed(2)} to the drawer`, '');
             this.player.changeInHand = 0;
             this.sound.cashDrawer();
           };
         } else {
-          prompt = `${K()}Count the drawer\n<span class="sub">$${this.till.toFixed(2)} tonight${this.owedTotal ? ` / $${this.owedTotal.toFixed(2)} on accounts` : ''}</span>`;
-          act = () => { this.sound.cashDrawer(); this.ui.toast(`Drawer: $${this.till.toFixed(2)}`, ''); };
+          prompt = `${K()}Count the drawer\n<span class="sub">$${this.drawer.toFixed(2)} tonight${this.owedTotal ? ` / $${this.owedTotal.toFixed(2)} on accounts` : ''}</span>`;
+          act = () => { this.sound.cashDrawer(); this.ui.toast(`Drawer: $${this.drawer.toFixed(2)}`, ''); };
         }
         break;
       }
@@ -1719,7 +1722,7 @@ export class Game {
     this.ui.setPrompt(prompt);
     /* A held action rather than a tap. Sliding a box back into a run and
        squaring it up is a couple of seconds of work, and making it a tap
-       from two metres away meant a whole shelf could be cleared without
+       from two meters away meant a whole shelf could be cleared without
        ever stopping walking. */
     if (act === 'HOLD') {
       const holding = this.input.isDown('KeyE') || this.input.mouse[0];
@@ -1816,7 +1819,7 @@ export class Game {
   }
 
   /* ---------------- cash ----------------
-     Nothing goes straight into the till. A customer hands you paper, it sits
+     Nothing goes straight into the register. A customer hands you paper, it sits
      in your hand until you walk it to the register, and if they gave you a
      twenty for a three dollar rental they are standing there until you count
      their change back.                                                      */
@@ -1858,7 +1861,7 @@ export class Game {
   ringUp() {
     const cash = this.player.cash;
     if (cash.owed <= 0.001) return;
-    this.till = round2(this.till + cash.owed);
+    this.drawer = round2(this.drawer + cash.owed);
     const surplus = round2(cash.tendered - cash.owed);
     this.ui.toast(`Drawer: +$${cash.owed.toFixed(2)}`, 'good');
     this.player.cash = { tendered: 0, owed: 0 };
@@ -1923,7 +1926,7 @@ export class Game {
     /* Read the gate BEFORE putting them into a conversation. cannotServe()
        waves through anyone already talking -- so that an open conversation
        is not re-gated line by line -- which meant asking it after setting
-       TALKING always answered "yes, serve them", from anywhere in the shop. */
+       TALKING always answered "yes, serve them", from anywhere in the store. */
     const servable = !this.cannotServe(c);
     c._prevState = c.state;
     c.state = CS.TALKING;
@@ -2011,7 +2014,7 @@ export class Game {
     /* Timed against the back room, deliberately. The bolt buys you roughly
        what the cruiser costs, so hiding while he is actually in the building
        is the right call and hiding while he is not is a hole in your shift
-       that the queue at the counter will happily fill. */
+       that the line at the counter will happily fill. */
     this.police = {
       called: true,
       target,
@@ -2038,7 +2041,7 @@ export class Game {
         /* Nothing to arrest. A man who walks out before the cruiser turns
            the corner is a man the county cannot do anything about.
 
-           It used to end there, on two lines of text over an empty shop,
+           It used to end there, on two lines of text over an empty store,
            which made getting it right feel like getting it wrong. A deputy
            comes in and says it to your face now. */
         this.police = null;
@@ -2074,7 +2077,7 @@ export class Game {
 
     const roll = this.rng();
     if (roll < 0.34) {
-      // Gone. Out the door and down the parade before the lights arrive.
+      // Gone. Out the door and down the block before the lights arrive.
       P.fled = true;
       k.phase = KP.ABSENT;
       k.ent.hidden = true;
@@ -2106,7 +2109,7 @@ export class Game {
      THE ARREST
 
      The cruiser used to arrive as a line of text. It arrives as a man now:
-     a deputy comes through the front door, crosses the shop, puts him
+     a deputy comes through the front door, crosses the store, puts him
      against the nearest flat surface, cuffs him, and walks him out past
      you. The clerk stands where he is and watches it happen, which is the
      whole of his part in it.
@@ -2115,7 +2118,7 @@ export class Game {
     if (this.arrest) return;
     const k = this.killer;
     const e = (k && k.ent && !k.ent.hidden) ? k.ent : target;
-    // If he is not physically in the shop, there is nobody to put cuffs on.
+    // If he is not physically in the store, there is nobody to put cuffs on.
     if (!e || e.hidden || e.z > D || e.z < -1) {
       this.finishArrest(target, { offscreen: true });
       return;
@@ -2226,14 +2229,14 @@ export class Game {
   /* ============================================================
      THE SWEEP THAT FOUND NOTHING
 
-     He heard the siren and left. The unit turns up to an empty parade,
+     He heard the siren and left. The unit turns up to an empty block,
      and a deputy comes in to tell you so -- and to tell you that the man
      you described and the man on their sheet are the same man, which is
      the part worth walking inside to say.
 
      Built on the same bones as the briefing visit: he lets himself in,
      stands at the counter, and waits for you to actually be there rather
-     than shouting it across the shop.
+     than shouting it across the store.
      ============================================================ */
   beginSweep() {
     if (this.sweep) return;
@@ -2423,7 +2426,7 @@ export class Game {
     /* Glitching in bursts rather than continuously.
        A first pass tore and rolled every single frame, which is a very
        loud way of showing the player nothing at all: the face never
-       resolved and the whole thing read as coloured noise. The picture
+       resolved and the whole thing read as colored noise. The picture
        has to stay legible enough to be looked at. The damage comes in
        short bursts with clean, over-bright frames between them, and only
        takes the image over completely at the very end. */
@@ -2672,11 +2675,16 @@ export class Game {
 
     // ---- doors ----
     const swing = this.door ? this.door.swing : 0;
-    const dm = (this.door && this.door.locked) ? this.world.doorLockedMesh : this.world.doorOpenMesh;
+    const shut = this.door && this.door.locked;
+    /* The sign hangs in one leaf, not both. The pair share a hinge angle
+       but not a mesh: the right-hand leaf is drawn rotated a half turn, so
+       anything with words on it comes out backwards there. */
+    const sign = shut ? this.world.doorLockedSignMesh : this.world.doorOpenSignMesh;
+    const plain = shut ? this.world.doorLockedMesh : this.world.doorOpenMesh;
     setPosYaw(M.m, DOOR_X0, 0, 0, swing);
-    rz.drawMesh(dm, M.m, { shade: L * 0.95 });
+    rz.drawMesh(sign, M.m, { shade: L * 0.95 });
     setPosYaw(M.m, DOOR_X1, 0, 0, Math.PI - swing);
-    rz.drawMesh(dm, M.m, { shade: L * 0.95 });
+    rz.drawMesh(plain, M.m, { shade: L * 0.95 });
 
     // ---- back room ----
     if (this.storage) {
@@ -2850,7 +2858,7 @@ export class Game {
     if (!b) return;
     const p = this.player;
     const s = this.sound.spatial(p.x, p.z, p.yaw, b.x, b.z, 16);
-    // it is a loud machine in a small shop: audible everywhere, just duller
+    // it is a loud machine in a small store: audible everywhere, just duller
     this.sound.boomboxAt(0.32 + s.gain * 0.68, s.pan);
   }
 
@@ -2895,18 +2903,18 @@ export class Game {
       get doorLocked() { return g.door.locked; },
       get speaking() { return g.speaking; },
       /* A thumb latch lets anyone already inside leave. The deadbolt is only
-         ever a problem for whoever is on the pavement.
+         ever a problem for whoever is on the sidewalk.
 
          The `leaving` half matters: testing position alone flips the answer
          exactly at the threshold, so somebody on their way out could pass
          while their feet were inside and was blocked the instant they
          crossed it -- which pushed them back inside, where they could pass
-         again. At midnight, with the door bolted and the whole shop trying
+         again. At midnight, with the door bolted and the whole store trying
          to leave at once, that was a room full of people bouncing off the
          doorway forever and a shift that never ended. Once you have been
          told to go, the latch works wherever you are standing. */
       doorPassable: (who) => !g.door.locked || (!!who && (who.z > 0.15 || who.leaving || who.exited)),
-      /* The clerk does not leave. There is a shift on, the till is open and
+      /* The clerk does not leave. There is a shift on, the register is open and
          the tapes are his problem until midnight -- and letting the player
          wander into the street turned the back half of the map into a place
          to stand and watch nothing happen. The doorway is a wall to him. */
@@ -2930,13 +2938,13 @@ export class Game {
         g._exitNagT = g.time;
         g.ui.toast(g.door.locked
           ? `The bolt's thrown. You threw it.`
-          : `Not until midnight. The store's yours till then.`, '');
+          : `Not until midnight. The store's yours until then.`, '');
       },
       openDoor: (who) => g.openDoorFor(who),
       knock: (c) => { g.sound.knock(3); g.ui.toast(`Someone is knocking.`, ''); },
       lockedOut: (c) => {
         /* Turning somebody away costs you -- unless it is past midnight and
-           the shop is shut, in which case it is not a mistake, it is the
+           the store is shut, in which case it is not a mistake, it is the
            end of the shift doing what it is for. */
         if (g.closing) {
           g.ui.toast(`${c.name} tried the door. Too late.`, '');
@@ -2947,7 +2955,7 @@ export class Game {
         g.ui.toast(`${c.name} found the door locked and left.`, 'bad');
       },
 
-      /* --- queue --- */
+      /* --- the line --- */
       claimCounterSpot: (c) => g.claimCounterSpot(c),
       lineTail: (c) => g.lineTail(c),
       releaseCounterSpot: (c) => g.releaseCounterSpot(c),
@@ -2975,11 +2983,11 @@ export class Game {
         c.speed *= 1.12;
       },
 
-      /** Is anybody in here making the shop genuinely hard to stand in? */
+      /** Is anybody in here making the store genuinely hard to stand in? */
       stenchActive: () => g.customers.some((c) => !c.hidden && c.nuisance
         && (c.nuisance === 'stench' || c.nuisance === 'skunk')
         && c.state !== CS.LEAVING && c.state !== CS.GONE),
-      /** He is being worn down, and the shop can see it. */
+      /** He is being worn down, and the store can see it. */
       wearingDown: (c, gone) => {
         const step = Math.floor(gone * 5);
         if (c._wearStep === step) return;
@@ -3007,7 +3015,7 @@ export class Game {
         g.ui.toast(`${c.name} takes something off the shelf and wanders off with it.`, '');
       },
 
-      /* He puts it down, finds the switch, and the shop is his. */
+      /* He puts it down, finds the switch, and the store is his. */
       /* He has found the tub and worked out that the lid comes off. */
       startPopper: (c) => g.startPopper(c),
 
@@ -3022,7 +3030,7 @@ export class Game {
         g.sound.boomboxStart();
         g.ui.toast(`${c.name} sets a boombox down and turns it up.`, 'bad');
       },
-      /** He picks it up again on his way out, and the shop goes quiet. */
+      /** He picks it up again on his way out, and the store goes quiet. */
       boomboxUp: (c) => {
         if (!g.boombox || (c && g.boombox.owner !== c.id)) return;
         g.boombox = null;
@@ -3031,7 +3039,7 @@ export class Game {
       },
 
       /* The rest of the room reacting to whoever is ruining it. Only people
-         who are actually in the shop and can actually perceive it. */
+         who are actually in the store and can actually perceive it. */
       nuisanceGripe: (c) => {
         const near = g.customers.filter((o) => o !== c && !o.hidden
           && o.state !== CS.ARRIVING && o.state !== CS.GONE
@@ -3113,7 +3121,7 @@ export class Game {
       keepChange: (c) => {
         const due = c.changeDue || 0;
         g.player.changeInHand = Math.max(0, round2(g.player.changeInHand - due));
-        g.till = round2(g.till + due);
+        g.drawer = round2(g.drawer + due);
         g.stats.tips += due;
         c.awaitingChange = false; c.changeDue = 0; c.changeTimer = 0;
         g.sound.kaching();
@@ -3149,7 +3157,7 @@ export class Game {
        * They changed their mind, or ran out of patience holding it.
        *
        * It used to vanish out of their hands and reappear in its run, which
-       * is not a thing that happens in a video shop. They put it in the
+       * is not a thing that happens in a video store. They put it in the
        * returns bin like everybody else and it is the clerk's to shelve.
        */
       returnToShelf: (c) => g.ctx.abandonTape(c),
@@ -3166,7 +3174,7 @@ export class Game {
        * They came in to do something else and have talked themselves into
        * renting. Nobody is served where they stand: this stops whatever
        * they were doing, sends them off to pick something off an actual
-       * shelf, and puts them in the queue like anybody else. The money and
+       * shelf, and puts them in line like anybody else. The money and
        * the change then happen at the window, under the ordinary rules.
        */
       sendToShop: (c, opts = {}) => {
@@ -3203,13 +3211,13 @@ export class Game {
       /* --- phone --- */
       phoneTargets: () => g.phoneTargets(),
       accuse: (t) => g.accuse(t),
-      /* The deputy who swept the parade has finished saying it. */
+      /* The deputy who swept the block has finished saying it. */
       sweepDone: () => g.sweepDone(),
 
       /* --- the woman who wants a manager --- */
       /** Who, if anyone, is standing here asking for one. */
       wantsManager: () => g.wantsManager(),
-      /** Which go at ringing him this is. Counts up across the night. */
+      /** Which go at calling him this is. Counts up across the night. */
       managerAttempt: () => {
         g.managerCall = g.managerCall || { attempts: 0, connected: false, handedTo: null };
         g.managerCall.attempts++;
@@ -3230,13 +3238,13 @@ export class Game {
         g.pizza.phase = 'ANSWERED';
         g.ui.setObjective('');
       },
-      /** He has settled on something the parlour actually stocks. */
+      /** He has settled on something the parlor actually stocks. */
       pizzaAgree: (topping) => {
         if (!g.pizza) return;
         g.pizza.agreed = topping;
-        g.ui.toast(`He'll take ${topping}. Ring them back.`, '');
+        g.ui.toast(`He'll take ${topping}. Call them back.`, '');
       },
-      /** Ordered. It is in an oven on the parade now. */
+      /** Ordered. It is in an oven on the block now. */
       pizzaCook: (seconds) => {
         if (!g.pizza) return;
         g.pizza.phase = 'COOKING';
@@ -3251,7 +3259,7 @@ export class Game {
       /* The cues. Nothing here names him or tells you what to do about him
          until he is physically at the door, and even then it is one line.
          Up to that point the store just gets wrong: the strip lights sag,
-         the hum in the ceiling cuts out, something scuffs the pavement. */
+         the hum in the ceiling cuts out, something scuffs the sidewalk. */
       onStalkBegins: () => {
         g.sound.stinger(0.42);
         g.flickerAmt = 0.85;
@@ -3274,7 +3282,7 @@ export class Game {
       onKillerEnters: (broke) => {
         if (broke) {
           g.sound.glassBreak(); g.flash = 0.7;
-          // the deadbolt is academic once the glass is on the pavement
+          // the deadbolt is academic once the glass is on the sidewalk
           g.door.locked = false; g.door.forced = true;
         } else g.sound.doorChime(0);
         g.door.holdOpen = 2.2;
@@ -3326,7 +3334,7 @@ export class Game {
    * Where the Nth person in the line stands.
    *
    * The window, then the three marked spots along the counter, and then it
-   * doubles back across the front of the shop the way a queue in a small
+   * doubles back across the front of the store the way a line in a small
    * room actually does -- and when it outgrows even that, it keeps filling
    * outward from the counter.
    *
@@ -3336,7 +3344,7 @@ export class Game {
    * centimetres west per person and never turned: fine for the four or
    * five a normal night puts in the line, and absurd for a coach party --
    * the twenty-eighth person stood at x -13.8, through the wall and most
-   * of the way across the parade.
+   * of the way across the block.
    */
   queueSpots() {
     if (this._queueSpots) return this._queueSpots;
@@ -3346,14 +3354,14 @@ export class Game {
       if (!this.onOpenFloor(x, z) || !far(x, z)) return;
       out.push({ x, z });
     };
-    // the snake across the front of the shop: a real line, doubling back
+    // the snake across the front of the store: a real line, doubling back
     QUEUE_ROWS.forEach((z, row) => {
       const n = Math.floor((QUEUE_X1 - QUEUE_X0) / QUEUE_STEP);
       for (let k = 0; k <= n; k++) {
         take(row % 2 === 0 ? QUEUE_X1 - k * QUEUE_STEP : QUEUE_X0 + k * QUEUE_STEP, z);
       }
     });
-    /* And past that it stops being a line and becomes a shop with too many
+    /* And past that it stops being a line and becomes a store with too many
        people in it. Fill outward from the counter across whatever floor is
        actually standable -- the aisle mouths, the gap by the door, the
        middle of the room. */
@@ -3397,7 +3405,7 @@ export class Game {
      It is a wired phone on the back counter and it is 1996, so the
      receiver goes as far as the flex goes and not one inch further. That
      is most of the counter -- both service positions and the end of it --
-     and none of the shop floor. Somebody who wants to speak to the
+     and none of the store floor. Somebody who wants to speak to the
      regional manager has to come and stand where the phone can reach.
      ============================================================ */
   cordReaches(who) {
@@ -3470,7 +3478,7 @@ export class Game {
     return !!(M && M.handedTo && M.handedTo.onPhone);
   }
 
-  /** Who in the shop is standing here demanding one. */
+  /** Who in the store is standing here demanding one. */
   wantsManager() {
     for (const c of this.customers) {
       if (c.special !== 'MANAGER' || c.hidden) continue;
@@ -3483,14 +3491,14 @@ export class Game {
   /* ============================================================
      THE PIZZA
 
-     A man rings the shop from a payphone and orders a pizza. He is not
+     A man calls the store from a payphone and orders a pizza. He is not
      confused about the number -- he is certain, and the certainty is the
      problem. He turns up to collect it, he will not be told, and there is
      exactly one thing that ends it: an actual pizza, on the counter, with
      his toppings on it.
 
      Which means the phone twice. Once to order, and once more when the
-     parlour tells you they have not got half of what he asked for and you
+     parlor tells you they have not got half of what he asked for and you
      have to go back and get him to choose again.
      ============================================================ */
   /** The state of tonight's order, or null if nobody has rung. */
@@ -3564,7 +3572,7 @@ export class Game {
     if (P.phase === 'DELIVERING') this.updateDriver(dt);
   }
 
-  /** Somebody rings the shop. Tonight, it is him. */
+  /** Somebody rings the store. Tonight, it is him. */
   beginPizzaCall(sp) {
     if (this.pizza) return;
     this.pizza = {
@@ -3885,12 +3893,12 @@ export class Game {
      and every one of them looks exactly the same -- same coat, same hair,
      same everything, because they are all going to the same thing and
      they have all dressed for it. They come through the door together,
-     they all want a film, and some of them will tell you about their
+     they all want a movie, and some of them will tell you about their
      journey while the line behind them grows.
 
      He does not work a night the bus comes. Two dozen identical people is
      no night to be picking a face out of a room, and a man who wants to
-     be remembered as nobody in particular does not walk into a shop where
+     be remembered as nobody in particular does not walk into a store where
      everybody already is. If he is in the building when the coach is due,
      the coach waits -- it can circle the lot, or it can be a bit late.
      ============================================================ */
@@ -3920,7 +3928,7 @@ export class Game {
     if (!this.busDue()) return;
 
     const k = this.killer;
-    /* He is in the shop, or on his way in. The coach is late tonight. */
+    /* He is in the store, or on his way in. The coach is late tonight. */
     if (k && k.plan.appears && (killerActive(k) || killerInside(k)
       || (k.phase === KP.CUSTOMER && k.ent && !k.ent.hidden))) {
       this.night.busAt = this.sim + 20;
@@ -3935,8 +3943,8 @@ export class Game {
     const app = randomAppearance(rng);
     this.bus = {
       app, skin: paintSkin(app),
-      /* Three to four dozen. Enough that the shop stops being a shop with
-         a queue in it and becomes a room you cannot cross. */
+      /* Three to four dozen. Enough that the store stops being a store with
+         a line in it and becomes a room you cannot cross. */
       total: 36 + rng.int(13),
       made: 0, t: 0,
       /* Their name, which is also all the same, give or take. */
@@ -3965,16 +3973,16 @@ export class Game {
     /* They are not in a hurry and they are not going to get shirty with
        you. They have been on a coach for four hours together and they are
        all waiting for each other anyway -- and forty of them running down
-       their patience at once would empty the shop through the one door
+       their patience at once would empty the store through the one door
        just as you got on top of it. Whatever else the coach is, it is not
        a crowd that storms out. */
     c.patient = true;
     /* Along the sidewalk, not out in the road. The curb is at z -4.6 and
        there is a solid behind it, so spreading four dozen people backwards
-       off the pavement pinned most of the coach against that wall with
+       off the sidewalk pinned most of the coach against that wall with
        nowhere to path from -- eighteen of them stacked on one tile in the
        middle of the street, not moving, for the rest of the night.
-       They spread sideways instead, which is where a pavement goes. */
+       They spread sideways instead, which is where a sidewalk goes. */
     const spread = this.busSpawn(i, B.total);
     c.x = spread.x;
     c.z = spread.z;
@@ -3986,7 +3994,7 @@ export class Game {
   /**
    * Where the Nth person off the coach is standing when they get out.
    *
-   * Strung along the pavement in front of the shop, on floor they can
+   * Strung along the sidewalk in front of the store, on floor they can
    * actually walk on -- checked against the same solids as everything
    * else, because the curb has a wall behind it.
    */
@@ -4005,7 +4013,7 @@ export class Game {
     return { x: S.x + (i % 5 - 2) * 0.4, z: S.z };
   }
 
-  /** Are we in the middle of it? The shop is a different place while we are. */
+  /** Are we in the middle of it? The store is a different place while we are. */
   busPresent() {
     if (!this.bus) return false;
     return this.customers.some((c) => c.fromBus && !c.hidden
@@ -4060,7 +4068,7 @@ function angleDelta(a, b) {
   return d;
 }
 
-/* With nobody else in the shop, the nuisance is just yours to sit with. */
+/* With nobody else in the store, the nuisance is just yours to sit with. */
 const NUISANCE_SOLO = {
   noise: [
     `The bass is coming up through the counter.`,
@@ -4079,7 +4087,7 @@ const NUISANCE_SOLO = {
     `The machine does not sound like it is going to stop on its own.`,
   ],
   skunk: [
-    `The whole front of the shop smells like a greenhouse fire.`,
+    `The whole front of the store smells like a greenhouse fire.`,
     `That is going to be in the carpet tomorrow.`,
     `Your eyes water a little.`,
   ],

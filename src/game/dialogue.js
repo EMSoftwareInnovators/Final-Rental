@@ -120,7 +120,7 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
     reply(`That's ${C.detailCount} things to check on every customer.`, () => say(officer,
       rng.pick([
         `It is. I'd rather hand you ${C.detailCount} and have you slow than hand you two and have you wrong.`,
-        `Yes. And you have got a queue and one pair of eyes, and I am sorry about that.`,
+        `Yes. And you have got a line and one pair of eyes, and I am sorry about that.`,
         `Which is why you write it down instead of trying to hold it in your head.`,
       ]), [reply(`Go on, then.`, () => detail())])),
     reply(`Just give me tonight's.`, () => detail()),
@@ -481,13 +481,13 @@ function handOver(c, ctx) {
  * What they say about the thing in their hand.
  *
  * The rule the whole file obeys: if somebody is going to talk about a
- * film, it is the film they are actually holding. Nobody discusses a
+ * movie, it is the movie they are actually holding. Nobody discusses a
  * comedy while clutching a slasher.
  */
 /**
  * They have talked themselves into renting something.
  *
- * Nobody is served where they stand. The shop conjuring a tape into
+ * Nobody is served where they stand. The store conjuring a tape into
  * somebody's hands mid-conversation is how a special ended up paid for in
  * the middle of the floor and then walked out on her own change. So the
  * sale is not made here: they go and pick something off a shelf like
@@ -535,8 +535,8 @@ const BUS_RAMBLE = [
    `Right. Sorry. I'm holding you up.`],
   [`We're all together, if you're wondering. The whole coach. We've got matching coats, which was not my idea.`,
    `It was Denise's idea. Denise is somewhere behind me and she can hear me saying this.`,
-   `Where was I. The film. Yes.`],
-  [`I'll be honest with you, I don't even want a film. But everybody's getting one and I'm not standing outside on my own.`,
+   `Where was I. The movie. Yes.`],
+  [`I'll be honest with you, I don't even want a movie. But everybody's getting one and I'm not standing outside on my own.`,
    `That's most decisions, though, isn't it. When you actually look at them.`,
    `...Sorry. Long day. This one, please.`],
 ];
@@ -683,7 +683,7 @@ function rentRoot(c, ctx) {
 export const LOST_PREMISES = {
   restaurant: {
     open: `Yeah, hi — let me get the number three, no onions, and whatever the kid gets. Is the shake machine working?`,
-    push: `I can see the menu boards right there behind you. The little coloured ones.`,
+    push: `I can see the menu boards right there behind you. The little colored ones.`,
     relent: `...Those are movies.\n\nThose are movies, aren't they.`,
     play: `Great, great. And can I get that to go? I'm parked in the fire lane.`,
     exit: `Well now I have to drive all the way back around.`,
@@ -713,7 +713,7 @@ export const LOST_PREMISES = {
     open: `I need a five-sixteenths carriage bolt, about two inches, and one of those washers that isn't flat.`,
     push: `You had them last spring. Aisle at the back, past the paint.`,
     relent: `That's not paint. That's a display for a movie.`,
-    play: `Galvanised, if you've got it. It's going outside.`,
+    play: `Galvanized, if you've got it. It's going outside.`,
     exit: `Then I'm going to Fenner's and Fenner's is closed.`,
   },
   bank: {
@@ -748,14 +748,14 @@ export const LOST_PREMISES = {
   vet: {
     open: `(sets a cat carrier on the counter) He's been making a noise. Like a hinge. Listen — there. That noise.`,
     push: `You're the eight o'clock, aren't you? They said there'd be somebody at eight.`,
-    relent: `...I have brought a cat into a video shop.\n\nHe's going to be insufferable about this.`,
+    relent: `...I have brought a cat into a video store.\n\nHe's going to be insufferable about this.`,
     play: `Should I take him out of the box? He bites when he's out of the box.`,
     exit: `Come on, Duchess. Nobody here is a professional.`,
   },
   photo: {
     open: `Pickup for Ruiz. One hour. It's been about nine.`,
     push: `Doubles. I always order doubles. It'll say doubles on the envelope.`,
-    relent: `Those aren't envelopes, are they. Those are little boxes with films in them.`,
+    relent: `Those aren't envelopes, are they. Those are little boxes with movies in them.`,
     play: `If any came out dark I'm not paying for the dark ones.`,
     exit: `That is a roll of my daughter's christening and somebody has LOST it.`,
     storms: true,
@@ -763,7 +763,7 @@ export const LOST_PREMISES = {
   taxes: {
     open: `I've got the four o'clock with Denise. I brought everything. I brought the shoebox.`,
     push: `Denise. Short woman. Does the returns. She's got a little jar of pens.`,
-    relent: `Oh, this is the video shop. Denise is TWO DOORS DOWN.`,
+    relent: `Oh, this is the video store. Denise is TWO DOORS DOWN.`,
     play: `Can I still write off the boat? I want to write off the boat.`,
     exit: `I have taken a half day for this.`,
     storms: true,
@@ -771,7 +771,7 @@ export const LOST_PREMISES = {
   bowling: {
     open: `Eleven and a half. And is lane six still hooking? Because I'm not paying for lane six again.`,
     push: `Shoes. The rack of shoes. Behind you, with all the little numbers on the heels.`,
-    relent: `Those have got film titles on them. Shoes don't have film titles on them.`,
+    relent: `Those have got movie titles on them. Shoes don't have movie titles on them.`,
     play: `Half size up if you're out. I'd rather swim than pinch.`,
     exit: `League starts in ten minutes. TEN MINUTES.`,
     storms: true,
@@ -779,7 +779,7 @@ export const LOST_PREMISES = {
   jury: {
     open: `(holds up a summons) It says report to the annex. Is this the annex? Nobody's at the annex.`,
     push: `I'm not trying to get out of it. I want to be here. That's the whole point.`,
-    relent: `...The annex is the grey building. This is the one with the neon sign of a filmstrip.`,
+    relent: `...The annex is the gray building. This is the one with the neon sign of a filmstrip.`,
     play: `Do I sit, or do they call me? I've never done one of these.`,
     exit: `I am going to be fined and it is going to be somebody's fault.`,
   },
@@ -793,8 +793,8 @@ export const LOST_PREMISES = {
   travel: {
     open: `Two to Orlando, the week of the twelfth, and I do not want a layover in Atlanta. Anywhere but Atlanta.`,
     push: `You've got the brochures right there. The shiny ones with the beaches.`,
-    relent: `Those are film cases. Those are — that's a shark on that one. That's not a beach.`,
-    play: `Aisle seats. And a hire car, something with air conditioning.`,
+    relent: `Those are movie cases. Those are — that's a shark on that one. That's not a beach.`,
+    play: `Aisle seats. And a rental car, something with air conditioning.`,
     exit: `Fine. FINE. We'll drive, and I'll hate every mile of it.`,
     storms: true,
   },
@@ -808,14 +808,14 @@ export const LOST_PREMISES = {
   },
   church: {
     open: `Is this where they do the Tuesday group? The one in the basement, with the coffee?`,
-    push: `Somebody said the old shop unit on the parade. This is the old shop unit on the parade.`,
-    relent: `That's a lot of horror films for a church basement. I did wonder.`,
+    push: `Somebody said the old storefront on the block. This is the old storefront on the block.`,
+    relent: `That's a lot of horror movies for a church basement. I did wonder.`,
     play: `Am I early? I'm always early. It's a nervous thing.`,
     exit: `I actually needed that tonight.`,
   },
   bar: {
     open: `Bud. Bottle, not the tap, the tap here's always warm. And whatever the man behind me is having.`,
-    push: `You've got a counter, and a till, and it's dark in here. What else would this be?`,
+    push: `You've got a counter, and a register, and it's dark in here. What else would this be?`,
     relent: `...There's no taps. There's no taps and there's a cardboard alien over there.`,
     play: `Start a tab. I'm good for it, ask anyone.`,
     exit: `I'll drink at home like a normal person.`,
@@ -832,8 +832,8 @@ export const LOST_PREMISES = {
 
 export const DIM_PREMISES = {
   theaters: {
-    open: `I want the one that's in the theatre right now. The big one. With the boat.`,
-    push: `I don't want to GO to the theatre. I want you to have it here. Tonight.`,
+    open: `I want the one that's in the theater right now. The big one. With the boat.`,
+    push: `I don't want to GO to the theater. I want you to have it here. Tonight.`,
     relent: `So I have to wait a whole year? For a movie that already exists?`,
     play: `Front row seats if you've got them. Not too close.`,
     exit: `A whole year. Unbelievable.`,
@@ -911,22 +911,22 @@ export const DIM_PREMISES = {
   },
   overnight: {
     open: `Two nights is no good to me. I'm a slow watcher. I do about twenty minutes and then I've got to lie down.`,
-    push: `A fast watcher gets the whole film for three dollars. I get a third of it. That's discrimination.`,
+    push: `A fast watcher gets the whole movie for three dollars. I get a third of it. That's discrimination.`,
     relent: `...I suppose I could rent it twice.\n\nI don't like that I've talked myself into that.`,
-    play: `Put me down for a fortnight. And no phone calls about it.`,
-    exit: `Three dollars for twenty minutes of a film. Highway robbery.`,
+    play: `Put me down for two weeks. And no phone calls about it.`,
+    exit: `Three dollars for twenty minutes of a movie. Highway robbery.`,
     storms: true,
   },
   colorize: {
-    open: `Have you got this one in colour? The one I watched was all grey and I thought my set was going.`,
+    open: `Have you got this one in color? The one I watched was all gray and I thought my set was going.`,
     push: `They do it. I've seen them do it. Ted Turner does it.`,
     relent: `So this is just how it IS. Forever. Nobody's going to fix it.`,
-    play: `Nothing garish. Just — natural colours. Skin, sky, that sort of thing.`,
-    exit: `Grey film. Grey town. Grey everything.`,
+    play: `Nothing garish. Just — natural colors. Skin, sky, that sort of thing.`,
+    exit: `Gray movie. Gray town. Gray everything.`,
   },
   commercials: {
-    open: `There were eleven minutes of adverts before the film. I timed them. I want eleven minutes back.`,
-    push: `I pay for a film. I don't pay for adverts for other films. That's their business, not mine.`,
+    open: `There were eleven minutes of commercials before the movie. I timed them. I want eleven minutes back.`,
+    push: `I pay for a movie. I don't pay for commercials for other movies. That's their business, not mine.`,
     relent: `You can't fast-forward for me in advance. I do see that. I didn't, but I do now.`,
     play: `Eleven minutes at three dollars for two hours is — well. It's about twenty-seven cents.`,
     exit: `Twenty-seven cents of my life, and nobody cares.`,
@@ -967,7 +967,7 @@ export const DIM_PREMISES = {
     push: `You've got a phone. You've got my number. I don't see the difficulty.`,
     relent: `So there's no list. There's no list at all, is there. It's just... whoever gets here first.`,
     play: `Submarines, and anything with a lighthouse. I'll be by on Thursdays.`,
-    exit: `A business with no system. Marvellous.`,
+    exit: `A business with no system. Marvelous.`,
     storms: true,
   },
   damage: {
@@ -995,10 +995,10 @@ function confusedRoot(c, ctx) {
         `Alright. Point me at something. Something with a dog.`,
         `You know what? Yes. I'm owed something today.`,
       ]), [
-        reply(`Have a look round. I'll ring it up at the counter.`, () => {
+        reply(`Have a look around. I'll ring it up at the counter.`, () => {
           if (!c.hasMoney) { ctx.mood(c, -6); return say(c, `...Naturally I have no money.`, [reply('...', () => done())]); }
           ctx.mood(c, +14);
-          return goShopping(c, ctx, `Right. Right! A video. From a video shop.`);
+          return goShopping(c, ctx, `Right. Right! A video. From a video store.`);
         }),
         reply(`We're closing soon, honestly.`, () => { ctx.mood(c, -8); return done(); }),
       ]);
@@ -1016,7 +1016,7 @@ function confusedRoot(c, ctx) {
     ...(P.storms ? [
       reply(rng.pick([
         `Hang on. Let me at least send you home with something.`,
-        `Before you go — one film. On the house of my patience.`,
+        `Before you go — one movie. On the house of my patience.`,
         `Wait. You came all this way.`,
       ]), () => { ctx.mood(c, +22); return sell(); }),
     ] : []),
@@ -1138,7 +1138,7 @@ function idleRoot(c, ctx) {
   const was = c._prevState || c.state;
   if (was === 'BROWSING' || was === 'PICKING') {
     const holding = c.tape;
-    // If they are holding something, they talk about that -- not a film
+    // If they are holding something, they talk about that -- not a movie
     // chosen at random from a shelf they are not standing at.
     const lines = holding ? [
       tapeOpener(holding, rng),
@@ -1202,28 +1202,28 @@ export function buildPhoneCall(ctx) {
   const P = ctx.pizzaState && ctx.pizzaState();
   if (P && P.phase === 'RINGING') { ctx.pizzaAnswered(); return buildPizzaOrder(ctx); }
 
-  /* And once there is a man in the shop waiting on food, the parlour is
+  /* And once there is a man in the store waiting on food, the parlor is
      on the list -- it is the only thing that gets rid of him. */
   /* Until the order is actually in an oven. It used to hide the row the
      moment he agreed to something else, which is precisely the moment you
-     need to ring them back -- so the one call that ends this was taken off
+     need to call them back -- so the one call that ends this was taken off
      the list one step before you could make it. */
-  const parlourRow = P && !P.done && P.customer
+  const parlorRow = P && !P.done && P.customer
     && P.phase !== 'COOKING' && P.phase !== 'DELIVERING'
-    ? [reply(`Ring Bertucci's on the parade.`, () => buildPizzaParlour(ctx))]
+    ? [reply(`Call Bertucci's down the block.`, () => buildPizzaParlor(ctx))]
     : [];
 
   /* There is a woman at the counter who wants the regional manager, and
      the regional manager is a man forty minutes away who went to bed at
-     ten. Ringing him is its own little errand and it does not work first
+     ten. Calling him is its own little errand and it does not work first
      time; see managerCall() below. */
   const karen = ctx.wantsManager && ctx.wantsManager();
   const managerRow = karen && !ctx.managerConnected()
     ? [reply(`Call the regional manager.`, () => managerCall(ctx, karen), { risk: false })]
     : [];
 
-  if (!suspects.length && (managerRow.length || parlourRow.length)) {
-    return say(OP, `(dial tone)`, managerRow.concat(parlourRow).concat([
+  if (!suspects.length && (managerRow.length || parlorRow.length)) {
+    return say(OP, `(dial tone)`, managerRow.concat(parlorRow).concat([
       reply(`Put it back down.`, () => hang()),
     ]));
   }
@@ -1245,14 +1245,14 @@ export function buildPhoneCall(ctx) {
 
   const choose = () => say(OP, `Nine-one-one. Go ahead.`,
     suspects.map((s) => reply(s.phoneLabel, () => confirm(s), { risk: true }))
-      .concat(managerRow).concat(parlourRow)
+      .concat(managerRow).concat(parlorRow)
       .concat([reply(`Never mind. Sorry.`, () => hang())]));
 
   return choose();
 }
 
 /* ============================================================
-   RINGING THE REGIONAL MANAGER
+   CALLING THE REGIONAL MANAGER
 
    Half past eleven on a Friday. He is forty minutes away, he has a wife,
    a machine, and a teenage daughter, and he went to bed at ten. You do
@@ -1311,7 +1311,7 @@ function managerCall(ctx, karen) {
 
   const handOff = () => say(M, rng.pick([
     `"...You're going to WHAT."\n\n(a long breath)\n\n"Fine. Put her on. Put her on."`,
-    `"A customer. At half eleven at night. Of course there is."\n\n"Go on then."`,
+    `"A customer. At half past eleven at night. Of course there is."\n\n"Go on then."`,
     `"Right." \n\n(you can hear him deciding to be a professional about it)\n\n"Put her on, son."`,
   ]), [
     reply(`Hold the line.`, () => {
@@ -1465,7 +1465,7 @@ export function specialRoot(c, ctx) {
 
     /* ---------------- the assignment ----------------
        He was contacted in his sleep and given a mission, and the mission
-       ends in this shop's basement. There is no basement. Saying so does
+       ends in this store's basement. There is no basement. Saying so does
        not help, and saying so twice makes it worse -- he did not come here
        to be told the building's floor plan, he came to be let in.
 
@@ -1495,7 +1495,7 @@ export function specialRoot(c, ctx) {
       return managerRoot(c, ctx);
 
     /* ---------------- the pizza ----------------
-       He rang, he ordered, and he is here to collect. Nothing you say
+       He called, he ordered, and he is here to collect. Nothing you say
        moves him, because he is not confused -- he is certain. The only
        thing that ends it is a box on the counter. */
     case 'PIZZA':
@@ -1574,10 +1574,10 @@ export function specialRoot(c, ctx) {
           `I'm looking. A man's allowed to look.`,
           `I haven't touched anything. Have I touched anything? Name one thing.`,
           `Is this about how I look? Because it sounds like it's about how I look.`,
-          `I've been coming to this parade since before you worked here.`,
+          `I've been coming to this block since before you worked here.`,
           `There's no sign. Show me the sign that says I can't stand here.`,
           `You know what this is? This is discrimination, is what this is.`,
-          `I have a right to be in a shop. That's not a special right, that's the normal one.`,
+          `I have a right to be in a store. That's not a special right, that's the normal one.`,
           `Fine. FINE. But I want it on record that I was going to rent something.`,
         ],
         firm: [
@@ -1593,7 +1593,7 @@ export function specialRoot(c, ctx) {
         ],
         reason: [
           `Sir, people can smell you from the door.`,
-          `It's not about you. It's about the shop.`,
+          `It's not about you. It's about the store.`,
           `Nobody else can stand in here.`,
           `I have customers who won't come to the counter.`,
         ],
@@ -1647,7 +1647,7 @@ export function specialRoot(c, ctx) {
         firm: [
           `You need to go home.`,
           `Out. Front door. Now.`,
-          `I need you to leave the shop.`,
+          `I need you to leave the store.`,
           `Go. Home. Two words.`,
         ],
         firmer: [
@@ -1658,8 +1658,8 @@ export function specialRoot(c, ctx) {
         reason: [
           `You smell like a bonfire in a hedge.`,
           `Everyone in here can smell you, man.`,
-          `I've got people who won't come to the till.`,
-          `You've been stood there forty minutes.`,
+          `I've got people who won't come to the register.`,
+          `You've been standing there forty minutes.`,
         ],
         give: [
           `Yeah. Yeah, okay. That's fair. I'm gonna go.`,
@@ -1698,7 +1698,7 @@ export function specialRoot(c, ctx) {
         ]),
       });
 
-    /* ---------------- a film that does not exist ---------------- */
+    /* ---------------- a movie that does not exist ---------------- */
     case 'PREORDER': {
       const title = rng.pick([
         `SUMMER OF THE SHARK 4`, `THE ONE WITH THE TWO TRAINS`, `MIDNIGHT IN VERONA`,
@@ -1788,20 +1788,20 @@ export function specialRoot(c, ctx) {
         cool: 18,
         beats: [
           `Before we proceed. Am I being detained?\n\n(he opens a ring binder)\n\nI ask because under the Uniform Commercial Transactions Act of eighteen ninety-four, section four, subsection C, paragraph nine — and I have it here, I can read it to you, I will read it to you — "no man engaged in travel upon the common way shall be held to account by any agent of a corporate body except upon presentation of a wet-ink instrument bearing the seal of the county in which the alleged obligation is said to have arisen." No seal. No instrument. So. Am I being detained.`,
-          `I'm not a customer. I'm a man. There's a difference and it is a legal one, and it is set out in Bouvier's, which you have not read, at the entry for PERSON, natural, as distinguished from PERSON, corporate.\n\nWhen you say "customer" you are addressing a legal fiction. The fiction is spelled in capital letters. I am spelled in lower case. I have a document here, notarised, which severs my correspondence with the fiction, and I filed it with the county in March, and they wrote back, and the letter is in this binder behind the tab that says COUNTY.`,
-          `I never signed anything. Did I sign anything? You cannot produce it, because it does not exist, because I did not sign it.\n\nThe Statute of Frauds — and this is not fringe, this is first-year contract law, you can look it up in any library including the one two streets over which I have also had words with — requires a memorandum in writing signed by the party to be charged. I am the party to be charged. There is no memorandum. There is no writing. There is no signature. There is a man in a polo shirt and a cardboard box with a film in it.`,
+          `I'm not a customer. I'm a man. There's a difference and it is a legal one, and it is set out in Bouvier's, which you have not read, at the entry for PERSON, natural, as distinguished from PERSON, corporate.\n\nWhen you say "customer" you are addressing a legal fiction. The fiction is spelled in capital letters. I am spelled in lower case. I have a document here, notarized, which severs my correspondence with the fiction, and I filed it with the county in March, and they wrote back, and the letter is in this binder behind the tab that says COUNTY.`,
+          `I never signed anything. Did I sign anything? You cannot produce it, because it does not exist, because I did not sign it.\n\nThe Statute of Frauds — and this is not fringe, this is first-year contract law, you can look it up in any library including the one two streets over which I have also had words with — requires a memorandum in writing signed by the party to be charged. I am the party to be charged. There is no memorandum. There is no writing. There is no signature. There is a man in a polo shirt and a cardboard box with a movie in it.`,
           `The card in your machine has my name on it in capital letters. That is not me. That is a corporate fiction created without my consent at the registration of my birth, and every transaction conducted against it is conducted against the fiction and not against the man.\n\nI have written to the Registrar. Three times. The third letter was certified. The green card came back with a squiggle on it that could be anybody. That squiggle is now the only evidence the state has that I exist, and I would like you to sit with that for a moment.`,
-          `I don't have a membership because I am not engaged in commerce. I am travelling.\n\nTravel is a right. Driving is a privilege. Renting is neither — renting is a bailment, and a bailment requires a bailor and a bailee and a meeting of minds, and my mind has not met yours and I would suggest it is not going to.\n\nI could produce the affidavit. I do have the affidavit. It runs to eleven pages and I have read it aloud at two town meetings.`,
+          `I don't have a membership because I am not engaged in commerce. I am traveling.\n\nTravel is a right. Driving is a privilege. Renting is neither — renting is a bailment, and a bailment requires a bailor and a bailee and a meeting of minds, and my mind has not met yours and I would suggest it is not going to.\n\nI could produce the affidavit. I do have the affidavit. It runs to eleven pages and I have read it aloud at two town meetings.`,
           `Under common law — and I would ask you to look this up rather than take my word for it, although you may take my word for it — a late fee is a penalty. Penalties require a court. You are not a court. You have a carpet and a popcorn machine.\n\nSee Farnsworth on the doctrine of liquidated damages, which holds that a stipulated sum bearing no reasonable relationship to actual loss is unenforceable as against public policy. Your actual loss on a videotape that sat in my house for six days is nothing. It is less than nothing. It was not going to be rented. Nobody wants it.`,
           `I want to talk about the sign on your door.\n\n"We reserve the right to refuse service." That is an assertion of a right. Rights are not reserved by adhesive lettering. Rights are secured by instrument, and I do not see an instrument, I see a sticker, and a sticker is not a lawful notice under the Posting and Notice provisions of the Municipal Code, section eleven, which requires that any notice affecting the rights of the public be displayed in letters not less than two inches in height and countersigned by the clerk of the county.\n\nThose letters are one inch. I measured them. I have a tape measure in the car.`,
           `You keep saying "policy". Policy is not law. A corporation may set policy for its employees; it may not set policy for a man.\n\nI would refer you to the Restatement, which nobody in this town has ever opened, on the distinction between a contract of adhesion and an agreement freely entered. Your policy is adhesion. I am not adhered. I am standing here of my own volition, which is more than can be said for you, since you are here for money, which is compulsion.`,
           `Now. Since you have not answered my first question, I am going to take that as a no, and I would like it noted — and I will note it myself, in the binder, and I will date it — that at approximately eleven fourteen on this evening I asked whether I was being detained and received no lawful answer.\n\n(he writes for some time)\n\nHow do you spell your name? Not your first name. The one on the badge.`,
           `Let me read you something. This is from the county's own bylaws, section nine, article four, and I obtained it under a records request that took eleven weeks and cost me forty-one dollars in copying:\n\n"No commercial premises within the district shall condition entry upon the surrender of any right otherwise held at law."\n\nYou are conditioning my entry upon my agreement to be a customer. A customer surrenders rights. Therefore your condition is void, and my presence here is lawful, and has been lawful this entire time, including during the portion where you sighed.`,
-          `I have been to four other establishments on this parade tonight and I have had this same conversation in three of them. The laundromat understood immediately. The laundromat has a woman working who has read the code.\n\nI mention this not to shame you but because I want you to understand that I am not confused and I am not unwell and I am not, as the man at the hardware store suggested, "one of those." I am simply correct, and being correct in a town like this one is a full-time occupation.`,
+          `I have been to four other establishments on this block tonight and I have had this same conversation in three of them. The laundromat understood immediately. The laundromat has a woman working who has read the code.\n\nI mention this not to shame you but because I want you to understand that I am not confused and I am not unwell and I am not, as the man at the hardware store suggested, "one of those." I am simply correct, and being correct in a town like this one is a full-time occupation.`,
           `Very well. I am going to leave. I want to be clear that I am leaving of my own volition and not under compulsion, and that my leaving does not constitute acquiescence, acceptance, admission, or waiver of any right, claim, or remedy, all of which are expressly reserved.\n\nWithout prejudice. UCC one dash three zero eight. You may write that down. I will wait.`,
         ],
         firm: [
-          `Sir. It's a video shop.`,
+          `Sir. It's a video store.`,
           `None of that is a thing here.`,
           `I need you to leave.`,
           `I'm going to stop you there.`,
@@ -1816,8 +1816,8 @@ export function specialRoot(c, ctx) {
           `Mm-hm. And the tape is three dollars.`,
           `Right. Three dollars.`,
           `I need you to step aside. There are people waiting.`,
-          `Nothing you have said has been about a film.`,
-          `Sir, I have a queue.`,
+          `Nothing you have said has been about a movie.`,
+          `Sir, I have a line.`,
         ],
         give: [
           `...I'll allow that you have answered part of it.`,
@@ -1833,9 +1833,9 @@ export function specialRoot(c, ctx) {
         ],
         deflect: [
           `They can wait. This is more important than a Tuesday.`,
-          `The queue is a symptom. I am addressing the cause.`,
+          `The line is a symptom. I am addressing the cause.`,
           `Three dollars is the number. It is not the issue. You keep giving me the number.`,
-          `I am not here about a film. I have never been here about a film.`,
+          `I am not here about a movie. I have never been here about a movie.`,
         ],
         brush: [
           `(he is reading, and holds up one finger without looking at you)`,
@@ -1844,7 +1844,7 @@ export function specialRoot(c, ctx) {
           `Mm. I will be with you.`,
         ],
         gone: [
-          `Noted. Recorded. Reserved. You'll be hearing from a court that you do not recognise either.`,
+          `Noted. Recorded. Reserved. You'll be hearing from a court that you do not recognize either.`,
           `Without prejudice, all rights reserved, and I'll be back on Thursday with the laminated one.`,
         ],
         andSell: () => say(c, `...Fine. Three dollars. Under protest, and I want that noted.`, [
@@ -1875,7 +1875,7 @@ export function specialRoot(c, ctx) {
       ]);
       function offer() {
         return say(c, `I'll take something. Nothing loud.`, [
-          reply(`Have a look. I'll be at the till.`,
+          reply(`Have a look. I'll be at the register.`,
             () => goShopping(c, ctx, `I know where everything is, dear. Better than you do.`,
               { genre: 'DRAMA', close: `I don't doubt it.` })),
           reply(`We're closing shortly.`, () => { ctx.mood(c, -4); return done(); }),
@@ -1883,11 +1883,11 @@ export function specialRoot(c, ctx) {
       }
     }
 
-    /* ---------------- the wrong shop's tape ---------------- */
+    /* ---------------- the wrong store's tape ---------------- */
     case 'RETURNS': {
       const done = () => farewell(c, ctx);
       return say(c, `Returning. Now — before you look at it — hear me out.`, [
-        reply(`It's got another shop's sticker on it.`, () => say(c,
+        reply(`It's got another store's sticker on it.`, () => say(c,
           `It does. And they're closed. And they've BEEN closed. Since March.`, [
           reply(`Then it's not my problem, and it's not my tape.`, () => say(c,
             `So what happens to it? Who takes it? Somebody has to take it.`, [
@@ -1919,7 +1919,7 @@ export function specialRoot(c, ctx) {
         if (n >= L.length) return buy();
         return say(c, L[n], [
           reply(`I'll move it to DRAMA.`, () => { ctx.mood(c, +18); return rant(n + 1); }),
-          reply(`People like it. That's what a video shop is for.`, () => { ctx.mood(c, -10); return rant(n + 1); }),
+          reply(`People like it. That's what a video store is for.`, () => { ctx.mood(c, -10); return rant(n + 1); }),
           reply(`Do you want it or not?`, () => { ctx.mood(c, -16); return buy(); }, { risk: true }),
           reply(`Tell me more, genuinely.`, () => { ctx.mood(c, +22); return rant(n + 1); }),
         ]);
@@ -1930,7 +1930,7 @@ export function specialRoot(c, ctx) {
             { close: `Bring it to the counter.` })),
         reply(`We're closing. Come back when you like it less.`, () => {
           ctx.mood(c, -12);
-          return say(c, `That is the single best thing anyone in this shop has ever said to me.`,
+          return say(c, `That is the single best thing anyone in this store has ever said to me.`,
             [reply(`Goodnight.`, () => { ctx.leave(c); return null; })]);
         }, { risk: true }),
       ]);
@@ -1947,13 +1947,13 @@ export function specialRoot(c, ctx) {
           reply(`I haven't seen it. I can't tell you.`, () => { ctx.mood(c, -12); return push(); }),
           reply(`It's rated for children. That's what the rating is for.`, () => { ctx.mood(c, -6); return push(); }),
         ])),
-        reply(`It's a family film. It's on the FAMILY run.`, () => { ctx.mood(c, -4); return push(); }),
+        reply(`It's a family movie. It's on the FAMILY run.`, () => { ctx.mood(c, -4); return push(); }),
         reply(`Give me a second — I'll read the back for you.`, () => { ctx.mood(c, +26); return buy(); }),
       ]);
       function push() {
         return say(c, `That is not an answer. I asked a simple question.`, [
           reply(`Then pick a different one. I'll help you.`, () => { ctx.mood(c, +20); return buy(); }),
-          reply(`Ma'am, I run a till. I don't screen the films.`, () => {
+          reply(`Ma'am, I run a register. I don't screen the movies.`, () => {
             ctx.mood(c, -18);
             return say(c, `Then what exactly is the point of you.`, [
               reply(`Some nights I ask myself that.`, () => { ctx.mood(c, +26); return buy(); }),
@@ -1964,7 +1964,7 @@ export function specialRoot(c, ctx) {
       }
       function buy() {
         return say(c, `Fine. Family section. And I'm holding you to the dog.`, [
-          reply(`Family's the far wall. I'll be at the till.`,
+          reply(`Family's the far wall. I'll be at the register.`,
             () => goShopping(c, ctx, `If there's a single frightening moment in it, I'm coming back.`,
               { genre: 'FAMILY', close: `Understood.` })),
           reply(`Honestly? Try the library. They vet things.`, () => {
@@ -2005,7 +2005,7 @@ export function specialRoot(c, ctx) {
     case 'PHONECALL':
       return eject(c, ctx, [
         `(covers the receiver) — sorry, WHAT? (uncovers) No, not you, Denise.`,
-        `I'm ALLOWED to be on the phone. It's a phone. In a shop.`,
+        `I'm ALLOWED to be on the phone. It's a phone. In a store.`,
         `Denise, I'll call you back. No — no, because this MAN — yes. Yes. Bye. Bye. BYE.`,
       ], {
         takes: 3,
@@ -2013,7 +2013,7 @@ export function specialRoot(c, ctx) {
           reply(`Comedy's the middle run. Bring me one.`, () => {
             ctx.mood(c, +16);
             return goShopping(c, ctx, `You're a love.`,
-              { genre: 'COMEDY', close: `I'll be at the till.` });
+              { genre: 'COMEDY', close: `I'll be at the register.` });
           }),
           reply(`Another night.`, () => { ctx.leave(c); return null; }),
         ]),
@@ -2060,7 +2060,7 @@ const CROOK_TASK = [
 const CROOK_DIG = [
   `See, that's the exact phrasing. "There is no basement." Word for word. They told me you'd say that.`,
   `You're doing very well. You've been trained well. I'm not angry at you, I want you to understand that.`,
-  `Every building on this parade has a basement. I've been in the laundrette's. I've been in the barber's. Yours is the one that's a secret.`,
+  `Every building on this block has a basement. I've been in the laundromat's. I've been in the barber's. Yours is the one that's a secret.`,
   `A man who genuinely didn't have a basement would look confused. You look CAREFUL. That's a different face.`,
   `I'm not asking you to come down with me. I'm asking you to stand aside from a door you say isn't there.`,
   `Fine. FINE. Then show me the floor. Show me the whole floor. Move the shelving.`,
@@ -2069,7 +2069,7 @@ const CROOK_DIG = [
 const CROOK_HOT = [
   `DON'T. Don't say it again.`,
   `You are OBSTRUCTING a retrieval. Do you know what that makes you? It makes you PART of it.`,
-  `Thirty-three years! Thirty-three years and it's a boy behind a till!`,
+  `Thirty-three years! Thirty-three years and it's a boy behind a register!`,
   `I have a NAME for what you are and I am being polite by not using it.`,
 ];
 
@@ -2079,7 +2079,7 @@ function basementRoot(c, ctx) {
   /* Per conversation, not per night. He is inexhaustible across the shift
      and finite within one exchange: go round the houses enough times and
      he stops talking to you and goes back to studying the floor. Which
-     ends the conversation without ending him -- he is still in the shop,
+     ends the conversation without ending him -- he is still in the store,
      and still has no basement to be let into. */
   c.crookRound = 0;
 
@@ -2154,7 +2154,7 @@ function basementRoot(c, ctx) {
 }
 
 /* ============================================================
-   OFFENDED ABOUT THE OFFENCE
+   OFFENDED ABOUT THE OFFENSE
 
    Somebody, somewhere, was offended by something. She was not. She is
    offended that they were, and she has come here to say so -- and then
@@ -2167,19 +2167,19 @@ function basementRoot(c, ctx) {
    things back.
    ============================================================ */
 /* What set her off, tonight. Never the same one twice in a night. */
-const OFFENCES = [
+const OFFENSES = [
   { it: `a picture on a cereal box`, who: `a woman in Ohio` },
   { it: `the word "moist" in a magazine`, who: `an entire church group` },
   { it: `a mascot at a county fair`, who: `somebody's mother-in-law` },
   { it: `a joke on the radio, at six in the morning`, who: `a man who called in about it` },
-  { it: `the colour they repainted the bank`, who: `the historical society` },
+  { it: `the color they repainted the bank`, who: `the historical society` },
   { it: `a greetings card with a frog on it`, who: `a woman at my church` },
   { it: `a nativity where Joseph had a beard`, who: `three separate families` },
   { it: `the new road signs`, who: `a retired schoolteacher` },
   { it: `a sitcom where the dog talks`, who: `a letter-writing campaign` },
 ];
 
-/* Where it goes instead, once the offence has been dealt with. */
+/* Where it goes instead, once the offense has been dealt with. */
 const TANGENTS = [
   {
     into: `And do you know what that reminds me of? Gravy.`,
@@ -2191,7 +2191,7 @@ const TANGENTS = [
     land: `Anyway. Gravy.`,
   },
   {
-    into: `Which brings me — and I don't know why — to my neighbour's driveway.`,
+    into: `Which brings me — and I don't know why — to my neighbor's driveway.`,
     body: [
       `He's put gravel down. Gravel. On a slope. And now every time it rains I have his driveway in my flowerbed.`,
       `I said, Ray, that's not a driveway, that's a delivery. And he laughed. He LAUGHED. Which I took well, I think.`,
@@ -2209,7 +2209,7 @@ const TANGENTS = [
     land: `Anyway. Bread.`,
   },
   {
-    into: `Can I tell you what I actually came out for tonight? Because it wasn't a film.`,
+    into: `Can I tell you what I actually came out for tonight? Because it wasn't a movie.`,
     body: [
       `The house is very quiet since Dennis. And a quiet house is fine in the day. In the day it's peaceful.`,
       `It's about nine o'clock it stops being peaceful. Nine o'clock it turns into something else entirely.`,
@@ -2221,12 +2221,12 @@ const TANGENTS = [
 
 function offendedRoot(c, ctx) {
   const rng = ctx.rng;
-  if (!c.offence) {
-    c.offence = rng.pick(OFFENCES);
+  if (!c.offense) {
+    c.offense = rng.pick(OFFENSES);
     c.tangent = rng.pick(TANGENTS);
     c.offStage = 0;
   }
-  const O = c.offence, T = c.tangent;
+  const O = c.offense, T = c.tangent;
 
   /* The tangent, one paragraph at a time. She only needs you to keep
      saying things back; what you say barely matters, which is the joke. */
@@ -2236,7 +2236,7 @@ function offendedRoot(c, ctx) {
       reply(rng.pick([`Right.`, `Mm.`, `I see.`]), () => wander(i + 1)),
       reply(rng.pick([`That does sound frustrating.`, `That's a long time to say nothing.`,
         `I can imagine.`]), () => { ctx.mood(c, +6); return wander(i + 1); }),
-      reply(rng.pick([`Ma'am, is there a film you wanted?`, `Was there something you needed?`]),
+      reply(rng.pick([`Ma'am, is there a movie you wanted?`, `Was there something you needed?`]),
         () => say(c, rng.pick([
           `In a minute. I'm nearly at the end of it.`,
           `Yes — yes, I'll get to that. Let me just finish.`,
@@ -2258,7 +2258,7 @@ function offendedRoot(c, ctx) {
     }),
     reply(`Anything in particular?`, () => say(c,
       `Something where somebody says what they mean. You'd be amazed how rare that is.`,
-      [reply(`Have a look round.`, () => {
+      [reply(`Have a look around.`, () => {
         ctx.mood(c, +10);
         return goShopping(c, ctx, `I shall.`, { close: `I'll be at the counter.` });
       })])),
@@ -2280,7 +2280,7 @@ function offendedRoot(c, ctx) {
         `That is exactly it and you're the first person all week to get there.`]),
       [reply(`Right.`, () => { ctx.mood(c, +10); return pivot(); })])),
     reply(`That sounds exhausting.`, () => say(c,
-      `It IS. It's exhausting. And nobody sympathises, because to sympathise you'd have to follow it.`,
+      `It IS. It's exhausting. And nobody sympathizes, because to sympathize you'd have to follow it.`,
       [reply(`I follow it.`, () => { ctx.mood(c, +8); return pivot(); })])),
     reply(`I don't think I follow.`, () => say(c,
       `Then I'll say it slower, because it's worth getting.`,
@@ -2290,7 +2290,7 @@ function offendedRoot(c, ctx) {
   if (c.offStage === 0) {
     c.offStage = 1;
     return say(c, rng.pick([
-      `Can I say something? I'm going to say something, and then I'll buy a film, I promise.`,
+      `Can I say something? I'm going to say something, and then I'll buy a movie, I promise.`,
       `Before anything else. Have you heard about ${O.it}?`,
       `You look like a man who'll let somebody finish a sentence. I've got one.`,
     ]), [
@@ -2309,7 +2309,7 @@ function offendedRoot(c, ctx) {
    She is not angry with the clerk and says so, repeatedly, which somehow
    makes it worse. She is angry about the lot: no light on the back of the
    building, an alley nobody can see into, and a woman followed to her car
-   on this parade in March. None of that is yours to fix and she knows it.
+   on this block in March. None of that is yours to fix and she knows it.
    That is why she wants somebody it IS.
 
    So the conversation is a wall on purpose. Everything you say gets the
@@ -2332,9 +2332,9 @@ const KAREN_WALL = [
 
 const KAREN_WHY = [
   `Because there is no light on the back of this building. None. The whole lot is a black hole after nine o'clock.`,
-  `Because a woman was followed to her car on this parade in March and nothing has changed since. Not one thing.`,
+  `Because a woman was followed to her car on this block in March and nothing has changed since. Not one thing.`,
   `Because I park in that lot. My daughter parks in that lot. And you can't see the alley from anywhere.`,
-  `Because I've told the laundrette and I've told the barber and they both said the same thing you're saying.`,
+  `Because I've told the laundromat and I've told the barber and they both said the same thing you're saying.`,
 ];
 
 function managerRoot(c, ctx) {
@@ -2370,7 +2370,7 @@ function managerRoot(c, ctx) {
     reply(`I'm going to have to ask you to leave.`, () => {
       ctx.mood(c, -10);
       return wall(rng.pick([
-        `No, I don't think so. I'm a customer standing in a shop.`,
+        `No, I don't think so. I'm a customer standing in a store.`,
         `You can ask. I'm not going.`,
         `On what grounds? I've raised my voice at nobody.`,
       ]));
@@ -2418,7 +2418,7 @@ function managerRoot(c, ctx) {
 /* ============================================================
    THE PIZZA
 
-   He rings first, from a payphone outside the laundrette, and orders.
+   He calls first, from a payphone outside the laundromat, and orders.
    He is not confused about which number he dialled: he is certain, and
    the certainty is what you cannot get past. Then he turns up to
    collect, and he will stand there.
@@ -2455,7 +2455,7 @@ const PIZZA_INSIST = [
 
 const PIZZA_FLOOR = [
   `I'm not leaving without it. I paid on the phone.`,
-  `Mate. MATE. Where is my pizza.`,
+  `Buddy. BUDDY. Where is my pizza.`,
   `Then go and check the back. Go on. Go and check.`,
   `I can smell popcorn. You've got a popcorn machine. Don't tell me you don't do food.`,
   `Forty minutes. It's been forty minutes.`,
@@ -2488,7 +2488,7 @@ export function buildPizzaOrder(ctx) {
   const order = () => say(caller,
     `Right. Large. ${cap(W.ok)}, and ${W.odd}.\n\nAnd don't skimp on the ${W.odd}, last time it was like you'd waved it at the thing.`, [
     reply(`Sir, this is a video rental store.`, () => push(1)),
-    reply(`We don't sell food. We sell films.`, () => push(1)),
+    reply(`We don't sell food. We sell movies.`, () => push(1)),
     reply(`...${cap(W.odd)}.`, () => say(caller,
       `${cap(W.odd)}. Yes. Is that a problem? It's not a problem.`,
       [reply(`I'll see what I can do.`, () => done(`Twenty minutes. I'm walking over.`))])),
@@ -2498,7 +2498,7 @@ export function buildPizzaOrder(ctx) {
     if (n >= 3) return done(rng.pick([
       `Twenty minutes. I'm walking over. Have it ready.`,
       `I'll come to you. Clearly this is easier in person.`,
-      `Right, I'm coming down there. Don't start the pizza till I'm there, I want to watch.`,
+      `Right, I'm coming down there. Don't start the pizza until I'm there, I want to watch.`,
     ]));
     return say(caller, rng.pick(PIZZA_INSIST), [
       reply(`There is no kitchen here. There's a popcorn machine.`, () => push(n + 1)),
@@ -2519,25 +2519,25 @@ export function buildPizzaOrder(ctx) {
 }
 
 /**
- * Ringing Bertucci's, which is what actually solves this.
+ * Calling Bertucci's, which is what actually solves this.
  *
  * The first call gets you told they have not got the strange half of it.
  * Then you have to go and tell HIM, get him to pick something they do
- * have, and ring back. Two calls, with a conversation in the middle.
+ * have, and call back. Two calls, with a conversation in the middle.
  */
-export function buildPizzaParlour(ctx) {
+export function buildPizzaParlor(ctx) {
   const rng = ctx.rng;
   const P = ctx.pizzaState();
-  const shop = { name: `BERTUCCI'S`, voicePitch: 1.0, rough: 0.45 };
+  const parlor = { name: `BERTUCCI'S`, voicePitch: 1.0, rough: 0.45 };
   const hang = () => { ctx.hangUp(); return null; };
   const W = (P && P.wants) || TOPPINGS[0];
 
   /* Second call: he has settled on something they actually stock. */
   if (P && P.agreed) {
-    return say(shop, `"Bertucci's."`, [
+    return say(parlor, `"Bertucci's."`, [
       reply(`Me again. Large, ${W.ok} and ${P.agreed}.`, () => {
         ctx.pizzaCook(rng.range(55, 95));
-        return say(shop,
+        return say(parlor,
           `"${cap(W.ok)} and ${P.agreed}. Now that we can do."\n\n(the sound of a man writing on a pad)\n\n"Twenty minutes. Delaney, yeah? The video place?"`, [
           reply(`The video place. Yes.`, () => {
             ctx.toast(`Ordered. Twenty minutes, they said.`, 'good');
@@ -2550,32 +2550,32 @@ export function buildPizzaParlour(ctx) {
 
   /* First call: they have not got the odd half and they say so. */
   if (P && P.placed) {
-    return say(shop, `"It's coming. Twenty minutes means twenty minutes."`, [
+    return say(parlor, `"It's coming. Twenty minutes means twenty minutes."`, [
       reply(`Sorry. Thanks.`, () => hang()),
     ]);
   }
 
-  return say(shop, rng.pick([
+  return say(parlor, rng.pick([
     `"Bertucci's, collection or delivery?"`,
     `"Bertucci's."\n\n(somebody shouting an order in the background)`,
     `"Yeah, Bertucci's, hold on — yeah, go ahead."`,
   ]), [
     reply(`Delivery. To Sunset Video, on Delaney. Large, ${W.ok} and ${W.odd}.`, () => {
       if (P) P.placed = true;
-      return say(shop, rng.pick([
+      return say(parlor, rng.pick([
         `"${cap(W.ok)}, fine. ${cap(W.odd)} — no. We haven't got that. We've never had that."`,
         `"Yeah. Yeah. ...${cap(W.odd)}? On a pizza? No, pal. Not a thing we own."`,
         `"Hold on."\n\n(muffled, away from the phone: "Have we got ${W.odd}?" ... "Have we WHAT?")\n\n"No. That's a no."`,
       ]), [
-        reply(`What have you got?`, () => say(shop,
-          `"What everyone's got. ${PARLOUR_STOCK.join(', ')}. It's a pizza place, not a chemist."`, [
+        reply(`What have you got?`, () => say(parlor,
+          `"What everyone's got. ${PARLOR_STOCK.join(', ')}. It's a pizza place, not a drugstore."`, [
           reply(`Let me ask him and call you back.`, () => {
             if (P) P.refused = W.odd;
             ctx.toast(`They haven't got ${W.odd}. He'll have to pick something else.`, 'bad');
             return hang();
           }),
         ])),
-        reply(`Right. I'll ring back.`, () => {
+        reply(`Right. I'll call back.`, () => {
           if (P) P.refused = W.odd;
           ctx.toast(`They haven't got ${W.odd}. He'll have to pick something else.`, 'bad');
           return hang();
@@ -2586,7 +2586,7 @@ export function buildPizzaParlour(ctx) {
   ]);
 }
 
-const PARLOUR_STOCK = ['pepperoni', 'sausage', 'mushroom', 'onion', 'green pepper',
+const PARLOR_STOCK = ['pepperoni', 'sausage', 'mushroom', 'onion', 'green pepper',
   'black olive', 'bacon', 'extra cheese'];
 
 function pizzaRoot(c, ctx) {
@@ -2608,7 +2608,7 @@ function pizzaRoot(c, ctx) {
     c.pizzaRound++;
     if (c.pizzaRound > 6) return standing();
     return say(c, `${lead ? lead + '\n\n' : ''}${rng.pick(PIZZA_FLOOR)}`, [
-      reply(`This is a video shop. There is no pizza.`, () => {
+      reply(`This is a video store. There is no pizza.`, () => {
         ctx.mood(c, -6);
         return floor(rng.pick([`Then what's the popcorn for?`, `You keep saying that.`,
           `(he looks at the popcorn machine, then back at you)`]));
@@ -2632,12 +2632,12 @@ function pizzaRoot(c, ctx) {
       `${cap(t)}, then. Under protest.`,
       `Go on then. ${cap(t)}. And extra of it, since I'm being flexible.`,
     ]), [
-      reply(`I'll ring them back.`, () => {
+      reply(`I'll call them back.`, () => {
         ctx.pizzaAgree(t);
         return null;
       }),
     ]);
-    const some = ctx.rng.shuffle(PARLOUR_STOCK.filter((t) => t !== W.ok)).slice(0, 3);
+    const some = ctx.rng.shuffle(PARLOR_STOCK.filter((t) => t !== W.ok)).slice(0, 3);
     return say(c, rng.pick([
       `They haven't got it? How has a pizza place not got ${P.refused}?`,
       `No ${P.refused}. Right. Of course. Of COURSE there's no ${P.refused}.`,
@@ -2662,7 +2662,7 @@ function pizzaRoot(c, ctx) {
   if (c.pizzaAsked === 1) {
     return say(c, rng.pick([
       `Collection. Nusbaum. Large, ${W.ok} and ${W.odd}.`,
-      `I rang about twenty minutes ago. Nusbaum. Is it ready?`,
+      `I called about twenty minutes ago. Nusbaum. Is it ready?`,
       `Hi. Order for Nusbaum? I called it in.`,
     ]), [
       reply(`Sir, this is a video rental store.`, () => floor(
@@ -2682,7 +2682,7 @@ function pizzaRoot(c, ctx) {
    THE SWEEP THAT FOUND NOTHING
 
    You named him, the cruiser came, and he was gone before it got here.
-   That used to be two lines of text over an empty shop, which made the
+   That used to be two lines of text over an empty store, which made the
    right call feel like a wasted one. A deputy comes in and says it to
    your face instead: nobody out there, and he is not telling you that you
    were wrong -- he is telling you to keep the door in view.
@@ -2703,7 +2703,7 @@ export function buildSweepReport(officer, bulletin, ctx) {
 
   const vigilant = () => say(officer, rng.pick([
     `Here's where I land on it. You did the right thing and it didn't pay off tonight. That happens more than anybody wants to hear.\n\nKeep the door in front of you. If he comes back through it, you call again, and you don't wait to be sure.`,
-    `I'm not going to stand here and tell you it was nothing. You call it in, we come, that's the arrangement. Tonight the arrangement got beaten by about ninety seconds.\n\nStay where you can see the parade. Anything at all, you pick that phone up.`,
+    `I'm not going to stand here and tell you it was nothing. You call it in, we come, that's the arrangement. Tonight the arrangement got beaten by about ninety seconds.\n\nStay where you can see the block. Anything at all, you pick that phone up.`,
     `Don't second-guess it. A man who walks out the second he hears a siren is a man who had a reason to.\n\nEyes on the door for the rest of your shift. I mean it.`,
   ]), [reply(`Understood.`, () => done())]);
 
@@ -2722,9 +2722,9 @@ export function buildSweepReport(officer, bulletin, ctx) {
   ]);
 
   return say(officer, rng.pick([
-    `Swept the parade twice. Both ends of the lot, the alley behind the laundrette, all of it.\n\nNobody. Not a soul out there who shouldn't be.`,
-    `We had two units on it inside of a minute. Nothing on the parade, nothing in the lot, nothing behind the units.\n\nHe isn't out there any more.`,
-    `I've been up and down that street and round the back twice over. It's empty out there.\n\nWhoever you saw is not on this block.`,
+    `Swept the block twice. Both ends of the lot, the alley behind the laundromat, all of it.\n\nNobody. Not a soul out there who shouldn't be.`,
+    `We had two units on it inside of a minute. Nothing on the block, nothing in the lot, nothing behind the buildings.\n\nHe isn't out there any more.`,
+    `I've been up and down that street and around the back twice over. It's empty out there.\n\nWhoever you saw is not on this block.`,
   ]), [
     reply(`He was standing right there.`, () => matched()),
     reply(`You're saying I imagined him.`, () => say(officer,

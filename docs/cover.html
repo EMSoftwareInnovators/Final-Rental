@@ -21,7 +21,12 @@
   /* ---- the still ---- */
   .art { position: absolute; left: 76px; top: 470px; width: 1048px; height: 772px; overflow: hidden;
          border: 5px solid #1b1512; box-shadow: 0 0 0 2px #38291f, 0 26px 70px rgba(0,0,0,.85); }
-  .art img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 46%; display: block; filter: saturate(1.08) contrast(1.04) brightness(1.28); }
+  /* Scaled up and pulled down a little: the still is a 4:3 frame with the
+     night sky over the building and the road under it, and neither of them
+     is what the sleeve is for. */
+  .art img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%;
+             display: block; transform: scale(1.10); transform-origin: 50% 42%;
+             filter: saturate(1.08) contrast(1.04) brightness(1.28); }
   /* the picture fades into the sleeve rather than sitting in a window */
   .art::after {
     content: ""; position: absolute; inset: 0;
@@ -51,7 +56,7 @@
   /* ---- the spine strip, like a rental case ---- */
   .spine { position: absolute; left: 0; top: 0; bottom: 0; width: 26px;
            background: repeating-linear-gradient(0deg, #7d1c12 0 26px, #5d150e 26px 52px); }
-  /* and the sticker the shop puts on everything it owns */
+  /* and the sticker the store puts on everything it owns */
   .sticker {
     position: absolute; right: 54px; top: 1168px; width: 210px;
     transform: rotate(-4.2deg);

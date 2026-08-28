@@ -36,7 +36,7 @@ export const PAD_ACTIONS = {
   drop: { label: 'Put it down', keys: ['PadX', 'KeyG'], def: [2] },
   notes: { label: 'Notepad', keys: ['PadY', 'Tab'], def: [3] },
   /* On both triggers: either one, or both at once. It used to be LB and
-     L3; holding a stick click down to run the length of the shop is hard on
+     L3; holding a stick click down to run the length of the store is hard on
      a thumb, and a trigger is what a trigger is for. Which hand you reach
      with is nobody's business. A trigger reads as pressed past halfway. */
   run: { label: 'Hurry', keys: ['PadLT', 'ShiftLeft'], def: [6, 7] },
@@ -94,7 +94,7 @@ const DEAD = 0.22;
  * Chrome and Safari on macOS report an Xbox pad with a non-standard mapping
  * and shuffled indices: A lands on 1, B on 2, X on 3, Y on 5, and the right
  * stick click on 11. Rather than leaving a first-party controller unbound
- * until the player sets it up by hand, recognise it and lay the buttons out
+ * until the player sets it up by hand, recognize it and lay the buttons out
  * properly -- while still letting them change any of it.
  */
 const KNOWN_LAYOUTS = [
@@ -237,7 +237,7 @@ export class Input {
       if (e.button < 3) { if (!this.mouse[e.button]) this.mousePressed[e.button] = true; this.mouse[e.button] = true; }
       this.scheme = 'kbm';
       /* Fired from inside the real event, which is the only place the
-         browser will honour a pointer-lock request. */
+         browser will honor a pointer-lock request. */
       if (this.onGesture) this.onGesture();
       e.preventDefault();
     });
@@ -306,11 +306,11 @@ export class Input {
       const a = Math.abs(v);
       if (a < DEAD) return 0;
       const t = (a - DEAD) / (1 - DEAD);
-      return Math.sign(v) * t * t;              // squared, for fine control near centre
+      return Math.sign(v) * t * t;              // squared, for fine control near center
     };
     const rawX = ax[0] || 0, rawY = ax[1] || 0;
     /* Movement wants a squared curve -- it buys fine control near the
-       centre, and you are only ever walking. Looking does not: squaring it
+       center, and you are only ever walking. Looking does not: squaring it
        meant half a stick gave a quarter of the speed, and turning round took
        an age unless you pinned it to the edge. The look axes get a much
        gentler shape. */
@@ -377,7 +377,7 @@ export class Input {
        but only once the axis has proved it really is a hat.
 
        A hat at rest reads outside [-1, 1]: 3.29 is the usual value. An axis
-       that is not a hat at all sits at 0, which is dead centre of the range
+       that is not a hat at all sits at 0, which is dead center of the range
        this used to accept, and 0 decodes to "down". Every pad with ten or
        more axes therefore had a phantom d-pad holding down. That is what
        "the d-pad acts weird in menus" was. */

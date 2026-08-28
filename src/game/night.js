@@ -50,7 +50,7 @@ export function deputyComes(n, mode) {
  * against. A long one means every ordinary customer now matches four or
  * five of it, and the question stops being "does he match" and becomes
  * "does he match ALL of it" -- which takes time you do not have with three
- * people in the queue.
+ * people in line.
  */
 function bulletinKeyCount(n) {
   return Math.min(10, 3 + Math.floor((n - DEPUTY_FIRST_NIGHT) / 1.15));
@@ -107,7 +107,7 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
   }
 
   /* A stand-down night is a calm night by definition: he is not going to
-     walk in and tell you it is over while somebody is working the parade. */
+     walk in and tell you it is over while somebody is working the block. */
   const quiet = opts.calm || opts.standDown;
   const plan = quiet
     ? { appears: false, at: Infinity, asCustomer: false }
@@ -138,7 +138,7 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
   const overlap = decoyOverlap(n, keys.length);
   const schedule = [];
   /* People come in right up to closing. The rota used to stop at 84% of
-     the night, so the last stretch of every shift was an empty shop. */
+     the night, so the last stretch of every shift was an empty store. */
   const windowEnd = length * 0.97;
   for (let i = 0; i < count; i++) {
     const base = (i / count) * windowEnd;
@@ -387,7 +387,7 @@ function makeOfficerApp(rng) {
     id: 'sheriff', color: { id: 'navy', name: 'sheriff navy', hex: '#141c33' }, kind: 'sheriff jacket',
     label: 'Sheriff department jacket', bulletin: 'a sheriff department jacket',
   };
-  a.pants = { id: 'khaki', color: { id: 'khaki', name: 'khaki', hex: '#4a4632' }, label: 'Khaki uniform trousers', bulletin: 'khaki uniform pants' };
+  a.pants = { id: 'khaki', color: { id: 'khaki', name: 'khaki', hex: '#4a4632' }, label: 'Khaki uniform pants', bulletin: 'khaki uniform pants' };
   a.shirt = { id: 'tan', name: 'tan', hex: '#6b6142' };
   a.hat = HATS.find((h) => h.id === 'cap');
   a.carry = CARRY[0];

@@ -58,7 +58,7 @@ const HAIR_COLORS = [
   { id: 'lightbrown', name: 'light brown', hex: '#6b4a2c', dark: '#4d341e' },
   { id: 'blond', name: 'blond', hex: '#b99553', dark: '#8f7038' },
   { id: 'red', name: 'red', hex: '#8a3a1c', dark: '#642713' },
-  { id: 'grey', name: 'grey', hex: '#8d8a84', dark: '#6a6862' },
+  { id: 'gray', name: 'gray', hex: '#8d8a84', dark: '#6a6862' },
   { id: 'white', name: 'white', hex: '#cfcac0', dark: '#a5a099' },
 ];
 const HAIR_STYLES = [
@@ -103,7 +103,7 @@ const COLORS = [
   { id: 'navy', name: 'navy', hex: '#1e2a4a' },
   { id: 'olive', name: 'olive', hex: '#44492a' },
   { id: 'maroon', name: 'maroon', hex: '#4a1a1e' },
-  { id: 'grey', name: 'grey', hex: '#4a4a50' },
+  { id: 'gray', name: 'gray', hex: '#4a4a50' },
   { id: 'black', name: 'black', hex: '#1a1a1e' },
   { id: 'denim', name: 'denim blue', hex: '#33507a' },
   { id: 'tan', name: 'tan', hex: '#8a7148' },
@@ -174,7 +174,7 @@ export const ALL_KEYS = [...VISIBLE_KEYS, ...HIDDEN_KEYS];
 
 export const KEY_LABEL = {
   gender: 'Sex', height: 'Height', build: 'Build', hair: 'Hair', facial: 'Face', glasses: 'Eyewear',
-  hat: 'Headwear', jacket: 'Outerwear', pants: 'Trousers', mark: 'Distinguishing mark',
+  hat: 'Headwear', jacket: 'Outerwear', pants: 'Pants', mark: 'Distinguishing mark',
   gait: 'Walk', carry: 'Carrying', smell: 'Smell', voice: 'Voice',
 };
 
@@ -213,7 +213,7 @@ export function randomAppearance(rng, force = {}) {
     shirt: shirtColor,
     pants: {
       id: pantsColor.id, color: pantsColor,
-      label: `${cap(pantsColor.name)} trousers`,
+      label: `${cap(pantsColor.name)} pants`,
       bulletin: `${pantsColor.name} pants`,
     },
     shoes: rng.pick(COLORS),
@@ -225,7 +225,7 @@ export function randomAppearance(rng, force = {}) {
     voicePitch: g === 'f' ? 1.22 : 0.92,
   };
   Object.assign(a, force);
-  // `force` may hand us a bare 'm'/'f'; normalise again so downstream code
+  // `force` may hand us a bare 'm'/'f'; normalize again so downstream code
   // can always rely on a.gender being a trait object
   if (typeof a.gender === 'string') a.gender = GENDERS.find((x) => x.id === a.gender) || GENDERS[0];
   return a;
@@ -260,7 +260,7 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 /* ============================================================
    TELLING TWO PEOPLE APART DOWN A PHONE
 
-   Everybody used to be "the one in the <colour> <jacket>", which is fine
+   Everybody used to be "the one in the <color> <jacket>", which is fine
    until two of them are wearing the same coat -- and on a night where the
    bulletin is about a coat, two of them very often are. The list dispatch
    read back had the same line on it twice and picking between them was a
@@ -269,7 +269,7 @@ const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
 
    So the names are built against the room rather than in isolation. A
    person is described by their coat until that stops separating them from
-   everybody else in the shop, and then by whatever does -- silhouette
+   everybody else in the store, and then by whatever does -- silhouette
    first, because that is what you notice from behind a counter, then the
    face, then the things you would have to be close to see.
 
@@ -318,8 +318,8 @@ function assemble(a, parts) {
  *
  * Takes anything with an `.app` and a `.z`; returns the labels in order.
  * Each person gets the shortest description that separates them from the
- * rest of the room, so a quiet shop stays "the one in the denim jacket"
- * and a shop with two denim jackets in it says which is which.
+ * rest of the room, so a quiet store stays "the one in the denim jacket"
+ * and a store with two denim jackets in it says which is which.
  */
 export function describeApart(list) {
   const parts = list.map(() => []);
@@ -721,7 +721,7 @@ export function pronounOf(app) {
   return { subj: f ? 'she' : 'he', obj: f ? 'her' : 'him', poss: f ? 'her' : 'his' };
 }
 
-/* ---------------- colour helpers ---------------- */
+/* ---------------- color helpers ---------------- */
 export function shadeHex(hex, k) {
   const n = parseInt(hex.slice(1), 16);
   let r = ((n >> 16) & 255) * k, g = ((n >> 8) & 255) * k, b = (n & 255) * k;

@@ -1,5 +1,5 @@
 /* The regulars. Checks that every fixed character can be planned, spawned,
-   performs their business in the shop, and can be talked all the way out of
+   performs their business in the store, and can be talked all the way out of
    the door -- both ways, where they have two ways to go. */
 import { chromium } from 'playwright-core';
 
@@ -87,7 +87,7 @@ check('the night plan drops them into ordinary customer slots',
   scheduled.withSpecial > 0.5, `${(scheduled.withSpecial * 100) | 0}% of planned nights`);
 check('and never onto the killer decoy', scheduled.decoyClash === 0);
 
-/* ---------- 3. in the shop ---------- */
+/* ---------- 3. in the store ---------- */
 await ev(() => { window.__game.sound.muted = true; });
 await page.keyboard.press('Enter');
 await wait(600);
@@ -95,7 +95,7 @@ await ev(() => { window.__game.estT = 99; });
 await wait(700);
 check('shift started', await ev(() => window.__game.state) === 'PLAY');
 
-// Put the whole roster in the shop at once and let them find their spots.
+// Put the whole roster in the store at once and let them find their spots.
 const spawned = await ev(() => {
   const g = window.__game;
   g.night.schedule.length = 0;
@@ -105,7 +105,7 @@ const spawned = await ev(() => {
   return g.customers.map((c) => ({ id: c.id, name: c.name, special: c.special, script: c.script, state: c.state }));
 });
 check('all of them will spawn', spawned.length === roster.length
-  && spawned.every((c) => c.special && c.script === 'special'), `${spawned.length} in the shop`);
+  && spawned.every((c) => c.special && c.script === 'special'), `${spawned.length} in the store`);
 check('and they arrive as themselves, not as a random face',
   spawned.map((c) => c.name).sort().join('|') === roster.map((s) => s.name).sort().join('|'));
 
@@ -195,7 +195,7 @@ check('everybody with somewhere fixed to be is standing on it',
   spots.length === nFixed && spots.every((s) => s.d < 0.9),
   `${spots.length} of ${nFixed}: ${spots.map((s) => `${s.act} ${s.d}m off`).join(' ')}`);
 
-// The nuisances draw complaints from anyone else in the shop.
+// The nuisances draw complaints from anyone else in the store.
 const gripes = await ev(() => {
   const g = window.__game;
   const said = [];
@@ -214,10 +214,10 @@ const gripes = await ev(() => {
    written down here and went stale the moment somebody new was one. */
 const nNuisance = await ev(() =>
   window.__specials.specialRoster().filter((sp) => sp.nuisance).length);
-check('and the rest of the shop has something to say about them',
+check('and the rest of the store has something to say about them',
   gripes.length === nNuisance && gripes.every((x) => x.got && x.line.length > 4),
   gripes.map((x) => `${x.kind}: ${x.line.slice(0, 44)}`).join(' | '));
-/* And when there is nobody else in to complain, the shop tells you itself
+/* And when there is nobody else in to complain, the store tells you itself
    -- every kind of nuisance needs its own lines for that. */
 const solo = await ev(() => {
   const g = window.__game;
@@ -239,13 +239,13 @@ const solo = await ev(() => {
   g.customers.length = 0;
   return { kinds, missing };
 });
-check('and with nobody else in, the shop says it to you directly',
+check('and with nobody else in, the store says it to you directly',
   solo.missing.length === 0,
   solo.missing.join(' ') || `${solo.kinds.length} kinds: ${solo.kinds.join(', ')}`);
 
-/* ---------- 4. talking them out of the shop ---------- */
+/* ---------- 4. talking them out of the store ---------- */
 // Explore each special's whole tree rather than one path through it: every
-// one of them must have a way out of the shop, must never loop forever, and
+// one of them must have a way out of the store, must never loop forever, and
 // must offer the player real choices at every turn.
 const trees = await ev(() => {
   const g = window.__game;
@@ -292,7 +292,7 @@ const trees = await ev(() => {
 
     /* The exhaustive walk stops six choices in, because past that it is
        exponential. Long trees end past that -- the woman who is offended
-       about the offence talks for four levels before she is anywhere near
+       about the offense talks for four levels before she is anywhere near
        agreeing to rent something -- so the walk alone was quietly claiming
        those endings did not exist.
 
@@ -361,13 +361,13 @@ check('and mashing one button always reaches the end of the conversation',
 /* The two who will not be told have no exit inside a single conversation
    by design -- they are worn down across many of them, with a cooling-off
    period in between, which is what the grind checks above walk end to end.
-   Everybody else can be got out of the shop in one go. */
+   Everybody else can be got out of the store in one go. */
 const GRINDERS = ['REEKER', 'SMOKER', 'SOVEREIGN'];
 /* Four shapes, and everybody in the roster is one of them.
      - shown the door, by a branch that calls leave()
      - sold something, and out through the counter like any customer
-       (the woman who is offended about the offence has no exit line at
-       all: she leaves having bought a film)
+       (the woman who is offended about the offense has no exit line at
+       all: she leaves having bought a movie)
      - worn down across many conversations, with a cooling-off period
      - sent off on an errand: the ones marked `immovable` in the roster,
        whose way out is not in their dialogue tree at all. Talking to them
@@ -381,7 +381,7 @@ const ERRAND = await ev(() =>
   window.__specials.specialRoster().filter((s) => s.immovable).map((s) => s.id));
 const noWayOut = trees.filter((t) => !t.exits && !t.sales
   && !GRINDERS.includes(t.id) && !ERRAND.includes(t.id));
-check('every one of them has a way out of the shop',
+check('every one of them has a way out of the store',
   noWayOut.length === 0,
   noWayOut.map((t) => t.id).join(' ') || 'nobody in the roster is a dead end');
 /* And the flag is not a way of dodging the check. What `immovable` means
@@ -433,10 +433,10 @@ check('the player gets real choices, not one button',
 // hand off to once they agree to rent.
 check('and they have plenty to say',
   trees.every((t) => t.lines >= 4) && trees.reduce((a, t) => a + t.lines, 0) >= 75,
-  `${trees.reduce((a, t) => a + t.lines, 0)} distinct lines before they even reach the till`);
+  `${trees.reduce((a, t) => a + t.lines, 0)} distinct lines before they even reach the register`);
 console.log(trees.map((t) => `        ${t.id.padEnd(10)} ${String(t.lines).padStart(3)} lines  ${String(t.replies).padStart(3)} replies  ${t.exits} exits  ${t.sales ? 'sells' : '-'}`).join('\n'));
 
-// These people never join the queue, so you can deal with them where they
+// These people never join the line, so you can deal with them where they
 // stand -- but an ordinary customer still has to come to the counter.
 const reach = await ev(() => {
   const g = window.__game;
@@ -469,7 +469,7 @@ check('but an ordinary customer still has to be at the counter to be served',
 const boom = await ev(async () => {
   const g = window.__game;
   g.customers.length = 0;
-  // An earlier check put the whole roster in the shop, him included, so
+  // An earlier check put the whole roster in the store, him included, so
   // clear whatever he left playing before watching him do it properly.
   g.boombox = null;
   g.sound.boomboxStop();
@@ -525,7 +525,7 @@ check('he sets it down and sets it up before he starts dancing',
 check('the music is running', boom.playing === true);
 check('and it is coming from the machine, not from your head',
   boom.near > boom.far && boom.far >= 0,
-  `${boom.far.toFixed(3)} across the shop, ${boom.near.toFixed(3)} standing over it`);
+  `${boom.far.toFixed(3)} across the store, ${boom.near.toFixed(3)} standing over it`);
 check('telling him to go does not teleport it into his hands',
   boom.told.box && boom.told.playing && boom.told.carrying !== 'BOOMBOX' && boom.told.packing,
   `still on the floor and playing: ${boom.told.box && boom.told.playing}`);
@@ -570,7 +570,7 @@ const grindTest = await ev(() => {
       // Did that attempt move him at all?
       if (c.resist !== undefined && c.resist >= before && c.state !== 'LEAVING') blind++;
       lastResist = c.resist;
-      // two seconds of shop time between attempts: generous mashing
+      // two seconds of store time between attempts: generous mashing
       for (let k = 0; k < 40; k++) { window.__cust.updateCustomer(c, 1 / 20, g.ctx); sim += 1 / 20; }
     }
     out[id] = {
@@ -604,7 +604,7 @@ check('and considerably longer than the other two',
   grindTest.SOVEREIGN.tries > grindTest.REEKER.tries * 1.4,
   `${grindTest.REEKER.tries} / ${grindTest.SMOKER.tries} / ${grindTest.SOVEREIGN.tries} exchanges`);
 
-/* And nobody camps in the shop all night if you simply ignore them. */
+/* And nobody camps in the store all night if you simply ignore them. */
 const ignored = await ev(() => {
   const g = window.__game;
   const out = {};
@@ -659,7 +659,7 @@ const stink = await ev(async () => {
   g.customers.length = 0;
   return { before, during, after, wentToCounter, wentAfter };
 });
-check('the shop knows when it is unbearable',
+check('the store knows when it is unbearable',
   !stink.before && stink.during && !stink.after);
 check('and nobody will come to the counter while it is',
   !stink.wentToCounter, `went anyway: ${stink.wentToCounter}`);
@@ -691,7 +691,7 @@ check('and brings it back to the screen, still holding it',
 check('and leaves it in the returns bin on his way out',
   errand.binned === 1, `${errand.binned} in the bin`);
 
-/* And he does that whether or not anybody ever gets him out of the shop.
+/* And he does that whether or not anybody ever gets him out of the store.
    He picked one up, wandered back to the screen with it, and then had no
    idea why he was holding it -- that has to end somewhere the clerk can
    reach, not in his hands forever. */
@@ -718,9 +718,9 @@ const strayBin = await ev(() => {
 });
 check('he does not keep it: it goes in the bin without him having to leave',
   strayBin.took && strayBin.binned >= 1 && !strayBin.stillHolding && !strayBin.left,
-  `binned after ${strayBin.minutes} minutes, still in the shop: ${!strayBin.left}`);
+  `binned after ${strayBin.minutes} minutes, still in the store: ${!strayBin.left}`);
 
-/* ---------- 4b. the ones with a wrong idea about the shop ---------- */
+/* ---------- 4b. the ones with a wrong idea about the store ---------- */
 const prem = await ev(() => {
   const D = window.__dlg;
   const keys = (t) => Object.keys(t);
@@ -739,7 +739,7 @@ const prem = await ev(() => {
     storms: keys(L).filter((k) => L[k].storms).length + keys(M).filter((k) => M[k].storms).length,
   };
 });
-check('there are a lot of different wrong ideas about this shop',
+check('there are a lot of different wrong ideas about this store',
   prem.lost + prem.dim >= 30, `${prem.lost} in the wrong building, ${prem.dim} with the wrong idea`);
 check('and every one of them is written all the way through', prem.bad.length === 0, prem.bad.join(' '));
 check('some of them take the correction badly and some do not',
@@ -808,7 +808,7 @@ check('and the short-tempered ones can be made to walk out',
   outcomes.stormed >= 8, `${outcomes.stormed} storm out when you correct them`);
 check('none of them is a dead end', outcomes.stuck.length === 0, outcomes.stuck.join(' '));
 
-/* ---------- 4c. talking about the film they are actually holding ---------- */
+/* ---------- 4c. talking about the movie they are actually holding ---------- */
 const talk = await ev(() => {
   const g = window.__game;
   const D = window.__dlg;
@@ -823,7 +823,7 @@ const talk = await ev(() => {
       c.x = 9.2; c.z = 0.8; c.state = 'QUEUE';
       g.customers.push(c);
       const node = D.talkTo(c, g.ctx, { atCounter: true });
-      // Follow every reply that opens a conversation about the film.
+      // Follow every reply that opens a conversation about the movie.
       (node.choices || []).forEach((r) => {
         const n1 = r.go ? r.go() : (r.fn ? r.fn() : null);
         if (!n1 || !n1.text) return;
@@ -835,9 +835,9 @@ const talk = await ev(() => {
         texts.forEach((t) => {
           distinct.add(t);
           checked++;
-          // Anything out of the film-chat bank has to belong to this genre.
-          // (Grumbling about a whole SECTION of the shop is fair game and
-          // is not talk about the film in their hand.)
+          // Anything out of the movie-chat bank has to belong to this genre.
+          // (Grumbling about a whole SECTION of the store is fair game and
+          // is not talk about the movie in their hand.)
           if (/\bsection\b|\bshelf\b|\bwall\b/i.test(t)) return;
           for (const other of T.GENRES) {
             if (other === genre) continue;
@@ -872,7 +872,7 @@ const bank = await ev(() => {
 });
 check('every archetype has a real bank of lines behind it',
   bank.thin.length === 0, bank.thin.join(' ') || `thinnest is fine`);
-check('and the shop as a whole has hundreds of them',
+check('and the store as a whole has hundreds of them',
   bank.total >= 600, `${bank.total} lines across ${bank.count} archetypes`);
 
 /* ---------- 4d. business happens at the counter, or not at all ---------- */
@@ -889,7 +889,7 @@ const gate = await ev(() => {
   far.script = 'rent'; far.hasMoney = true; far.queueIndex = -1;
   place(far, 2.0, 6.5, 'BROWSING');
   out.farWhy = g.cannotServe(far);
-  // ...and talking to them there must not open a till.
+  // ...and talking to them there must not open a register.
   g.talkToPerson(far);
   const node = g.dlg.node;
   out.farText = (node && node.text) || '';
@@ -923,7 +923,7 @@ const gate = await ev(() => {
 check('somebody out in the aisles cannot be rung up',
   gate.farWhy === 'not at the counter' && !gate.farSells,
   `"${gate.farWhy}" / "${gate.farText.slice(0, 38)}"`);
-check('and talking to them there gets you a conversation, not a till',
+check('and talking to them there gets you a conversation, not a register',
   gate.farText !== gate.nearText);
 check('at the window, at the front of the line, they can be',
   gate.nearWhy === '' && gate.nearSells, `"${gate.nearText.slice(0, 38)}"`);
@@ -988,7 +988,7 @@ const changeHeld = await ev(() => {
   c.awaitingChange = true; c.changeDue = 2.01;
   g.ctx.leave(c);
   const afterLeave = c.state;
-  // Run the shop for a moment: she should be making her way to the window.
+  // Run the store for a moment: she should be making her way to the window.
   const before = { x: c.x, z: c.z };
   for (let i = 0; i < 2400; i++) window.__cust.updateCustomer(c, 1 / 60, g.ctx);
   const at = { state: c.state, x: +c.x.toFixed(2), z: +c.z.toFixed(2) };
@@ -1026,7 +1026,7 @@ check('a swarm night is mostly them', swarmNight.found && swarmNight.slots >= 4,
 await ev(() => { window.__game.timeScale = 30; });
 await wait(4000);
 await ev(() => { window.__game.timeScale = 1; });
-check('the shop survives a room full of them',
+check('the store survives a room full of them',
   ['PLAY', 'REPORT', 'PAUSE'].includes(await ev(() => window.__game.state)),
   await ev(() => window.__game.state));
 
@@ -1138,7 +1138,7 @@ const off = await ev(() => {
     sample: runs[0].text.slice(0, 200),
   };
 });
-check('she is offended about the offence, not the thing',
+check('she is offended about the offense, not the thing',
   off.offended === off.n, `${off.offended} of ${off.n}`);
 check('and the conversation ends up somewhere else entirely',
   off.subjects.length >= 3, off.subjects.join(', '));

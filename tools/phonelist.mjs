@@ -50,7 +50,7 @@ check('four people in the same coat get four different names',
 console.log('      all in a ' + twins.coat + ':');
 twins.labels.forEach((l) => console.log('        - ' + l));
 
-/* ---------- 2. and it does not over-explain a quiet shop ---------- */
+/* ---------- 2. and it does not over-explain a quiet store ---------- */
 const plain = await ev(() => {
   const g = window.__game;
   g.customers.length = 0; g.queue.length = 0;

@@ -3,7 +3,7 @@
    into a single static mesh, plus a handful of dynamic pieces
    (the doors, tapes, the TV) that move or swap textures.
 
-   Floor plan, metres:
+   Floor plan, meters:
        x: 0 .. 13      z: 0 .. 9.6      ceiling: 3.0
        front wall (glass + door) at z = 0, street beyond
        service counter along the right at z = 1.2 .. 1.95
@@ -92,7 +92,7 @@ export const SHELVES = [
   { genre: 'FAMILY', axis: 'x', x0: 6.70, x1: 12.40, z0: 9.15, z1: 9.60, top: 2.20, browse: [{ x: 8.1, z: 8.62, yaw: 0 }, { x: 10.6, z: 8.62, yaw: 0 }] },
   /* The left wall was a second ACTION run: decorative, unbrowsable, and
      confusing next to the real one. It is the games section now -- 1996 is
-     exactly when a video shop started renting cartridges alongside tapes. */
+     exactly when a video store started renting cartridges alongside tapes. */
   { genre: 'GAMES', axis: 'z', wall: true, x0: 0.02, x1: 0.56, z0: 2.40, z1: 8.40, top: 2.05, browse: [{ x: 1.06, z: 3.9, yaw: -Math.PI / 2 }, { x: 1.06, z: 6.8, yaw: -Math.PI / 2 }] },
 ];
 
@@ -142,7 +142,7 @@ export function buildWorld(T) {
 
   /* ---------------- floor + ceiling ----------------
      The worn path used to be a second quad laid five millimetres over the
-     carpet, and the welcome mat a third over that. At a metre and a half of
+     carpet, and the welcome mat a third over that. At a meter and a half of
      eye height and a near plane of eight centimetres, five millimetres is
      well inside the 1/z depth buffer's resolution out across the room, so
      the two surfaces traded pixels as you walked -- the glitching in front
@@ -192,16 +192,16 @@ export function buildWorld(T) {
   });
   // kick rail and the sign taped to the front
   mb.box(C.x0, 0, C.z0 - 0.03, C.x1, 0.09, C.z0, { all: { tex: T.wallLowerTrim, uv: [0, 0, 64, 16], sub: [5, 1, true] } });
-  /* Taped to the FRONT of the counter, so they are read from the shop floor
+  /* Taped to the FRONT of the counter, so they are read from the store floor
      -- which is the -Z side, and that is yaw PI. At yaw 0 they were wound
      for a reader standing behind the counter, so from where the customers
-     queue "PLEASE REWIND" came out as "DNIWER ESAELP". */
+     line up "PLEASE REWIND" came out as "DNIWER ESAELP". */
   mb.plate(10.25, 0.44, C.z0 - 0.012, 0.66, 0.33, Math.PI, T.rewindSign, [0, 0, 64, 32], 0);
   mb.plate(11.75, 0.44, C.z0 - 0.012, 0.64, 0.32, Math.PI, T.lateFeeSign, [0, 0, 64, 32], 0);
 
   /* Back counter behind the clerk. Only the face against the wall is
      skipped: the short end by the popcorn cart was being skipped too, and
-     from the shop floor that read as a hole in the side of the counter. */
+     from the store floor that read as a hole in the side of the counter. */
   mb.box(12.30, 0, 3.70, 12.98, 0.92, 5.60, {
     all: { tex: T.counterFront, uv: [0, 0, 64, 64], sub: [3, 1, true] },
     py: { tex: T.counterTop, uv: [0, 0, 64, 64], sub: [4, 1, true] },
@@ -228,7 +228,7 @@ export function buildWorld(T) {
 
   /* ---------------- dressing ---------------- */
   /* Candy rack. It used to stand square in the only lane between the aisles
-     and the till, and every shopper coming to the counter clipped a corner
+     and the register, and every shopper coming to the counter clipped a corner
      of it and spent a second sliding round. It lives by the door now, off
      the walk-up line entirely, where an impulse rack belongs anyway. */
   buildCandyRack(mb, T, 3.15, 0.12, 3.85, 0.68);
@@ -269,8 +269,10 @@ export function buildWorld(T) {
     const w = (DOOR_X1 - DOOR_X0) / 2;
     b.box(0, 0, -0.03, w, DOOR_H, 0.03, {
       all: { tex: T.doorFrame, uv: [0, 0, 8, 64] },
-      pz: { tex, uv: [0, 0, 64, 64], flags: F_BLEND },
-      nz: { tex, uv: [0, 0, 64, 64], flags: F_BLEND },
+      /* Subdivided: one 0.8 x 2.15m pane is a big enough quad for affine
+         mapping to slide the sign around as you walk past it. */
+      pz: { tex, uv: [0, 0, 64, 128], flags: F_BLEND, sub: [2, 5, false] },
+      nz: { tex, uv: [0, 0, 64, 128], flags: F_BLEND, sub: [2, 5, false] },
     });
     // stiles so the glass reads as a door, not a floating pane
     b.box(0, 0, -0.035, 0.07, DOOR_H, 0.035, { all: { tex: T.doorFrame, uv: [0, 0, 16, 64] } });
@@ -293,7 +295,7 @@ export function buildWorld(T) {
   }
   const cashMesh = cashB.build();
 
-  /* The boombox. Built as its own mesh because it is not part of the shop:
+  /* The boombox. Built as its own mesh because it is not part of the store:
      a man carries it in, puts it down, and carries it out again. */
   const boomB = new MeshBuilder();
   boomB.light = () => 1;
@@ -364,7 +366,7 @@ export function buildWorld(T) {
       { all: { tex: T.vacBody, uv: [0, 0, 48, 16] }, ny: null });
     vacB.box(-0.19, 0, -0.15, 0.19, 0.035, -0.13,
       { all: { tex: T.vacMetal, uv: [0, 0, 48, 6] } });
-    // motor housing sat on top of it
+    // motor housing sitting on top of it
     vacB.box(-0.13, 0.11, -0.10, 0.13, 0.27, 0.10,
       { all: { tex: T.vacBody, uv: [0, 0, 40, 24] } });
     // the handle, raked back, with the bag hung off it
@@ -378,7 +380,7 @@ export function buildWorld(T) {
   }
   const vacMesh = vacB.build();
 
-  /* A large, from Bertucci's on the parade. Corrugated card, printed
+  /* A large, from Bertucci's on the block. Corrugated card, printed
      badly, and warm. Built as its own mesh because it is carried in,
      put down on the counter and carried out again. */
   const pizzaB = new MeshBuilder();
@@ -402,8 +404,11 @@ export function buildWorld(T) {
     pizzaMesh,
     tvMesh, tvPos, tvTextures,
     cashMesh,
+    /* Two leaves, and only one of them has the sign hanging in it. */
     doorOpenMesh: doorLeaf(T.doorGlass),
+    doorOpenSignMesh: doorLeaf(T.doorGlassOpen),
     doorLockedMesh: doorLeaf(T.doorLocked),
+    doorLockedSignMesh: doorLeaf(T.doorLockedSign),
     storageDoorMesh: storageLeaf(T, false),
     storageDoorHitMesh: storageLeaf(T, true),
     tapeTex: tape,
@@ -588,7 +593,7 @@ function storageLeaf(T, damaged) {
   b.light = () => 0.72;
   const w = SDOOR_X1 - SDOOR_X0;
   const face = damaged ? T.steelDoorHit : T.steelDoor;
-  /* Subdivided. A metre wide and two metres tall is a big quad, and the
+  /* Subdivided. A meter wide and two meters tall is a big quad, and the
      rasteriser maps texture affinely across whatever a triangle covers --
      so the whole face slid about as you walked past it, which is the same
      thing that used to happen to the popcorn sign and the counter front.
@@ -772,7 +777,7 @@ function buildPopcornCart(mb, T, x0, z0, x1, z1) {
    The picture used to be wound the wrong way round, so it was culled as a
    back face from the only side you could ever see it from, and the whole
    set read as a plain brown box bolted to nothing. It is now a bezelled
-   tube on a proper ceiling arm, and the screen faces the shop floor. */
+   tube on a proper ceiling arm, and the screen faces the store floor. */
 function buildTelevision(T) {
   const b = new MeshBuilder();
   b.light = () => 0.9;
@@ -792,7 +797,7 @@ function buildTelevision(T) {
   frame(-HW, SH, HW, HH);              // above
   frame(-HW, -SH, -SW, SH);            // left
   frame(SW, -SH, HW, SH);              // right
-  // the picture, wound to face -Z so it is visible from the shop floor
+  // the picture, wound to face -Z so it is visible from the store floor
   b.quad([SW, -SH, IZ - 0.004], [-SW, -SH, IZ - 0.004], [-SW, SH, IZ - 0.004], [SW, SH, IZ - 0.004],
     T.staticFrames[0], [2, 2, 62, 62], F_EMIT);
   // the arm it hangs off, running up to the ceiling
@@ -1008,9 +1013,9 @@ function makeTapeTextures() {
 }
 
 /**
- * A VHS clamshell: 0.19 x 0.11 x 0.028 m, origin at its centre.
+ * A VHS clamshell: 0.19 x 0.11 x 0.028 m, origin at its center.
  * A cartridge box is a different object -- shorter, wider and much
- * thicker -- so it reads as one across the shop and in your hands.
+ * thicker -- so it reads as one across the store and in your hands.
  */
 function buildTapeMesh(tapeTex) {
   const out = {};
@@ -1077,7 +1082,7 @@ export function collide(x, z, r, solids, doorOpen, storageOpen) {
       const d = Math.sqrt(d2);
       if (d > 0.0001) { x = cx + (dx / d) * r; z = cz + (dz / d) * r; }
       else {
-        // dead centre: push out along the shallowest axis
+        // dead center: push out along the shallowest axis
         const px = Math.min(x - s.x0, s.x1 - x), pz = Math.min(z - s.z0, s.z1 - z);
         if (px < pz) x = (x - s.x0 < s.x1 - x) ? s.x0 - r : s.x1 + r;
         else z = (z - s.z0 < s.z1 - z) ? s.z0 - r : s.z1 + r;

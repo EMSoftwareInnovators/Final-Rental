@@ -32,7 +32,7 @@ const fled = await ev(() => {
   g.customers.length = 0;
   g.officerDone = true;
   if (g.officer) { g.officer.state = 'DONE'; g.officer.hidden = true; }
-  // stand the killer in the shop and force the "walks out" branch
+  // stand the killer in the store and force the "walks out" branch
   const k = g.killer;
   k.plan.appears = true;
   k.phase = 'CUSTOMER';
@@ -76,7 +76,7 @@ check('the unit finding nobody brings a deputy inside, not two lines of text',
 check('he is a person in the room, not a message',
   arrives.drawn === true && arrives.at[1] > 0.4, `standing at ${arrives.at}`);
 check('and the shift does not end on it', arrives.ended === 'PLAY', arrives.ended);
-check('he waits at the counter rather than shouting across the shop',
+check('he waits at the counter rather than shouting across the store',
   /DEPUTY IS AT THE COUNTER/.test(arrives.obj), arrives.obj);
 
 /* ---------- 3. the clock does not charge you for him ---------- */
@@ -125,7 +125,7 @@ const said = await ev(() => {
        Not one phrasing -- the point is that every walk of the tree tells
        you the description was a perfect match, however he puts it. */
     matched: lines.filter((l) => /matched (what|ours|us)|the same man|match(ed)? .*to the letter/i.test(l)).length,
-    vigilant: lines.filter((l) => /eyes on|keep the door|see the parade|pick that phone up/i.test(l)).length,
+    vigilant: lines.filter((l) => /eyes on|keep the door|see the block|pick that phone up/i.test(l)).length,
     sample: lines[0].slice(0, 240),
   };
 });

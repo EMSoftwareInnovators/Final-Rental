@@ -27,7 +27,7 @@ await wait(500);
 await ev(() => { window.__game.estT = 99; });
 await wait(700);
 
-/* Put him in the shop as a customer, call it in, and hold the sirens. */
+/* Put him in the store as a customer, call it in, and hold the sirens. */
 const arm = () => ev(() => {
   const g = window.__game;
   g.state = 'PLAY';
@@ -130,7 +130,7 @@ const cuffed = await ev(async () => {
   return { started, phases: [...seen], sawDeputyInside, sawCuffPose, cuffedFlag,
     frozenDuring, state: g.state, kind: g.endKind, panel };
 });
-check('a deputy is dispatched into the shop rather than a line of text',
+check('a deputy is dispatched into the store rather than a line of text',
   cuffed.started && cuffed.sawDeputyInside);
 check('he walks in, cuffs him, and walks him out',
   cuffed.phases.includes('IN') && cuffed.phases.includes('CUFF') && cuffed.phases.includes('OUT'),

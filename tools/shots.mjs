@@ -7,7 +7,12 @@
 import { chromium } from 'playwright-core';
 import { mkdirSync } from 'node:fs';
 
-const OUT = 'docs/shots';
+/* --clean takes the same set with the tape emulation switched off: no
+   quantization, no dither, no chroma bleed, no scanlines. Same geometry,
+   same lighting, same 320x240 buffer -- just the picture the renderer
+   actually produces, before it is put through a VCR. */
+const CLEAN = process.argv.includes('--clean');
+const OUT = CLEAN ? 'docs/shots/clean' : 'docs/shots';
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({
@@ -21,10 +26,16 @@ await page.goto('http://localhost:8080/', { waitUntil: 'load' });
 await page.waitForTimeout(1800);
 const ev = (fn, arg) => page.evaluate(fn, arg);
 
+/* Clear the toasts, and park the rolling head-switching band off the top of
+   the frame. The band is the right thing for the game and the wrong thing
+   for a still: it rolls up the picture every few seconds and lands wherever
+   it lands, so half a set comes back with a white bar through the middle of
+   it. Everything else about the tape emulation stays on. */
 const hush = () => ev(() => {
-  const u = window.__game.ui;
-  u._toasts.forEach((t) => t.el.remove());
-  u._toasts.length = 0;
+  const g = window.__game;
+  g.ui._toasts.forEach((t) => t.el.remove());
+  g.ui._toasts.length = 0;
+  g.post.trackY = -100; g.post.trackTimer = 99;
 });
 
 const shot = async (name) => {
@@ -34,7 +45,10 @@ const shot = async (name) => {
   console.log('  ', name);
 };
 
-await ev(() => { window.__game.sound.muted = true; });
+await ev((clean) => {
+  window.__game.sound.muted = true;
+  if (clean) { window.__game.opts.vhs = false; window.__game.applyOptions(); }
+}, CLEAN);
 
 /* ---- 1. the title card ---- */
 await shot('01-title');
@@ -77,10 +91,11 @@ await ev(() => {
   };
 });
 
-/* ---- 2. the shop from just inside the door ---- */
+/* ---- 2. the store from just inside the door. The whole floor in one
+        frame, and nobody on it yet: genre wall, free racks, counter. ---- */
 await ev(() => window.__pose.clear());
-await ev(() => window.__pose.cam(6.0, 1.5, 0.10, 0.02));
-await shot('02-the-shop');
+await ev(() => window.__pose.cam(2.2, 1.10, 1.06, -0.08));
+await shot('02-the-store');
 
 /* ---- 3. behind the counter, a customer at the window ---- */
 await ev(async () => {
@@ -98,9 +113,9 @@ await ev(async () => {
   g.player.held.push(T.makeTape('HORROR', g.rng, { rewound: false }));
   g.rewinder.tape = T.makeTape('SCIFI', g.rng, { rewound: false });
   g.rewinder.t = 2.1;
-  g.till = 14.5;
+  g.drawer = 14.5;
 });
-await ev(() => window.__pose.cam(10.78, 3.05, Math.PI - 0.03, -0.05));
+await ev(() => window.__pose.cam(10.78, 3.05, Math.PI - 0.03, -0.15));
 await shot('03-the-counter');
 
 /* ---- 4. the notepad, held against the person in front of you ---- */
@@ -116,7 +131,7 @@ await shot('04-the-notepad');
 
 /* ---- 5. the aisles ---- */
 await ev(() => { const g = window.__game; g.notesOpen = false; g.ui.hideNotes(); });
-await ev(() => window.__pose.cam(4.55, 6.6, -0.30, 0.0));
+await ev(() => window.__pose.cam(4.55, 6.6, -0.30, -0.10));
 await shot('05-the-aisles');
 
 /* ---- 6. the phone ---- */
@@ -130,7 +145,7 @@ await ev(async () => {
   g.pickUpPhone();
   await new Promise((r) => requestAnimationFrame(r));
 });
-await ev(() => window.__pose.cam(11.6, 3.9, Math.PI * 0.86, -0.06));
+await ev(() => window.__pose.cam(11.6, 3.9, Math.PI * 0.86, -0.14));
 await shot('06-the-phone');
 
 /* ---- 7. the popcorn, and the machine still going ---- */
@@ -160,7 +175,7 @@ await ev(async () => {
   for (let i = 0; i < 3000 && (!g.bus || g.bus.made < g.bus.total); i++) g.updateBus(1 / 30);
   await window.__pose.settle(300);
 });
-await ev(() => window.__pose.cam(10.75, 3.30, -1.82, -0.02));
+await ev(() => window.__pose.cam(10.75, 3.30, -1.82, -0.13));
 await shot('08-the-coach');
 
 /* ---- 9. the storefront, from the street ---- */

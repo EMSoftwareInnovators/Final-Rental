@@ -113,7 +113,7 @@ check('every pile is on floor you can walk on',
   visible.inSolid === 0, `${visible.inSolid} of ${visible.n} inside something`);
 check('none of it is under the machine or either counter',
   visible.underCart === 0 && visible.underBack === 0 && visible.underCounter === 0,
-  `cart ${visible.underCart}, back counter ${visible.underBack}, till ${visible.underCounter}`);
+  `cart ${visible.underCart}, back counter ${visible.underBack}, register ${visible.underCounter}`);
 
 /* ---------- 3. he takes some shifting ---------- */
 const eject = await ev(() => {
@@ -139,7 +139,7 @@ const eject = await ev(() => {
   }
   return { goes, landed, said, distinct: lines.size, state: c.state };
 });
-check('he can be got out of the shop', eject.state === 'LEAVING' || eject.state === 'GONE',
+check('he can be got out of the store', eject.state === 'LEAVING' || eject.state === 'GONE',
   `after ${eject.goes} goes`);
 check('but not in one or two goes', eject.goes > 4, `${eject.goes} goes, ${eject.landed} of them landed`);
 check('and he has plenty to say while it happens',
@@ -208,7 +208,7 @@ check('and it can be looked at from where it stands, in the back room',
   reach.hits >= 3, reach.seen.join(', '));
 check('and looking at it offers to take it',
   /Take the vacuum/.test(reach.prompt), reach.prompt);
-check('and it is in the back room, not on the shop floor',
+check('and it is in the back room, not on the store floor',
   vac.inBackRoom, `standing at ${vac.home}`);
 check('you can pick it up and put it down again',
   vac.held && vac.dropped, `put down at ${vac.where}`);
@@ -274,7 +274,7 @@ const clean = await ev(() => {
   for (let i = 0; i < 300; i++) g.updateVacuum(1 / 30);
   const idle = g.spills.length;
 
-  // standing on the far side of the shop with it running does nothing either
+  // standing on the far side of the store with it running does nothing either
   g.input.down.add('KeyE');
   g.player.x = 2.0; g.player.z = 6.0;
   for (let i = 0; i < 300; i++) g.updateVacuum(1 / 30);
@@ -378,7 +378,7 @@ const closing = await ev(() => {
     }
     return { state: g.state, obj: obj() };
   };
-  // a clean shop closes
+  // a clean store closes
   g.spills.length = 0; g.popper.running = false;
   const clean = run();
 
@@ -394,7 +394,7 @@ const closing = await ev(() => {
   g.popper.running = false;
   return { clean, messy, noisy };
 });
-check('a tidy shop closes', closing.clean.state === 'REPORT', closing.clean.state);
+check('a tidy store closes', closing.clean.state === 'REPORT', closing.clean.state);
 check('a floor covered in popcorn does not',
   closing.messy.state === 'PLAY' && /popcorn all over the floor/.test(closing.messy.obj),
   closing.messy.obj);

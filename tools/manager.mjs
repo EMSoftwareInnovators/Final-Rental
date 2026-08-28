@@ -66,7 +66,7 @@ const wall = await ev(() => {
     notYourFault: /not about you|not asking YOU|isn't a complaint about you/i.test(all),
   };
 });
-check('no conversation with her ever gets her out of the shop',
+check('no conversation with her ever gets her out of the store',
   wall.gone === 0, `${wall.gone} of ${wall.n} left by talking`);
 check('and she keeps asking for a manager whatever you say',
   wall.asksManager === wall.n, `${wall.asksManager} of ${wall.n}`);
@@ -142,16 +142,16 @@ const cord = await ev(() => {
   return {
     window: at(10.75, 0.80),          // the service position
     endOfCounter: at(11.6, 0.62),     // where she stands
-    behindTill: at(12.4, 2.0),        // the clerk's side
-    lobby: at(6.6, 2.2),              // the middle of the shop
+    behindRegister: at(12.4, 2.0),        // the clerk's side
+    lobby: at(6.6, 2.2),              // the middle of the store
     horror: at(2.4, 5.6),             // the far aisle
     door: at(6.0, 0.55),              // the doorway
   };
 });
 check('the flex reaches the counter, both sides of it',
-  cord.window && cord.endOfCounter && cord.behindTill,
-  `window ${cord.window}, end ${cord.endOfCounter}, till ${cord.behindTill}`);
-check('and reaches none of the shop floor',
+  cord.window && cord.endOfCounter && cord.behindRegister,
+  `window ${cord.window}, end ${cord.endOfCounter}, register ${cord.behindRegister}`);
+check('and reaches none of the store floor',
   !cord.lobby && !cord.horror && !cord.door,
   `lobby ${cord.lobby}, aisle ${cord.horror}, door ${cord.door}`);
 
@@ -188,7 +188,7 @@ const hand = await ev(() => {
   g.customers.length = 0; g.managerCall = null;
   return out;
 });
-check('you cannot hand the receiver to somebody across the shop',
+check('you cannot hand the receiver to somebody across the store',
   hand.outOfRange === true);
 check('but you can when she is at the counter', hand.handed === true);
 check('she has a whole conversation with him, and it takes a while',

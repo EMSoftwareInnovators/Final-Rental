@@ -99,7 +99,7 @@ check('and the camera turns', moved > 0.05, `yaw moved ${moved.toFixed(3)}`);
 
 /* ---- now the part that was actually broken: the next night ---- */
 /* Run the night out. Midnight shuts the door rather than ending the shift,
-   so the shop has to empty and the tapes have to be away before a report
+   so the store has to empty and the tapes have to be away before a report
    appears -- put the strays back as they turn up. */
 await ev(() => { window.__game.timeScale = 60; });
 for (let i = 0; i < 260; i++) {
@@ -189,7 +189,7 @@ check('and the button that opens doors is not also the one that bolts them',
   `bolt on ${boltKeys.bolt.join(',')}, select on ${boltKeys.confirm.join(',')} (${boltKeys.onA})`);
 
 /* ---------- the door is not one big quad ---------- */
-/* A metre wide and two metres tall in a single quad is mapped affinely
+/* A meter wide and two meters tall in a single quad is mapped affinely
    across whatever a triangle covers, so the whole face slid about as you
    walked past it. The fix is the same one the popcorn sign and the counter
    front got: split it up until each cell is near enough square on screen

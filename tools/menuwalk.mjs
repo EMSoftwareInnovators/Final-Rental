@@ -78,7 +78,7 @@ const hangUps = await page.evaluate(async () => {
 check('hanging up the phone never pauses the shift',
   hangUps.every((h) => h.state === 'PLAY'),
   hangUps.map((h) => `${h.pick.slice(0, 10)}:${h.state}`).join(' '));
-check('and hands the shop back rather than leaving you frozen',
+check('and hands the store back rather than leaving you frozen',
   hangUps.every((h) => !h.frozen && !h.active));
 
 /* Back into the pause menu for what follows. */

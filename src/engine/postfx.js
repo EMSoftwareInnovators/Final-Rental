@@ -5,7 +5,7 @@
    the frame, rolling tracking bands, scanlines and phosphor decay.
    ============================================================ */
 
-// 4x4 Bayer, biased to +/- half a quantisation step
+// 4x4 Bayer, biased to +/- half a quantization step
 const BAYER = new Int32Array([
   0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5,
 ].map((v) => v - 8));
@@ -151,7 +151,7 @@ export class PostFX {
         }
         if (flashAdd) { R += flashAdd; G += flashAdd; B += flashAdd; }
 
-        // 15-bit quantisation with ordered dither -- the PS1 signature
+        // 15-bit quantization with ordered dither -- the PS1 signature
         if (dither) {
           const d = BAYER[((y & 3) << 2) | (x & 3)];
           R += d; G += d; B += d;

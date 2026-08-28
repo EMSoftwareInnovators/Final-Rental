@@ -36,7 +36,7 @@ for (let i = 0; i < 40; i++) {
 check('briefing done', await ev(() => window.__game.officerDone));
 
 /* Force a returning customer with a late, unrewound HORROR tape, and hold
-   the door on everybody else -- customers are scheduled against the shop
+   the door on everybody else -- customers are scheduled against the store
    floor clock, so one could otherwise wander in and take index zero. */
 const SUBJECT = await ev(() => {
   const g = window.__game;
@@ -57,7 +57,7 @@ for (let i = 0; i < 80; i++) {
   if (st && st.state === 'WAITING') break;
   await wait(200);
 }
-check('customer walked in and queued', ((await subject()) || {}).state === 'WAITING');
+check('customer walked in and got in line', ((await subject()) || {}).state === 'WAITING');
 
 await ev(() => { window.__game.timeScale = 1; });
 await look(10.75, 3.05, Math.PI, 0.0);
@@ -94,10 +94,10 @@ await wait(300);
 const hand = await ev(() => ({
   cash: window.__game.player.cash.tendered,
   owed: window.__game.player.cash.owed,
-  till: window.__game.till,
+  drawer: window.__game.drawer,
 }));
-check('the cash is in your hand, not the till', hand.cash >= 3 && hand.owed >= 3 && hand.till === 0,
-  `hand $${hand.cash.toFixed(2)} / owed $${hand.owed.toFixed(2)} / till $${hand.till.toFixed(2)}`);
+check('the cash is in your hand, not the register', hand.cash >= 3 && hand.owed >= 3 && hand.drawer === 0,
+  `hand $${hand.cash.toFixed(2)} / owed $${hand.owed.toFixed(2)} / register $${hand.drawer.toFixed(2)}`);
 
 await ev(() => window.__game.ui.finishTyping()); await wait(200);
 await page.keyboard.press('Enter'); await wait(300);
@@ -122,12 +122,12 @@ check('the register offers to take the cash', /Ring up/.test(pReg), pReg.slice(0
 await page.keyboard.press('KeyE');
 await wait(300);
 const after = await ev(() => ({
-  till: window.__game.till,
+  drawer: window.__game.drawer,
   cash: window.__game.player.cash.owed,
   change: window.__game.changeOwed === undefined ? window.__game.player.changeInHand : 0,
 }));
-check('ringing up moves it into the drawer', after.till >= 3 && after.cash === 0,
-  `till $${after.till.toFixed(2)}`);
+check('ringing up moves it into the drawer', after.drawer >= 3 && after.cash === 0,
+  `register $${after.drawer.toFixed(2)}`);
 
 // if they overpaid, they are still standing there waiting
 const owedChange = await ev((id) => {

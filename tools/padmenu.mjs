@@ -68,7 +68,7 @@ async function session(id, expectScheme, expectSelect) {
     `now on item ${(await st()).menu}`);
   await flick(1, -1);
   check(`${label}: and moves it back up`, (await st()).menu === 0);
-  check(`${label}: the pad is recognised as the right family`,
+  check(`${label}: the pad is recognized as the right family`,
     (await st()).scheme === expectScheme, (await st()).scheme);
 
   await flick(1, 1); await flick(1, 1); await flick(1, 1);   // down to OPTIONS
@@ -322,7 +322,7 @@ await session('DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c)', '
       a: b['1'] || [], bBtn: b['2'] || [], x: b['3'] || [], y: b['5'] || [], r3: b['11'] || [],
     };
   });
-  check('an Xbox pad on a Mac is recognised even though the browser will not describe it',
+  check('an Xbox pad on a Mac is recognized even though the browser will not describe it',
     mac.known && mac.notOnPc && mac.notOther);
   check('and its buttons are where they actually are on that machine',
     mac.a.includes('confirm') && mac.bBtn.includes('back') && mac.x.includes('drop')
@@ -343,7 +343,7 @@ await session('DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c)', '
   });
   check('so a Mac Xbox pad works the moment it is plugged in',
     applied.known === 'xbox-macos' && !applied.trusted && applied.confirm.includes(1),
-    `recognised as ${applied.known || 'nothing'}, select on ${applied.confirm.join(',')}`);
+    `recognized as ${applied.known || 'nothing'}, select on ${applied.confirm.join(',')}`);
 
   /* ---- the right stick ---- */
   const look = await ev(() => {

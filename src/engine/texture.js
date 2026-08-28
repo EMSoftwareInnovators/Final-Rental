@@ -439,8 +439,8 @@ export function buildTextures() {
      its cradle, and a coiled cord that hangs off the bottom.           */
   /* -------- the telephone --------
      A beige desk set of the kind that sat on every counter in 1996: warm
-     off-white plastic gone slightly yellow, a dark grey keypad well with
-     twelve square light keys, and the shop's own number on a paper card
+     off-white plastic gone slightly yellow, a dark gray keypad well with
+     twelve square light keys, and the store's own number on a paper card
      under a plastic window in the middle of the dial. Charcoal read as a
      black slab from across the room; beige reads as a telephone. */
   const BEIGE = '#cfc3a4';
@@ -546,27 +546,77 @@ export function buildTextures() {
     g.fillStyle = 'rgba(40,50,40,.25)'; g.fillRect(0, 56, w, 8);
   });
 
-  T.doorGlass = makeTex(64, 64, (g, w, h) => {
+  /* The door leaves are 0.80m across and 2.15m tall, so a square texture
+     stretched over one squashes everything on it to a third of its width --
+     which is what turned a hanging OPEN sign into two red smudges. These
+     are 64 x 128: not the leaf's exact proportions, but the sampler masks
+     u and v with width-1 and height-1, so both have to stay powers of two.
+
+     The sign itself is drawn the way the real ones read from the sidewalk:
+     a bright neon tube on a dark plate, not dark text on a light one. At
+     320x240 from across the street the letters are a few pixels wide and
+     nobody is reading them anyway -- what has to survive the downscale is
+     the shape and the color of something lit in a dark window, and glowing
+     red on black survives it where thin dark strokes do not. */
+  const doorPane = (g, w, h, tint) => {
     g.clearRect(0, 0, w, h);
-    g.fillStyle = 'rgba(120,160,180,.15)'; g.fillRect(0, 0, w, h);
+    g.fillStyle = tint; g.fillRect(0, 0, w, h);
+    // the long diagonal reflection down the glass
     g.fillStyle = 'rgba(255,255,255,.10)';
-    g.beginPath(); g.moveTo(0, 40); g.lineTo(24, 0); g.lineTo(34, 0); g.lineTo(4, 50); g.fill();
-    // OPEN sign hanging in the glass
-    g.fillStyle = 'rgba(20,10,10,.85)'; g.fillRect(16, 12, 32, 16);
-    g.fillStyle = '#ff4b3a'; g.font = 'bold 10px "Courier New",monospace';
-    g.textAlign = 'center'; g.fillText('OPEN', 32, 24);
-    // push bar
-    g.fillStyle = '#9aa0a6'; g.fillRect(4, 36, 56, 4);
+    g.beginPath(); g.moveTo(0, 77); g.lineTo(30, 6); g.lineTo(42, 6); g.lineTo(10, 90); g.fill();
+    g.fillStyle = 'rgba(255,255,255,.05)';
+    g.beginPath(); g.moveTo(28, 120); g.lineTo(56, 24); g.lineTo(62, 30); g.lineTo(38, 126); g.fill();
+    g.fillStyle = 'rgba(40,50,40,.22)'; g.fillRect(0, h - 11, w, 11);   // grime at the kick
+  };
+
+  /* A lit tube sign: dark plate, glow, tube, then the word inside it. */
+  const neonSign = (g, x, y, sw, sh, word, hue, px) => {
+    g.save();
+    g.fillStyle = 'rgba(14,8,8,.9)';
+    g.fillRect(x, y, sw, sh);
+    g.shadowColor = hue; g.shadowBlur = 5;
+    g.strokeStyle = hue; g.lineWidth = 1.5;
+    g.strokeRect(x + 2, y + 2, sw - 4, sh - 4);
+    g.font = `bold ${px}px "Courier New",monospace`;
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = hue; g.shadowBlur = 6;                 // the halo around the tube
+    g.fillText(word, x + sw / 2, y + sh / 2 + 0.5);
+    g.shadowBlur = 0; g.fillStyle = '#fff2ec';           // and the tube core, white-hot
+    g.fillText(word, x + sw / 2, y + sh / 2 + 0.5);
+    g.restore();
+  };
+
+  const pushBar = (g, w, color) => {
+    g.fillStyle = color; g.fillRect(3, 77, w - 6, 4);
+    g.fillStyle = 'rgba(0,0,0,.35)'; g.fillRect(3, 81, w - 6, 2);
+  };
+
+  T.doorGlass = makeTex(64, 128, (g, w, h) => {
+    doorPane(g, w, h, 'rgba(120,160,180,.15)');
+    pushBar(g, w, '#9aa0a6');
   });
 
-  T.doorLocked = makeTex(64, 64, (g, w, h) => {
-    g.clearRect(0, 0, w, h);
-    g.fillStyle = 'rgba(90,120,140,.20)'; g.fillRect(0, 0, w, h);
-    g.fillStyle = 'rgba(20,10,10,.9)'; g.fillRect(14, 12, 36, 16);
-    g.fillStyle = '#7cf09a'; g.font = 'bold 8px "Courier New",monospace';
-    g.textAlign = 'center'; g.fillText('CLOSED', 32, 24);
-    g.fillStyle = '#c9c2ac'; g.fillRect(4, 36, 56, 4);
-    g.fillStyle = '#ffd447'; g.fillRect(28, 34, 8, 8);       // thrown deadbolt
+  /* The one leaf that carries the sign. Only one does: the pair used to
+     share a mesh, and the right-hand leaf is drawn rotated a half turn, so
+     the same sign appeared on both doors and the second came out mirrored.
+     That is what "the OPEN sign looks messed up" was. */
+  T.doorGlassOpen = makeTex(64, 128, (g, w, h) => {
+    doorPane(g, w, h, 'rgba(120,160,180,.15)');
+    neonSign(g, 8, 22, 48, 20, 'OPEN', '#ff3a2a', 13);
+    pushBar(g, w, '#9aa0a6');
+  });
+
+  T.doorLocked = makeTex(64, 128, (g, w, h) => {
+    doorPane(g, w, h, 'rgba(90,120,140,.20)');
+    pushBar(g, w, '#c9c2ac');
+    g.fillStyle = '#ffd447'; g.fillRect(28, 74, 8, 10);        // thrown deadbolt
+  });
+
+  T.doorLockedSign = makeTex(64, 128, (g, w, h) => {
+    doorPane(g, w, h, 'rgba(90,120,140,.20)');
+    neonSign(g, 4, 22, 56, 20, 'CLOSED', '#4fd07a', 11);
+    pushBar(g, w, '#c9c2ac');
+    g.fillStyle = '#ffd447'; g.fillRect(28, 74, 8, 10);
   });
 
   T.doorFrame = makeTex(64, 64, (g, w, h) => {
@@ -735,7 +785,7 @@ export function buildTextures() {
      kettle hanging in it, a heap of popped corn, and a lit marquee.     */
   /* ---- the boombox ----
      Black plastic and a lot of silver: two big speaker grilles, a deck in
-     the middle and a row of sliders. It has to read from across the shop,
+     the middle and a row of sliders. It has to read from across the store,
      so the grilles are high contrast and the badge is bright. */
   T.boomShell = makeTex(64, 64, (g, w, h) => {
     fill(g, '#1d1e21', w, h);
@@ -937,7 +987,7 @@ export function buildTextures() {
     noise(g, w, h, 9); grime(g, w, h, 0.45);
   });
   T.vacBag = makeTex(64, 64, (g, w, h) => {
-    fill(g, '#8d8674', w, h);                          // grey cloth bag
+    fill(g, '#8d8674', w, h);                          // gray cloth bag
     g.strokeStyle = 'rgba(0,0,0,.16)'; g.lineWidth = 1;
     for (let y = 4; y < h; y += 7) {                   // sagging horizontal folds
       g.beginPath();
@@ -1048,7 +1098,7 @@ export function buildTextures() {
     g.strokeStyle = 'rgba(60,44,26,.5)'; g.strokeRect(1.5, 1.5, w - 3, h - 3);
     noise(g, w, h, 11); grime(g, w, h, 0.22);
   });
-  T.steelShelf = makeTex(64, 64, (g, w, h) => {       // grey utility racking
+  T.steelShelf = makeTex(64, 64, (g, w, h) => {       // gray utility racking
     fill(g, '#54514a', w, h);
     g.fillStyle = 'rgba(255,255,255,.07)'; g.fillRect(0, 0, w, 3);
     g.fillStyle = 'rgba(0,0,0,.3)'; g.fillRect(0, h - 4, w, 4);

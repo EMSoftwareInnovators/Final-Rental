@@ -8,9 +8,9 @@
    normal customer, and who has to be handled rather than served.
 
    A special owns three things:
-     app      a locked appearance, so you recognise them on sight
-     act      an optional behaviour that runs while they are in
-              the shop (dancing, reeking, standing at the TV)
+     app      a locked appearance, so you recognize them on sight
+     act      an optional behavior that runs while they are in
+              the store (dancing, reeking, standing at the TV)
      script   an id the dialogue tree switches on
    ============================================================ */
 import { makeRng } from '../engine/mathx.js';
@@ -20,7 +20,7 @@ import {
 } from './appearance.js';
 
 const find = (tbl, id) => tbl.find((t) => t.id === id) || tbl[0];
-const colour = (id, name, hex) => ({ id, name, hex });
+const col = (id, name, hex) => ({ id, name, hex });
 
 /** One locked-down appearance. Built from a fixed seed so it never drifts. */
 function fixedApp(seed, spec) {
@@ -40,7 +40,7 @@ function fixedApp(seed, spec) {
   if (spec.hair) {
     a.hair = {
       id: spec.hair.id,
-      color: colour(spec.hair.id, spec.hair.name, spec.hair.hex),
+      color: col(spec.hair.id, spec.hair.name, spec.hair.hex),
       style: { id: spec.hair.style, name: spec.hair.styleName },
       label: spec.hair.label,
       bulletin: spec.hair.bulletin,
@@ -50,7 +50,7 @@ function fixedApp(seed, spec) {
   if (spec.jacket) {
     a.jacket = {
       id: spec.jacket.id,
-      color: colour(spec.jacket.id, spec.jacket.name, spec.jacket.hex),
+      color: col(spec.jacket.id, spec.jacket.name, spec.jacket.hex),
       kind: spec.jacket.kind,
       label: `${spec.jacket.name[0].toUpperCase() + spec.jacket.name.slice(1)} ${spec.jacket.kind}`,
       bulletin: `a ${spec.jacket.name} ${spec.jacket.kind}`,
@@ -58,12 +58,12 @@ function fixedApp(seed, spec) {
   }
   if (spec.pants) {
     a.pants = {
-      id: spec.pants.id, color: colour(spec.pants.id, spec.pants.name, spec.pants.hex),
-      label: `${spec.pants.name[0].toUpperCase() + spec.pants.name.slice(1)} trousers`,
+      id: spec.pants.id, color: col(spec.pants.id, spec.pants.name, spec.pants.hex),
+      label: `${spec.pants.name[0].toUpperCase() + spec.pants.name.slice(1)} pants`,
       bulletin: `${spec.pants.name} pants`,
     };
   }
-  if (spec.shirt) a.shirt = colour(spec.shirt.id, spec.shirt.name, spec.shirt.hex);
+  if (spec.shirt) a.shirt = col(spec.shirt.id, spec.shirt.name, spec.shirt.hex);
   return a;
 }
 
@@ -138,19 +138,19 @@ export const SPECIALS = [
     app: {
       gender: 'm', height: 'average', build: 'heavy', facial: 'beard', glasses: 'none',
       hat: 'none', gait: 'shuffle', carry: 'none', smell: 'wet', voice: 'raspy',
-      hair: { id: 'grey', name: 'grey', hex: '#8d8a84', dark: '#6a6862', style: 'greasy',
-        styleName: 'greasy, flat to the skull', label: 'Grey hair, greasy and flat',
-        bulletin: 'grey hair, greasy, combed flat' },
+      hair: { id: 'gray', name: 'gray', hex: '#8d8a84', dark: '#6a6862', style: 'greasy',
+        styleName: 'greasy, flat to the skull', label: 'Gray hair, greasy and flat',
+        bulletin: 'gray hair, greasy, combed flat' },
       jacket: { id: 'coat', name: 'stained tan', hex: '#6b5a38', kind: 'work coat' },
       pants: { id: 'brown', name: 'brown', hex: '#4a3a24' },
-      shirt: { id: 'dirty', name: 'grey', hex: '#5a564c' },
+      shirt: { id: 'dirty', name: 'gray', hex: '#5a564c' },
       skin: '#c08e63',
     },
     ...BASE,
     patience: 900, irascibility: 0.55, wealth: 0,
     lines: {
       wait: [`(he is reading the back of the same box he was reading ten minutes ago)`],
-      angry: [`I'm ALLOWED to be in here. It's a shop. It's a public shop.`],
+      angry: [`I'm ALLOWED to be in here. It's a store. It's a public store.`],
       bye: [`Fine. Fine! Nobody ever lets me finish looking.`],
       thanks: [`Mm.`],
       smalltalk: [`Do you have anything about submarines. Real ones.`],
@@ -175,7 +175,7 @@ export const SPECIALS = [
       `Whew. WHEW. That is not a cigarette.`,
       `My eyes are watering. My actual eyes.`,
       `It smells like a skunk had an accident in a greenhouse.`,
-      `Do you have a licence for whatever that is?`,
+      `Do you have a license for whatever that is?`,
     ],
     app: {
       gender: 'm', height: 'average', build: 'thin', facial: 'chops', glasses: 'round',
@@ -209,7 +209,7 @@ export const SPECIALS = [
   {
     id: 'PREORDER',
     name: 'Marcy Deemer',
-    tag: 'wants a film that does not exist',
+    tag: 'wants a movie that does not exist',
     script: 'PREORDER',
     app: {
       gender: 'f', height: 'short', build: 'average', facial: 'clean', glasses: 'square',
@@ -248,11 +248,11 @@ export const SPECIALS = [
     app: {
       gender: 'm', height: 'short', build: 'heavy', facial: 'mustache', glasses: 'square',
       hat: 'trucker', gait: 'normal', carry: 'none', smell: 'smoke', voice: 'flat',
-      hair: { id: 'grey', name: 'grey', hex: '#8d8a84', dark: '#6a6862', style: 'bald',
-        styleName: 'bald on top', label: 'Bald, grey at the sides',
-        bulletin: 'bald, what is left of it is grey' },
+      hair: { id: 'gray', name: 'gray', hex: '#8d8a84', dark: '#6a6862', style: 'bald',
+        styleName: 'bald on top', label: 'Bald, gray at the sides',
+        bulletin: 'bald, what is left of it is gray' },
       jacket: { id: 'windb', name: 'mustard yellow', hex: '#8a7317', kind: 'windbreaker' },
-      pants: { id: 'grey', name: 'grey', hex: '#4a4a50' },
+      pants: { id: 'gray', name: 'gray', hex: '#4a4a50' },
       shirt: { id: 'plaid', name: 'red', hex: '#6a2a24' },
       skin: '#d8ab84',
     },
@@ -277,7 +277,7 @@ export const SPECIALS = [
   {
     id: 'SOVEREIGN',
     name: 'Lyle Rierdon',
-    tag: 'does not recognise your authority',
+    tag: 'does not recognize your authority',
     script: 'SOVEREIGN',
     /** Stands at the end of the counter rather than joining the line. */
     act: 'WINDOW',
@@ -315,7 +315,7 @@ export const SPECIALS = [
   {
     id: 'AUDITOR',
     name: 'Verna Ashby',
-    tag: 'is checking your alphabetising',
+    tag: 'is checking your alphabetizing',
     act: 'AUDIT',
     script: 'AUDITOR',
     app: {
@@ -468,7 +468,7 @@ export const SPECIALS = [
         styleName: 'short, practical', label: 'Dark brown hair, short',
         bulletin: 'dark brown hair, short' },
       jacket: { id: 'wool', name: 'maroon', hex: '#4a1a1e', kind: 'wool overcoat' },
-      pants: { id: 'grey', name: 'grey', hex: '#4a4a50' },
+      pants: { id: 'gray', name: 'gray', hex: '#4a4a50' },
       shirt: { id: 'cream', name: 'cream', hex: '#b6ab8c' },
       skin: '#a6714a',
     },
@@ -501,8 +501,8 @@ export const SPECIALS = [
       hair: { id: 'black', name: 'black', hex: '#17141a', dark: '#0d0b10', style: 'greasy',
         styleName: 'combed flat and shining', label: 'Black hair, combed flat',
         bulletin: 'black hair, greasy, combed flat' },
-      jacket: { id: 'suit', name: 'grey', hex: '#4a4a50', kind: 'suit jacket' },
-      pants: { id: 'grey', name: 'grey', hex: '#3e3e44' },
+      jacket: { id: 'suit', name: 'gray', hex: '#4a4a50', kind: 'suit jacket' },
+      pants: { id: 'gray', name: 'gray', hex: '#3e3e44' },
       shirt: { id: 'blue', name: 'pale blue', hex: '#5a6a86' },
       skin: '#d8ab84',
     },
@@ -525,7 +525,7 @@ export const SPECIALS = [
 
   /* ---------------------------------------------------------- */
   /* He has a mission. It came to him in his sleep, from people who do
-     not use telephones, and it ends in a basement this shop has never
+     not use telephones, and it ends in a basement this store has never
      had. Nothing you say about the basement helps, because the basement
      is not the point -- the address is. */
   {
@@ -543,9 +543,9 @@ export const SPECIALS = [
     app: {
       gender: 'm', height: 'average', build: 'thin', facial: 'stubble', glasses: 'square',
       hat: 'none', gait: 'stiff', carry: 'duffel', smell: 'wet', voice: 'flat',
-      hair: { id: 'grey', name: 'grey', hex: '#8d8a84', dark: '#6a6862', style: 'greasy',
-        styleName: 'combed flat and thinning', label: 'Grey hair, combed flat',
-        bulletin: 'grey hair, thinning, combed flat' },
+      hair: { id: 'gray', name: 'gray', hex: '#8d8a84', dark: '#6a6862', style: 'greasy',
+        styleName: 'combed flat and thinning', label: 'Gray hair, combed flat',
+        bulletin: 'gray hair, thinning, combed flat' },
       jacket: { id: 'anorak', name: 'olive', hex: '#44492a', kind: 'work coat' },
       pants: { id: 'khaki', name: 'khaki', hex: '#6a6248' },
       shirt: { id: 'white', name: 'white', hex: '#b8b4aa' },
@@ -583,7 +583,7 @@ export const SPECIALS = [
     complaints: [
       `She's been talking to him for eleven minutes. I timed it.`,
       `I don't think either of them knows what they're arguing about.`,
-      `Is this a queue or a public meeting?`,
+      `Is this a line or a public meeting?`,
     ],
     app: {
       gender: 'f', height: 'short', build: 'average', facial: 'clean', glasses: 'round',
@@ -671,7 +671,7 @@ export const SPECIALS = [
     name: 'Gordy Nusbaum',
     tag: 'is here to collect his order',
     /* At the collection end of the counter, where a man waiting on food
-       stands: not in the line, because he is not queueing for anything
+       stands: not in the line, because he is not waiting for anything
        you sell. */
     act: 'HATCH',
     nuisance: null,
@@ -679,7 +679,7 @@ export const SPECIALS = [
       `He thinks this is a pizza place. He genuinely does.`,
       `Sir, look around you. Look at the walls.`,
       `Twenty minutes he's been asking about a pizza.`,
-      `I would like to rent a film and go home to my family.`,
+      `I would like to rent a movie and go home to my family.`,
     ],
     app: {
       gender: 'm', height: 'short', build: 'heavy', facial: 'mustache', glasses: 'none',
@@ -720,7 +720,7 @@ export const SPECIALS = [
     name: 'Little Ricky Dolan',
     tag: 'is behind your counter',
     act: 'POPPER',
-    /* Not noise. What everybody else in the shop minds about him is what
+    /* Not noise. What everybody else in the store minds about him is what
        is on the floor and what is going to be on the floor. */
     nuisance: 'mess',
     complaints: [
@@ -745,7 +745,7 @@ export const SPECIALS = [
     patience: 600, irascibility: 0.3, honesty: 0.2, chattiness: 1, wealth: 0.4,
     lines: {
       wait: [`(he is giggling)`, `(he has not stopped giggling)`],
-      angry: [`Okay okay OKAY. God. No sense of humour in this town.`],
+      angry: [`Okay okay OKAY. God. No sense of humor in this town.`],
       bye: [`Worth it. Worth every second of that.`],
       thanks: [`You're alright, you are.`],
       smalltalk: [`How much corn does that hold, do you reckon? Roughly.`],

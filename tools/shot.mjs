@@ -85,7 +85,7 @@ const info = await page.evaluate(() => {
   return {
     state: g.state, elapsed: Math.round(g.elapsed), customers: g.customers.map((c) => ({ n: c.name, s: c.state, m: Math.round(c.mood) })),
     killer: g.killer && { phase: g.killer.phase, x: +g.killer.ent.x.toFixed(1), z: +g.killer.ent.z.toFixed(1) },
-    tris: g.raster.tris, till: g.till, fps: g._fps,
+    tris: g.raster.tris, drawer: g.drawer, fps: g._fps,
   };
 });
 

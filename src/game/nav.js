@@ -28,7 +28,7 @@ export const NODES = [
 
 const EDGES = [
   [0, 1], [1, 2], [2, 3], [3, 4], [3, 5], [3, 6], [5, 4], [6, 5],
-  // Straight down the right-hand aisle into the back of the queue. Without
+  // Straight down the right-hand aisle into the back of the line. Without
   // it, anyone coming off the SCI-FI run doglegged back through the lobby
   // and scraped past whatever was parked beside the counter.
   [11, 6],

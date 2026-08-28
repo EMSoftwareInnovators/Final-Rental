@@ -132,7 +132,7 @@ export function glyphText(action) {
 export class UI {
   constructor() {
     this.el = {
-      hud: $('hud'), clockTime: $('clock-time'), clockNight: $('clock-night'), till: $('till-amt'),
+      hud: $('hud'), clockTime: $('clock-time'), clockNight: $('clock-night'),
       hands: $('hands'), reticle: $('reticle'), prompt: $('prompt'), toasts: $('toasts'),
       objective: $('objective'),
       dialogue: $('dialogue'), dlgFace: $('dlg-face'), dlgName: $('dlg-name'),
@@ -170,7 +170,6 @@ export class UI {
     this.el.clockTime.parentElement.classList.remove('held');
     void held;
   }
-  setTill(v) { this.el.till.textContent = v.toFixed(2); }
 
   setHands(tapes, rewinder, player, owedOut, vacuum) {
     const rows = [];
@@ -442,7 +441,7 @@ export function optionsHtml(o) {
   </ul>
   <p class="pad-foot">${glyph('left')}${glyph('right')} adjust &nbsp;&middot;&nbsp; ${glyph('confirm')} select &nbsp;&middot;&nbsp; ${glyph('back')} back</p>
   <p class="pad-foot quiet">${o.pad
-    ? `Controller: ${escape(o.pad)}${o.padNeedsSetup ? ' &mdash; layout not recognised, set it up below' : ''}`
+    ? `Controller: ${escape(o.pad)}${o.padNeedsSetup ? ' &mdash; layout not recognized, set it up below' : ''}`
     : 'No controller detected'}</p>`;
 }
 
@@ -477,7 +476,7 @@ export function padHtml(p) {
     ? (p.known
       ? `<p class="pad-foot">This browser does not describe your controller's layout, but it is
          one we know &mdash; laid out below. Change anything that is wrong.</p>`
-      : `<p class="pad-foot k">This browser does not recognise your controller's layout, so
+      : `<p class="pad-foot k">This browser does not recognize your controller's layout, so
          nothing is bound yet &mdash; any button will work a menu until you set it up here.</p>`)
     : '';
   return `<h2>CONTROLLER</h2>
@@ -539,7 +538,7 @@ export function endingHtml(kind, data) {
         ? `<p class="quiet">The deputy said what he said last night: that they had got him. You have started counting how many times a week somebody has got him.</p>`
         : '';
       const calm = data.calmNights
-        ? `<p class="quiet">Nobody will be working this parade for ${data.calmNights} night${data.calmNights > 1 ? 's' : ''}. Nobody they know about.</p>`
+        ? `<p class="quiet">Nobody will be working this block for ${data.calmNights} night${data.calmNights > 1 ? 's' : ''}. Nobody they know about.</p>`
         : '';
       return `<h2>UNITS RESPONDING</h2>
         <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>

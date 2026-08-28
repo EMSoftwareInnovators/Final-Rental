@@ -153,7 +153,7 @@ let served = null;
 for (let i = 0; i < 120; i++) {
   const r = await ev(() => {
     const g = window.__game;
-    /* At the window, at the FRONT of the line. The shop keeps a queue now,
+    /* At the window, at the FRONT of the line. The store keeps a line now,
        and talking to somebody second in it is a two-word exchange, not a
        transaction -- which is the rule working, not a conversation ending
        early. */
@@ -250,7 +250,7 @@ const wrong = await ev(() => {
   g.shelve(g.player.held[0], 'COMEDY');
   return g.stats.shelvedWrong === b + 1;
 });
-check('shelving on the wrong genre is penalised', wrong);
+check('shelving on the wrong genre is penalized', wrong);
 
 /* ---------- 4b. the mask: his questions, and what your answers cost ---------- */
 await ev(() => {
@@ -265,7 +265,7 @@ await ev(() => {
   k.ent.script = 'rent';
   k.ent.saidSmallTalk = false;
   k.intel = 0;
-  // He queues like everybody else -- and business only happens at the front
+  // He lines up like everybody else -- and business only happens at the front
   // of the line, so put him there rather than just standing him on the spot.
   g.queue.length = 0;
   g.claimCounterSpot(k.ent);
@@ -340,7 +340,7 @@ check('names match the person', nameCheck.bad === 0 && nameCheck.unknown === 0,
   `${nameCheck.n} people, ${nameCheck.bad} mismatched, ${nameCheck.unknown} off-list`);
 check('no bearded women', nameCheck.beards === 0);
 
-/* ---------- 4d. they actually shop ---------- */
+/* ---------- 4d. they actually store ---------- */
 const peruse = await ev(async () => {
   const g = window.__game;
   g.customers.length = 0;
@@ -394,7 +394,7 @@ const lost = await ev(() => {
   return { premise: c.premise, script: c.script, tag: c.personality.tag,
     text: g.dlg.node.text, choices: g.dlg.node.choices.map((x) => x.label) };
 });
-check('someone walks in thinking this is another shop entirely',
+check('someone walks in thinking this is another store entirely',
   lost.script === 'confused' && !!lost.premise, `premise: ${lost.premise}`);
 console.log('      them: "' + lost.text.replace(/\n/g, ' ') + '"');
 console.log('      you:  ' + lost.choices.map((x) => `[${x}]`).join(' '));
@@ -572,7 +572,7 @@ const chg = await ev(() => {
   const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
   c.x = 10.7; c.z = 0.8; c.state = 'WAITING'; c.hasMoney = true;
   g.customers.push(c);
-  g.till = 0; g.player.cash = { tendered: 0, owed: 0 }; g.player.changeInHand = 0;
+  g.drawer = 0; g.player.cash = { tendered: 0, owed: 0 }; g.player.changeInHand = 0;
   /* Roughly half of people pay to the cent, which is realistic and useless
      for a test. Keep serving fresh ones until somebody breaks a note. */
   let t = null;
@@ -582,7 +582,7 @@ const chg = await ev(() => {
   }
   const held = { tendered: g.player.cash.tendered, owed: g.player.cash.owed, due: c.changeDue };
   g.ringUp();
-  const after = { till: g.till, inHand: g.player.changeInHand, owedOut: g.changeOwedOut().total };
+  const after = { drawer: g.drawer, inHand: g.player.changeInHand, owedOut: g.changeOwedOut().total };
   // the register must refuse to swallow it while they are waiting
   g.player.x = 12.5; g.player.z = 2.2; g.player.yaw = Math.PI; g.player.pitch = -0.5;
   return { t, held, after };
@@ -590,8 +590,8 @@ const chg = await ev(() => {
 check('a big bill leaves change owed', chg.held.due > 0.001,
   `tendered $${chg.held.tendered.toFixed(2)} for $${chg.held.owed.toFixed(2)}`);
 check('ringing up moves the sale to the drawer and the change to your hand',
-  Math.abs(chg.after.till - 2.99) < 0.001 && Math.abs(chg.after.inHand - chg.held.due) < 0.001,
-  `till $${chg.after.till.toFixed(2)} / hand $${chg.after.inHand.toFixed(2)}`);
+  Math.abs(chg.after.drawer - 2.99) < 0.001 && Math.abs(chg.after.inHand - chg.held.due) < 0.001,
+  `register $${chg.after.drawer.toFixed(2)} / hand $${chg.after.inHand.toFixed(2)}`);
 check('and the game knows who is waiting on it',
   Math.abs(chg.after.owedOut - chg.held.due) < 0.001);
 const sweep = await ev(() => {
@@ -627,7 +627,7 @@ const room = await ev(async () => {
   g.player.x = W.SPOTS.storageHide.x; g.player.z = W.SPOTS.storageHide.z;
   g.lockStorage();
   const hidden = g.hiding;
-  // put him in the shop, hunting
+  // put him in the store, hunting
   const k = g.killer;
   k.plan.appears = true;
   k.plan.breakStorage = 2.2;
@@ -859,7 +859,7 @@ for (let i = 0; i < 300; i++) {
   });
   await wait(200);
 }
-check('midnight shuts the shop rather than ending the night on the spot', sawClosing);
+check('midnight shuts the store rather than ending the night on the spot', sawClosing);
 check('a quiet night runs to close and produces a report', reached);
 const rep = await ev(() => ({ stats: window.__game.stats, grade: window.__game.grade }));
 console.log('      ', JSON.stringify(rep.stats), rep.grade);

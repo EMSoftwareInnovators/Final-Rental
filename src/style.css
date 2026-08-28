@@ -46,15 +46,11 @@ body{
 }
 #clock-time{display:block;font-size:4.4cqw;font-weight:bold;color:var(--amber)}
 #clock-night{display:block;font-size:2.4cqw;color:var(--amber-dim)}
-#till{
-  position:absolute;top:2cqw;right:2.4cqw;
-  font-size:3.4cqw;text-shadow:var(--shadow);color:var(--green);
-}
 #hands{
   position:absolute;bottom:1.6cqw;left:2.4cqw;max-width:62cqw;
   font-size:2.3cqw;line-height:1.25;text-shadow:var(--shadow);white-space:pre-line;
 }
-body.talking #hands,body.talking #till,body.talking #objective{display:none}
+body.talking #hands,body.talking #objective{display:none}
 #hands .tape-line{color:#fff}
 #hands .warn{color:var(--red)}
 #hands .ok{color:var(--green)}
@@ -85,7 +81,7 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 }
 
 /* ---------------- controller glyphs ----------------
-   A pad button is a filled roundel in its own colour, so it reads as the
+   A pad button is a filled roundel in its own color, so it reads as the
    thing on the controller rather than as a word. */
 .key.btn{
   border-radius:50%;border-width:0.22cqw;

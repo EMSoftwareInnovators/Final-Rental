@@ -1,5 +1,5 @@
 /* The coach. Two dozen people who all look the same come through the door
-   at once, they all want a film, and some of them want to tell you about
+   at once, they all want a movie, and some of them want to tell you about
    the journey first. He does not work a night the bus comes. */
 import { chromium } from 'playwright-core';
 
@@ -74,7 +74,7 @@ await ev(() => {
 /* ---------- 2. he does not work a night the bus comes ---------- */
 const clash = await ev(() => {
   const g = window.__game;
-  window.__bus.reset(true);                       // he is in the shop
+  window.__bus.reset(true);                       // he is in the store
   const before = Math.round(g.night.busAt);
   g.updateBus(0.1);
   const held = { came: !!g.bus, pushed: Math.round(g.night.busAt) > before };
@@ -147,7 +147,7 @@ check('and no coach is all talkers or none of them',
   talkers.per.filter((n) => n === 0).length <= 2,
   `${talkers.per.filter((n) => n === 0).length} coaches with nobody`);
 
-/* ---------- 4. the whole shop tries to get served ---------- */
+/* ---------- 4. the whole store tries to get served ---------- */
 const served = await ev(() => {
   const g = window.__game;
   window.__bus.reset(false);
@@ -167,7 +167,7 @@ const served = await ev(() => {
   riders.forEach((c) => { states[c.state] = (states[c.state] || 0) + 1; });
   return { inside, queued, states, tape: riders.filter((c) => c.tape).length };
 });
-check('they come in and fill the shop', served.inside > 10, `${served.inside} inside`);
+check('they come in and fill the store', served.inside > 10, `${served.inside} inside`);
 check('and a line forms', served.queued >= 3, `${served.queued} in the line`);
 check('with people still shopping behind it',
   (served.states.BROWSING || 0) + (served.states.PICKING || 0) > 0,
@@ -268,20 +268,29 @@ const allIn = await ev(() => {
   return {
     n: riders.length, spawnBad,
     inside: riders.filter((c) => c.z > 0.35).length,
-    inSolid: riders.filter((c) => !g.onOpenFloor(c.x, c.z)).length,
-    st, queue: g.queue.length,
+    /* "Inside a shelf run" has to mean what the game means by it: the
+       collision solver, at the person's own radius, would push them out.
+       This used to ask onOpenFloor, which clears a wider circle than a
+       customer is -- it is the standard for dropping popcorn on the floor,
+       not for standing -- so a rider legitimately pressed up against the
+       end of a shelf failed it about one run in four. */
+    inSolid: riders.filter((c) => {
+      const [px, pz] = window.__world.collide(c.x, c.z, c.r, g.solids, true, true);
+      return Math.hypot(px - c.x, pz - c.z) > 1e-6;
+    }).length,
+    st, inLine: g.queue.length,
     soured: riders.filter((c) => c.wentAngry || c.mood < 100).length,
     gone: riders.filter((c) => c.state === 'GONE').length,
   };
 });
-check('they get off the coach onto pavement they can stand on',
+check('they get off the coach onto sidewalk they can stand on',
   allIn.spawnBad === 0, `${allIn.spawnBad} in the road`);
 check('and every last one of them gets through the door',
   allIn.inside === allIn.n, `${allIn.inside} of ${allIn.n} inside`);
 check('with nobody left standing inside a shelf run',
   allIn.inSolid === 0, `${allIn.inSolid} in the furniture`);
-check('the line takes all of them', allIn.queue >= allIn.n * 0.5,
-  `${allIn.queue} in the line, states ${Object.entries(allIn.st).map(([k, v]) => `${k}:${v}`).join(' ')}`);
+check('the line takes all of them', allIn.inLine >= allIn.n * 0.5,
+  `${allIn.inLine} in the line, states ${Object.entries(allIn.st).map(([k, v]) => `${k}:${v}`).join(' ')}`);
 check('and not one of them gets impatient',
   allIn.soured === 0 && allIn.gone === 0,
   `${allIn.soured} soured, ${allIn.gone} walked out`);
@@ -306,7 +315,7 @@ const line = await ev(() => {
   };
 });
 check('the line has room for a coach', line.capacity >= 48, `${line.capacity} places`);
-check('and every place in it is inside the shop, on the floor',
+check('and every place in it is inside the store, on the floor',
   line.inSolid === 0 && line.outside === 0,
   `${line.inSolid} in furniture, ${line.outside} outside the building`);
 check('and no two people are sent to the same tile', line.close === 0);

@@ -58,8 +58,8 @@ const walkIns = await ev(async () => {
   g.timeScale = 1;
   return { seen: seen.size, sim: Math.round(g.sim) };
 });
-check('the shop does not go empty once the rota is spent',
-  walkIns.seen >= 3, `${walkIns.seen} walked in over ${walkIns.sim}s of shop time`);
+check('the store does not go empty once the rota is spent',
+  walkIns.seen >= 3, `${walkIns.seen} walked in over ${walkIns.sim}s of store time`);
 
 /* ---------- 3. midnight shuts the door ---------- */
 const shut = await ev(() => {
@@ -83,10 +83,10 @@ const noMore = await ev(async () => {
   return { before, after: g.customers.length };
 });
 check('and nobody else comes in after it', noMore.after === noMore.before,
-  `${noMore.before} in the shop, ${noMore.after} after thirty spawn ticks`);
+  `${noMore.before} in the store, ${noMore.after} after thirty spawn ticks`);
 
 /* ---------- 3b. it locks the door; it does not clear the room ---------- */
-/* Midnight used to march the whole shop out at the stroke of twelve.
+/* Midnight used to march the whole store out at the stroke of twelve.
    Everybody who was inside before the bolt went across still gets to pick
    something out and pay for it -- all closing does is stop anyone else
    coming in. */
@@ -120,7 +120,7 @@ const finishUp = await ev(() => {
   }
   /* Let the line settle before asking whether it can be served. Places are
      handed out as people arrive, so for a frame or two after the last of
-     them lands the front of the queue can still be somebody walking. */
+     them lands the front of the line can still be somebody walking. */
   for (let i = 0; i < 300; i++) {
     crowd.forEach((c) => { if (!c.hidden) window.__cust.updateCustomer(c, 1 / 30, g.ctx); });
     g.updateClosing(1 / 30, false, false);
@@ -137,17 +137,17 @@ const finishUp = await ev(() => {
   g.customers.length = 0; g.queue.length = 0;
   return out;
 });
-check('midnight does not turn the people already inside out of the shop',
+check('midnight does not turn the people already inside out of the store',
   finishUp.rightAfter.every((s) => s !== 'LEAVING'), finishUp.rightAfter.join(', '));
 check('they still get to pick something off the shelf',
   finishUp.picked === 3, `${finishUp.picked} of 3 came away with something`);
-check('and still queue up to pay for it',
+check('and still line up to pay for it',
   finishUp.states.every((s) => s === 'WAITING') && finishUp.idx === '0,1,2',
   `${finishUp.states.join(', ')} at places ${finishUp.idx} after ${finishUp.took}s`);
 check('and the one at the front can be rung up like any other customer',
   finishUp.why === 'can be served', finishUp.why);
 
-/* ---------- 4. the night waits for the shop to clear ---------- */
+/* ---------- 4. the night waits for the store to clear ---------- */
 const waits = await ev(() => {
   const g = window.__game;
   const T = window.__tapes;
@@ -164,7 +164,7 @@ const waits = await ev(() => {
      this stands in for the customer being served and heading out on their
      own -- what the shift is waiting on is the room emptying, however it
      empties.
-     Walking out of the shop and off down the pavement takes a while. */
+     Walking out of the store and off down the sidewalk takes a while. */
   g.customers.forEach((x) => g.ctx.leave(x));
   for (let i = 0; i < 4000; i++) {
     g.customers.forEach((x) => { if (!x.hidden) window.__cust.updateCustomer(x, 1 / 20, g.ctx); });
@@ -175,7 +175,7 @@ const waits = await ev(() => {
   const objTapeOnly = g.ui.el.objective ? g.ui.el.objective.textContent : '';
   const stateWithTape = g.state;
   // and finally shelve the strays. Locking up takes a few seconds once the
-  // shop is empty and tidy, so give it those.
+  // store is empty and tidy, so give it those.
   g.rewinder.tape = null;
   g.player.held.length = 0; g.bin.length = 0;
   g.counterSlots = g.counterSlots.map(() => null);
@@ -186,18 +186,18 @@ const waits = await ev(() => {
   }
   return { seen, objWithBoth, objTapeOnly, stateWithTape, ended: g.state, lockUp };
 });
-check('a shop with people in it does not close', waits.seen.every((s) => s === 'PLAY'));
-check('and it says what is still outstanding', /still in the shop/.test(waits.objWithBoth)
+check('a store with people in it does not close', waits.seen.every((s) => s === 'PLAY'));
+check('and it says what is still outstanding', /still in the store/.test(waits.objWithBoth)
   && /not shelved/.test(waits.objWithBoth), waits.objWithBoth);
 check('the last customer leaving is still not enough on its own',
   waits.stateWithTape === 'PLAY' && /not shelved/.test(waits.objTapeOnly), waits.objTapeOnly);
 check('and shelving the last one is what ends the shift',
   waits.ended === 'REPORT', waits.ended);
 check('with a few seconds to lock up rather than the lights going out mid-step',
-  waits.lockUp >= 3 && waits.lockUp <= 6, `${waits.lockUp}s after the shop was clear`);
+  waits.lockUp >= 3 && waits.lockUp <= 6, `${waits.lockUp}s after the store was clear`);
 
-/* ---------- 4b. nobody in a video shop waits forever ---------- */
-/* A queue whose head cannot be served used to stand there for the rest of
+/* ---------- 4b. nobody in a video store waits forever ---------- */
+/* A line whose head cannot be served used to stand there for the rest of
    the night. Patience ran out, a flag was set, and because the flag was the
    guard, nothing ever happened again: moods went to minus three hundred and
    six people stood at the counter until the heat death of the shift. */
@@ -232,7 +232,7 @@ const patience = await ev(() => {
   g.customers.length = 0; g.queue.length = 0;
   return { start, leftBehind, clearedAt, worstMood: Math.round(worstMood), binned: g.bin.length };
 });
-check('a queue that cannot be served does not stand there forever',
+check('a line that cannot be served does not stand there forever',
   patience.leftBehind === 0,
   patience.clearedAt >= 0 ? `all ${patience.start} gave up within ${patience.clearedAt}s`
     : `${patience.leftBehind} still there`);
@@ -243,7 +243,7 @@ check('what they were holding ends up in the returns bin, not back on a shelf',
 
 const beside = await ev(() => {
   const g = window.__game;
-  // An earlier check bolted the door for closing; open the shop again.
+  // An earlier check bolted the door for closing; open the store again.
   g.closing = false; g.closingT = 0; g.elapsed = 0; g.door.locked = false;
   g.customers.length = 0; g.queue.length = 0;
   const sov = window.__cust.makeSpecial(g.rng, window.__specials.specialById('SOVEREIGN'));
@@ -263,15 +263,15 @@ const beside = await ev(() => {
 });
 check('the one who argues stands at the end of the counter, not in the line',
   beside.sovState === 'ACTING' && beside.sovQueue < 0,
-  `${beside.sovState} at ${beside.sovAt.join(',')}, queue index ${beside.sovQueue}`);
+  `${beside.sovState} at ${beside.sovAt.join(',')}, place ${beside.sovQueue}`);
 check('so the line behind him still moves',
   beside.otherState === 'WAITING' && beside.otherQueue === 0,
   `${beside.otherState} at the front`);
 
 /* ---------- 4b2. the line is decided by who gets there ---------- */
-/* Somebody who sets off first from the far end of the shop used to hold
-   first place while a man standing next to the till walked up and was put
-   behind him. A queue is decided by who reaches it. */
+/* Somebody who sets off first from the far end of the store used to hold
+   first place while a man standing next to the register walked up and was put
+   behind him. A line is decided by who reaches it. */
 const line = await ev(() => {
   const g = window.__game;
   const T = window.__tapes;
@@ -287,7 +287,7 @@ const line = await ev(() => {
     return c;
   };
 
-  // Far sets off first, from the other end of the shop.
+  // Far sets off first, from the other end of the store.
   const far = make(1.0, 8.0);
   far.name = 'Far Away';
   for (let i = 0; i < 20; i++) window.__cust.updateCustomer(far, 1 / 20, g.ctx);
@@ -319,13 +319,13 @@ check('the one who actually reaches the counter first is first in the line',
   line.order && line.order[0] === 'Right There' && line.nearIndex === 0 && line.farIndex === 1,
   line.order ? line.order.join(' then ') : 'neither of them ever got there');
 
-/* Nor does a slow walker join it from the other end of the shop. The walk
+/* Nor does a slow walker join it from the other end of the store. The walk
    to the back of the line had a nine-second backstop on it, and nine
    seconds is less than it takes the slowest personality in the game to
    cross the floor from the far corner -- so they took their place in the
-   queue while they were still up by the horror shelf and covered the rest
+   line while they were still up by the horror shelf and covered the rest
    of the room standing in it, holding first place against somebody already
-   at the till. */
+   at the register. */
 const slowWalk = await ev(() => {
   const g = window.__game;
   const T = window.__tapes;
@@ -334,7 +334,7 @@ const slowWalk = await ev(() => {
     g.customers.length = 0; g.queue.length = 0;
     g.closing = false; g.elapsed = 0; g.door.locked = false;
     const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
-    // The slowest people in the shop are the ones this used to catch.
+    // The slowest people in the store are the ones this used to catch.
     if (c.personality.speed > 0.75) continue;
     c.tape = T.makeTape('HORROR', g.rng, { rewound: true });
     c.script = 'rent'; c.hasMoney = true;
@@ -403,7 +403,7 @@ const clockHold = await ev(async () => {
   const held = await runFor(20);
   const presentWhileHeld = g.grinderPresent();
 
-  // on his way out, the shift starts again -- no waiting for the pavement
+  // on his way out, the shift starts again -- no waiting for the sidewalk
   c.state = 'LEAVING'; c.leaving = true;
   const leaving = await runFor(20);
   const presentWhileLeaving = g.grinderPresent();
@@ -416,7 +416,7 @@ check('an ordinary shift clock runs', clockHold.before > 0.05, `${clockHold.befo
 check('and stops dead while one of the three is in the building',
   clockHold.held === 0 && clockHold.presentWhileHeld,
   `${clockHold.held}s while he stood there`);
-check('it starts again the moment he is on his way out, not when he is off the pavement',
+check('it starts again the moment he is on his way out, not when he is off the sidewalk',
   clockHold.leaving > 0.05 && !clockHold.presentWhileLeaving,
   `${clockHold.leaving}s once he was leaving`);
 check('and keeps running once he has gone', clockHold.after > 0.05, `${clockHold.after}s`);
@@ -446,7 +446,7 @@ const settle = await ev(() => {
   const out = { stuck: [], running: [], notServable: [] };
   g.closing = false; g.elapsed = 0; g.door.locked = false;
 
-  // Queues of every length, started from awkward places -- including right
+  // Lines of every length, started from awkward places -- including right
   // up against the counter face, which is where they used to wedge.
   const starts = [
     [10.6, 1.05], [11.9, 1.05], [9.2, 1.05], [12.4, 1.0],
@@ -556,7 +556,7 @@ const said = await ev(() => {
       g.customers.splice(g.customers.indexOf(c), 1);
     }
   }
-  // "tape rewinder", "shelf of tapes" and the like are about the shop, not
+  // "tape rewinder", "shelf of tapes" and the like are about the store, not
   // about what is in their hand.
   const ABOUT_THE_SHOP = /rewinder|shelf of tapes|videotapes|tape it|chew tapes|my tapes/i;
   const bad = lines.game.filter((t) => /\btapes?\b/i.test(t) && !ABOUT_THE_SHOP.test(t));
@@ -568,7 +568,7 @@ check('and nobody handing back a game calls it a tape',
 /* ---------- 4d. the doors have to actually open ---------- */
 /* The deadbolt stops people getting IN. Anybody already inside works the
    thumb latch and walks out -- and the leaves have to swing when they do,
-   or the shop empties at closing with everybody walking through a shut
+   or the store empties at closing with everybody walking through a shut
    door. The rule the doors are drawn by and the rule people are moved by
    have to be the same rule. */
 const doors = await ev(async () => {
@@ -600,7 +600,7 @@ const doors = await ev(async () => {
   g.door.locked = false;
   return { shut, afterOutside, afterLeaver, settled, stillInside };
 });
-check('a bolted door stays shut for somebody on the pavement',
+check('a bolted door stays shut for somebody on the sidewalk',
   doors.shut < 0.02 && doors.afterOutside < 0.02, `swing ${doors.afterOutside}`);
 check('but swings open for somebody on their way out of it',
   doors.afterLeaver > 0.6, `swing ${doors.afterLeaver}`);
@@ -628,7 +628,7 @@ const walkedThrough = await ev(() => {
   g.customers.length = 0;
   return { maxSwing: +maxSwing.toFixed(2), wasOpenAtDoor, out: c.z < 0.2 };
 });
-check('so a customer leaving a shut shop opens it rather than phasing through',
+check('so a customer leaving a shut store opens it rather than phasing through',
   walkedThrough.out && walkedThrough.wasOpenAtDoor && walkedThrough.maxSwing > 0.6,
   `door reached ${walkedThrough.maxSwing} and was open as they crossed: ${walkedThrough.wasOpenAtDoor}`);
 

@@ -5,7 +5,7 @@
    The county is not getting nowhere. Every night they take
    somebody off the street, and every night the description that
    replaces it is longer: two more witnesses, a partial plate, a
-   petrol station camera, the previous man's own account of who
+   gas station camera, the previous man's own account of who
    he was copying. So the bulletin grows, the notepad fills, and
    the number of things you have to check against the person at
    your counter goes up rather than down.
@@ -46,10 +46,10 @@ export const MORE_DETAIL = [
   `Two of my own people saw {him} at a distance on Sunday and wrote it up properly, which is not always the case.`,
   `The girl at the drive-in ticket booth has been giving us a description since October and nobody would take it seriously. We are taking it seriously.`,
   `{He} was in a bar on the county line for forty minutes. Bartenders are the best witnesses there are and the worst at coming forward.`,
-  `Photograph. Bad one, off a cheque, seven years old. Enough for the build and the face.`,
-  `A cab driver picked somebody up two streets from the last one, at the right time, and only rang us because his wife made him.`,
+  `Photograph. Bad one, off a check, seven years old. Enough for the build and the face.`,
+  `A cab driver picked somebody up two streets from the last one, at the right time, and only called us because his wife made him.`,
   `We pulled the tape from the bank machine across from Delaney's. It faces the wrong way. It caught the reflection.`,
-  `The neighbour who found her has been remembering things in pieces all week. Three more came back to her last night.`,
+  `The neighbor who found her has been remembering things in pieces all week. Three more came back to her last night.`,
   `We've had the same anonymous call four nights running now. Same voice, same phone box. He's telling the truth, whoever he is.`,
   `{He} was seen buying gasoline in a can. That is the kind of detail that comes with a good long look at somebody.`,
   `Highway patrol stopped a vehicle on Thursday and let it go. The trooper wrote a very thorough note about the driver.`,
@@ -74,14 +74,14 @@ export const PRIOR_ARREST = [
   `We arrested somebody at two this morning, four streets from where you're standing. He is not going anywhere.`,
   `Last night's is charged. Sat down, gave us a name, gave us an address, gave us most of a confession.`,
   `We got last night's coming out of a house on Fenner Street with the lights still off inside.`,
-  `The man you'd have been watching for last night was picked up before he made it as far as the parade.`,
+  `The man you'd have been watching for last night was picked up before he made it as far as the block.`,
   `He walked into a roadblock he had no business not seeing. Last night's is done.`,
   `We have last night's in custody. His own sister called it in, which I will be thinking about for a while.`,
   `Last night's is in the hospital wing with a broken ankle, and a deputy on the door.`,
   `Took him off a bus. A bus, at four in the morning, still wearing the coat.`,
   `He gave himself up at the station at six. Walked in and sat down in reception.`,
   `That one is finished. He tried a back door that had two of my people behind it.`,
-  `We found last night's asleep in a car park, which tells you something about how these end.`,
+  `We found last night's asleep in a parking lot, which tells you something about how these end.`,
   `Last night's went quietly, which the ones who have done the most usually do.`,
   `He ran about eighty yards. That is the whole of last night's arrest.`,
   `The description you had last night was good and it worked. Somebody else's clerk made the call.`,
@@ -134,8 +134,8 @@ export const WHY_MORE_HELPS = [
 
 export const CERTAIN_YES = [
   `I'm not. Nobody is. But three in six weeks and every one of them was working a counter after ten at night. You're a counter after ten at night.`,
-  `Sure enough that I have driven past this parade four times tonight already.`,
-  `Sure enough that I am standing in a video shop at half past nine telling a stranger about his coat.`,
+  `Sure enough that I have driven past this block four times tonight already.`,
+  `Sure enough that I am standing in a video store at half past nine telling a stranger about his coat.`,
   `Not sure. Likely. There is a difference and it will not help you at one in the morning.`,
   `Every one so far has been a Tuesday or a Wednesday. It is Wednesday.`,
 ];

@@ -16,7 +16,7 @@ import { updateCustomer, createCustomer, CS } from './customer.js';
 import { KILLER_MASK } from './personality.js';
 import { randomName } from './appearance.js';
 
-/* The first few shifts are a video shop and nothing else. You need to have
+/* The first few shifts are a video store and nothing else. You need to have
    learned where the SCI-FI run is and what a rewind charge is before any of
    the rest of it means anything, and a bulletin read out on night one lands
    on somebody who does not yet know what normal looks like. */
