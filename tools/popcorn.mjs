@@ -192,6 +192,42 @@ check('and it is in the back room, not on the shop floor',
 check('you can pick it up and put it down again',
   vac.held && vac.dropped, `put down at ${vac.where}`);
 
+/* And with the button a player would actually reach for. dropVacuum()
+   existed and nothing called it -- you picked the thing up and pushed it
+   around for the rest of the shift. */
+const putDown = await ev(async () => {
+  const g = window.__game;
+  g.vacuum.held = true;
+  g.player.x = 8.0; g.player.z = 4.0;
+  // let a frame draw before reading the HUD, which is written each frame
+  for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
+  const saidWhileHeld = g.ui.el.hands.textContent;
+  g.input.pressed.add('KeyG');
+  for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
+  const after = { held: g.vacuum.held, at: [+g.vacuum.x.toFixed(2), +g.vacuum.z.toFixed(2)] };
+  // and it is a thing in the world again, where you left it
+  g.player.x = g.vacuum.x + 1.0; g.player.z = g.vacuum.z - 0.3;
+  g.player.yaw = Math.atan2(g.vacuum.x - g.player.x, g.vacuum.z - g.player.z);
+  g.player.pitch = -0.55;
+  for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
+  return {
+    saidWhileHeld, after,
+    hover: g.hover && g.hover.kind,
+    prompt: g.ui.el.prompt.textContent.slice(0, 40),
+  };
+});
+check('the drop button puts the vacuum down',
+  putDown.after.held === false, `still held: ${putDown.after.held}`);
+check('it lands where you were standing, not back in the store room',
+  Math.hypot(putDown.after.at[0] - 8.0, putDown.after.at[1] - 4.0) < 0.5,
+  `left at ${putDown.after.at}`);
+check('and can be picked straight back up',
+  putDown.hover === 'vacuum' && /Take the vacuum/.test(putDown.prompt), putDown.prompt);
+check('and the hands line says how to run it and how to let go',
+  /THE VACUUM/.test(putDown.saidWhileHeld) && /puts it down/.test(putDown.saidWhileHeld),
+  putDown.saidWhileHeld.replace(/\s+/g, ' ').slice(0, 80));
+await ev(() => { window.__game.takeVacuum(); });
+
 /* ---------- 6. and it actually cleans up ---------- */
 const clean = await ev(() => {
   const g = window.__game;

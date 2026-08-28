@@ -188,6 +188,34 @@ check('and the button that opens doors is not also the one that bolts them',
   !boltKeys.bolt.includes(0) && !boltKeys.onA.includes('bolt'),
   `bolt on ${boltKeys.bolt.join(',')}, select on ${boltKeys.confirm.join(',')} (${boltKeys.onA})`);
 
+/* ---------- the door is not one big quad ---------- */
+/* A metre wide and two metres tall in a single quad is mapped affinely
+   across whatever a triangle covers, so the whole face slid about as you
+   walked past it. The fix is the same one the popcorn sign and the counter
+   front got: split it up until each cell is near enough square on screen
+   that there is nothing left to see. */
+const doorGeom = await ev(() => {
+  const worst = {};
+  const scan = (name, mesh) => {
+    if (!mesh) return;
+    let max = 0;
+    for (let t = 0; t < mesh.triCount; t++) {
+      const a = mesh.idx[t * 3], b = mesh.idx[t * 3 + 1], c = mesh.idx[t * 3 + 2];
+      const P = (i) => [mesh.vx[i * 3], mesh.vx[i * 3 + 1], mesh.vx[i * 3 + 2]];
+      const [p, q, r] = [P(a), P(b), P(c)];
+      const e = (u, v) => Math.hypot(u[0] - v[0], u[1] - v[1], u[2] - v[2]);
+      max = Math.max(max, e(p, q), e(q, r), e(r, p));
+    }
+    worst[name] = { edge: +max.toFixed(3), tris: mesh.triCount };
+  };
+  scan('shut', window.__game.world.storageDoorMesh);
+  scan('kicked in', window.__game.world.storageDoorHitMesh);
+  return worst;
+});
+check('the back room door is subdivided, not one big quad',
+  Object.values(doorGeom).every((d) => d.edge < 0.62),
+  Object.entries(doorGeom).map(([k, d]) => `${k}: longest edge ${d.edge}m over ${d.tris} tris`).join(' · '));
+
 console.log('\n--- errors ---');
 console.log(errors.length ? errors.join('\n\n') : '(none)');
 await browser.close();

@@ -572,10 +572,17 @@ function storageLeaf(T, damaged) {
   b.light = () => 0.72;
   const w = SDOOR_X1 - SDOOR_X0;
   const face = damaged ? T.steelDoorHit : T.steelDoor;
+  /* Subdivided. A metre wide and two metres tall is a big quad, and the
+     rasteriser maps texture affinely across whatever a triangle covers --
+     so the whole face slid about as you walked past it, which is the same
+     thing that used to happen to the popcorn sign and the counter front.
+     Splitting it into a grid keeps each cell near enough square on screen
+     that there is nothing left to see. The tall thin frame edges get the
+     same treatment down their length. */
   b.box(0, 0, -0.035, w, SDOOR_H, 0.035, {
-    all: { tex: T.doorFrame, uv: [0, 0, 8, 64] },
-    pz: { tex: face, uv: [0, 0, 64, 64] },
-    nz: { tex: face, uv: [64, 0, 0, 64] },
+    all: { tex: T.doorFrame, uv: [0, 0, 8, 64], sub: [3, 6, false] },
+    pz: { tex: face, uv: [0, 0, 64, 64], sub: [3, 6, false] },
+    nz: { tex: face, uv: [64, 0, 0, 64], sub: [3, 6, false] },
   });
   // lever handle and the deadbolt escutcheon, both sides
   b.light = () => 0.95;

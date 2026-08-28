@@ -172,7 +172,7 @@ export class UI {
   }
   setTill(v) { this.el.till.textContent = v.toFixed(2); }
 
-  setHands(tapes, rewinder, player, owedOut) {
+  setHands(tapes, rewinder, player, owedOut, vacuum) {
     const rows = [];
     if (player) {
       if (player.cash && player.cash.owed > 0.001) {
@@ -193,7 +193,15 @@ export class UI {
         ? `<span class="ok">REWINDER: ${rewinder.tape.title} - DONE</span>`
         : `REWINDER: ${rewinder.tape.title} [${'='.repeat(Math.floor(pct / 10)).padEnd(10, '.')}]`);
     }
-    if (!tapes.length) rows.push('<span class="tape-line">HANDS EMPTY</span>');
+    /* You are pushing a vacuum. Worth saying, because it is the one thing
+       you can be holding that is not a tape, and because it is how you
+       find out you can put it down again. */
+    if (vacuum && vacuum.held) {
+      rows.push(`<span class="tape-line">&gt; THE VACUUM</span> `
+        + `<span class="${vacuum.running ? 'ok' : 'warn'}">`
+        + `${vacuum.running ? 'RUNNING' : `hold ${glyphText('interact')} to run it`}`
+        + ` &middot; ${glyphText('drop')} puts it down</span>`);
+    } else if (!tapes.length) rows.push('<span class="tape-line">HANDS EMPTY</span>');
     for (let i = tapes.length - 1; i >= 0; i--) {
       const t = tapes[i];
       // a cartridge has no reel, so it is never rewound or otherwise

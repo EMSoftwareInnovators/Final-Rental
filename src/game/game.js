@@ -849,7 +849,7 @@ export class Game {
     // ---- HUD ----
     this.ui.setClock(clockString(this.elapsed, this.night.length), this.nightNo, holdClock);
     this.ui.setTill(this.till);
-    this.ui.setHands(this.player.held, this.rewinder, this.player, this.changeOwedOut());
+    this.ui.setHands(this.player.held, this.rewinder, this.player, this.changeOwedOut(), this.vacuum);
     if (this.notesOpen) this.ui.showNotes(this.night.bulletin, this.player.lookTarget);
 
     // ---- night end ----
@@ -1715,7 +1715,13 @@ export class Game {
       if (this.hold) { this.hold = null; this.ui.setHold(0); }
       if (act && (this.input.hit('KeyE') || this.input.mousePressed[0])) act();
     }
-    if (this.input.hit('KeyG') && held) this.dropHeld();
+    /* Putting things down. The vacuum is a thing you are holding as much
+       as a tape is, and until now there was no way to let go of it -- you
+       picked it up and pushed it round for the rest of the shift. */
+    if (this.input.hit('KeyG')) {
+      if (this.vacuum.held) this.dropVacuum();
+      else if (held) this.dropHeld();
+    }
   }
 
   /* ---------------- tape handling ---------------- */
