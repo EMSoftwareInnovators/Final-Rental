@@ -112,7 +112,8 @@ const crowd = await ev(() => {
     sample: riders.slice(0, 3).map((c) => c.name),
   };
 });
-check('a couple of dozen of them get off it', crowd.n >= 18 && crowd.n <= 26, `${crowd.n} riders`);
+check('three to four dozen of them get off it',
+  crowd.n >= 36 && crowd.n <= 48, `${crowd.n} riders`);
 check('and every one of them looks exactly the same', crowd.faces === 1,
   `${crowd.faces} distinct faces`);
 check('with their own names, off one family', crowd.names > 10 && crowd.surnames === 1,
@@ -246,6 +247,69 @@ const named = await ev(() => {
 });
 check('and no two of them read the same on the phone',
   named.n > 0 && named.unique === named.n, `${named.unique} of ${named.n}`);
+
+/* ---------- 7. every one of them gets through the door ---------- */
+/* The coach is only an event if the coach gets in. Four dozen people meet
+   two things a handful never did: a doorway that has to pass all of them,
+   and a line longer than the counter is. */
+const allIn = await ev(() => {
+  const g = window.__game;
+  window.__bus.reset(false);
+  g.updateBus(0.1);
+  window.__bus.land();
+  const riders = g.customers.filter((c) => c.fromBus);
+  const spawnBad = riders.filter((c) => !g.onOpenFloor(c.x, c.z)).length;
+  for (let i = 0; i < 60000; i++) {
+    riders.forEach((c) => { if (!c.hidden) window.__cust.updateCustomer(c, 1 / 30, g.ctx); });
+    g.updateDoor(1 / 30);
+  }
+  const st = {};
+  riders.forEach((c) => { st[c.state] = (st[c.state] || 0) + 1; });
+  return {
+    n: riders.length, spawnBad,
+    inside: riders.filter((c) => c.z > 0.35).length,
+    inSolid: riders.filter((c) => !g.onOpenFloor(c.x, c.z)).length,
+    st, queue: g.queue.length,
+    soured: riders.filter((c) => c.wentAngry || c.mood < 100).length,
+    gone: riders.filter((c) => c.state === 'GONE').length,
+  };
+});
+check('they get off the coach onto pavement they can stand on',
+  allIn.spawnBad === 0, `${allIn.spawnBad} in the road`);
+check('and every last one of them gets through the door',
+  allIn.inside === allIn.n, `${allIn.inside} of ${allIn.n} inside`);
+check('with nobody left standing inside a shelf run',
+  allIn.inSolid === 0, `${allIn.inSolid} in the furniture`);
+check('the line takes all of them', allIn.queue >= allIn.n * 0.5,
+  `${allIn.queue} in the line, states ${Object.entries(allIn.st).map(([k, v]) => `${k}:${v}`).join(' ')}`);
+check('and not one of them gets impatient',
+  allIn.soured === 0 && allIn.gone === 0,
+  `${allIn.soured} soured, ${allIn.gone} walked out`);
+
+/* And the line itself is somewhere a person can stand. */
+const line = await ev(() => {
+  const g = window.__game;
+  const all = g.queueSpots();
+  const pts = [];
+  for (let i = 0; i < 50; i++) pts.push(g.queueSpot(i));
+  let close = 0;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      if (Math.hypot(pts[i].x - pts[j].x, pts[i].z - pts[j].z) < 0.55) close++;
+    }
+  }
+  return {
+    capacity: all.length,
+    inSolid: pts.filter((q) => !g.onOpenFloor(q.x, q.z)).length,
+    outside: pts.filter((q) => q.x < 0.6 || q.x > 12.9 || q.z < 0.3 || q.z > 9.3).length,
+    close,
+  };
+});
+check('the line has room for a coach', line.capacity >= 48, `${line.capacity} places`);
+check('and every place in it is inside the shop, on the floor',
+  line.inSolid === 0 && line.outside === 0,
+  `${line.inSolid} in furniture, ${line.outside} outside the building`);
+check('and no two people are sent to the same tile', line.close === 0);
 
 console.log('\n--- errors ---');
 console.log(errors.length ? errors.join('\n') : '(none)');

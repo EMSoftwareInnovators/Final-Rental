@@ -898,6 +898,34 @@ export function buildTextures() {
     }
   });
 
+  /* -------- a pizza box from Bertucci's -------- */
+  T.pizzaTop = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#c8a878', w, h);                          // corrugated card
+    // the printed panel: a wobbly circle and the name, badly registered
+    g.strokeStyle = '#8c1d0e'; g.lineWidth = 2;
+    g.beginPath(); g.arc(w / 2, h / 2 - 4, 17, 0, 7); g.stroke();
+    g.fillStyle = '#8c1d0e';
+    g.font = 'bold 9px "Courier New",monospace';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText('BERTUCCI', w / 2, h / 2 - 6);
+    g.font = 'bold 6px "Courier New",monospace';
+    g.fillText('PIZZA', w / 2, h / 2 + 4);
+    // score lines where the lid folds, and a grease shadow
+    g.strokeStyle = 'rgba(90,70,40,.35)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(0, 6); g.lineTo(w, 6); g.moveTo(0, h - 6); g.lineTo(w, h - 6); g.stroke();
+    g.fillStyle = 'rgba(150,110,40,.16)';
+    g.beginPath(); g.ellipse(w * 0.34, h * 0.72, 11, 7, 0.4, 0, 7); g.fill();
+    noise(g, w, h, 8); grime(g, w, h, 0.22);
+  });
+  T.pizzaSide = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#bb9a6a', w, h);
+    // the fluting you see on the cut edge of corrugated card
+    g.strokeStyle = 'rgba(255,255,255,.18)'; g.lineWidth = 1;
+    for (let x = 1; x < w; x += 3) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, h); g.stroke(); }
+    g.fillStyle = 'rgba(0,0,0,.20)'; g.fillRect(0, h - 5, w, 5);
+    noise(g, w, h, 7); grime(g, w, h, 0.3);
+  });
+
   /* -------- the vacuum from the back room -------- */
   T.vacBody = makeTex(64, 64, (g, w, h) => {
     fill(g, '#7a2418', w, h);                          // scuffed red enamel

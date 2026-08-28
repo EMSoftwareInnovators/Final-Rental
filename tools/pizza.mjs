@@ -147,6 +147,39 @@ check('and arguing with him costs you', wall.mood < 90, `mood ${wall.mood}`);
 check('with no hole in any of it', wall.holes === 0);
 console.log('      "' + wall.sample.replace(/\n/g, ' ') + '"');
 
+/* Template literals written by hand can end up carrying an escaped
+   backslash, which shows on screen as two characters rather than a line
+   break. It happened right through this man's dialogue. */
+const raw = await ev(() => {
+  const D = window.__dlg;
+  const g = window.__game;
+  const seen = [];
+  const BS = String.fromCharCode(92);
+  const walk = (node, depth) => {
+    if (!node || depth > 6) return;
+    if (node.text) seen.push(node.text);
+    (node.choices || []).forEach((r) => {
+      if (r.label) seen.push(r.label);
+      if (depth < 5 && r.fn) walk(r.fn(), depth + 1);
+    });
+  };
+  window.__helpers.reset();
+  g.beginPizzaCall(window.__specials.specialById('PIZZA'));
+  for (let i = 0; i < 60; i++) g.updatePizza(1 / 30);
+  for (let k = 0; k < 10; k++) walk(D.buildPizzaOrder(g.ctx), 0);
+  for (let k = 0; k < 10; k++) walk(D.buildPizzaParlour(g.ctx), 0);
+  window.__helpers.walk(D.buildPhoneCall(g.ctx));
+  for (let i = 0; i < 4000 && !g.pizza.customer; i++) g.updatePizza(1 / 30);
+  const c = g.pizza.customer;
+  if (c) {
+    c.x = 7.05; c.z = 0.45; c.state = 'ACTING';
+    for (let k = 0; k < 10; k++) { c.pizzaAsked = 0; walk(D.talkTo(c, g.ctx, { atCounter: true }), 0); }
+  }
+  return { lines: seen.length, bad: seen.filter((t) => t.indexOf(BS + 'n') >= 0).slice(0, 2) };
+});
+check('no line of his shows a backslash-n instead of a line break',
+  raw.bad.length === 0, raw.bad.join(' | ') || `${raw.lines} lines checked`);
+
 /* ---------- 4. the parlour has not got half of it ---------- */
 const parlour = await ev(() => {
   const g = window.__game;
@@ -222,12 +255,19 @@ const delivered = await ev(() => {
   const real = g.ui.toast;
   g.ui.toast = (t) => { heard.push(String(t)); };
   let drawnWhileIn = false, doorSwung = 0;
+  let boxLanded = null, kidCarriedIn = false;
   for (let i = 0; i < 30000 && !g.pizza.done; i++) {
     g.updatePizza(1 / 30);
     g.updateDoor(1 / 30);
     doorSwung = Math.max(doorSwung, g.door.swing);
     const d = g.pizza.driver;
-    if (d && !d.hidden && d.z > 0.2) drawnWhileIn = drawnWhileIn || g.people().includes(d);
+    if (d && !d.hidden && d.z > 0.2) {
+      drawnWhileIn = drawnWhileIn || g.people().includes(d);
+      if (d.carrying) kidCarriedIn = true;
+    }
+    if (g.pizza.box && !boxLanded) {
+      boxLanded = [+g.pizza.box.x.toFixed(2), +g.pizza.box.y.toFixed(2), +g.pizza.box.z.toFixed(2)];
+    }
   }
   // and out he goes
   for (let i = 0; i < 6000 && g.pizza.driver && g.pizza.driver.state !== 'DONE'; i++) {
@@ -235,6 +275,10 @@ const delivered = await ev(() => {
   }
   g.ui.toast = real;
   return {
+    boxLanded, kidCarriedIn,
+    kidCarriesNow: !!(g.pizza.driver && g.pizza.driver.carrying),
+    boxOnCounterNow: !!g.pizza.box,
+    custCarries: !!(g.pizza.customer && g.pizza.customer.carryingPizza),
     done: g.pizza.done, onCounter: !!g.pizza.onCounter,
     drawnWhileIn, doorSwung: +doorSwung.toFixed(2),
     driver: g.pizza.driver && g.pizza.driver.state,
@@ -247,6 +291,13 @@ const delivered = await ev(() => {
 check('a delivery kid actually walks in with it', delivered.drawnWhileIn === true);
 check('and opens the door doing it', delivered.doorSwung > 0.6, `swing ${delivered.doorSwung}`);
 check('the box goes on the counter', delivered.box && delivered.onCounter);
+check('and it is an actual box, on the actual counter',
+  delivered.boxLanded && delivered.boxLanded[1] > 0.9 && delivered.boxLanded[1] < 1.3,
+  delivered.boxLanded ? `at ${delivered.boxLanded.join(', ')}` : 'no box was ever set down');
+check('the kid carries it in and stops carrying it once it is down',
+  delivered.kidCarriedIn && !delivered.kidCarriesNow);
+check('and the customer walks out with it',
+  delivered.custCarries && !delivered.boxOnCounterNow);
 check('he pays the kid himself', delivered.paid === true);
 check('and then they both leave',
   (delivered.custState === 'LEAVING' || delivered.custState === 'GONE')

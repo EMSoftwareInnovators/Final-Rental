@@ -14,7 +14,7 @@ import { GENRES } from './tapes.js';
 import { planSpecials } from './specials.js';
 import {
   MORE_DETAIL, PRIOR_ARREST, DIFFERENT_MAN, HOW_MANY, WHY_MORE_HELPS,
-  CERTAIN_YES, CERTAIN_NO, GREETINGS, ALL_CLEAR, ALL_CLEAR_WHY, pick as pickFor,
+  CERTAIN_YES, CERTAIN_NO, GREETINGS, ALL_CLEAR, ALL_CLEAR_WHY, pick as pickFor, voice,
 } from './briefing.js';
 
 export { KILLER_FIRST_NIGHT, killerChance };
@@ -243,6 +243,10 @@ const PRESS_NAMES = [
 
 export function makeCaseFile(rng, n, suspect, opts = {}) {
   const angle = ANGLES[(n - 1) % ANGLES.length];
+  /* Every line the deputy says about the person he is looking for goes
+     through the pronoun expander on the way out, so a night whose suspect
+     is a woman gets a deputy who says she. */
+  const line = (list, salt) => voice(pickFor(list, n, salt), suspect);
   /* Drawn by night rather than by roll, so a given night always reads the
      same however many times you play it -- and so consecutive nights never
      hand you the same account of the same arrest twice running. */
@@ -254,18 +258,18 @@ export function makeCaseFile(rng, n, suspect, opts = {}) {
     first: n <= KILLER_FIRST_NIGHT,
     caughtLast: n > KILLER_FIRST_NIGHT,
     /** Tonight's reason the description got longer. */
-    moreDetail: pickFor(MORE_DETAIL, n, 1),
+    moreDetail: line(MORE_DETAIL, 1),
     /** What happened to the one from last night, and why it does not help. */
-    priorArrest: pickFor(PRIOR_ARREST, n, 2),
-    differentMan: pickFor(DIFFERENT_MAN, n, 3),
-    whyMoreHelps: pickFor(WHY_MORE_HELPS, n, 4),
-    howMany: pickFor(HOW_MANY, n, 5),
-    greeting: pickFor(GREETINGS, n, 6),
-    certainYes: pickFor(CERTAIN_YES, n, 7),
-    certainNo: pickFor(CERTAIN_NO, n, 8),
+    priorArrest: line(PRIOR_ARREST, 2),
+    differentMan: line(DIFFERENT_MAN, 3),
+    whyMoreHelps: line(WHY_MORE_HELPS, 4),
+    howMany: line(HOW_MANY, 5),
+    greeting: line(GREETINGS, 6),
+    certainYes: line(CERTAIN_YES, 7),
+    certainNo: line(CERTAIN_NO, 8),
     /** The night he comes to say it is over. */
-    allClear: pickFor(ALL_CLEAR, n, 9),
-    allClearWhy: pickFor(ALL_CLEAR_WHY, n, 10),
+    allClear: line(ALL_CLEAR, 9),
+    allClearWhy: line(ALL_CLEAR_WHY, 10),
     /** How many things are on tonight's list, for his own commentary on it. */
     detailCount: bulletinKeyCount(n),
     grew: n > DEPUTY_FIRST_NIGHT,

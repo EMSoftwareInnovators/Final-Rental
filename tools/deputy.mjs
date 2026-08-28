@@ -208,6 +208,51 @@ check('and he is back once the town is live again',
   run.rows.filter((r) => !r.calm).every((r) => r.deputy),
   run.rows.filter((r) => !r.calm).map((r) => r.n).join(','));
 
+/* ---------- he says she when the person he is after is a woman ---------- */
+/* The bulletin already used the right pronoun. Everything else he said --
+   how the description got longer, why the man in custody does not help --
+   was written masculine and stayed masculine on a night whose suspect was
+   a woman. The lines carry tokens now, expanded per night. */
+const pronouns = await ev(() => {
+  const M = window.__night;
+  const B = window.__brief;
+  const out = { m: 0, f: 0, leftovers: 0, wrong: [], sample: {} };
+  for (let n = 3; n < 16; n++) {
+    for (let s = 0; s < 60; s++) {
+      const x = M.makeNight(31000 + s * 7, n, 'HORROR');
+      const fem = x.suspect.gender.id === 'f';
+      const said = [x.caseFile.moreDetail, x.caseFile.differentMan, x.bulletin.description].join(' ');
+      if (/\{[A-Za-z]+\}/.test(said)) out.leftovers++;
+      if (fem) { out.f++; if (!out.sample.f) out.sample.f = x.caseFile.moreDetail; }
+      else { out.m++; if (!out.sample.m) out.sample.m = x.caseFile.moreDetail; }
+    }
+  }
+  // and the expander itself, both ways, over every tokenised line
+  const male = { gender: { id: 'm' } }, fem = { gender: { id: 'f' } };
+  let pairs = 0, differ = 0;
+  for (const pool of [B.MORE_DETAIL, B.DIFFERENT_MAN]) {
+    for (const t of pool) {
+      if (!/\{/.test(t)) continue;
+      pairs++;
+      const a = B.voice(t, male), b = B.voice(t, fem);
+      if (a !== b) differ++;
+      if (/\{/.test(a) || /\{/.test(b)) out.wrong.push(t.slice(0, 40));
+    }
+  }
+  out.pairs = pairs; out.differ = differ;
+  return out;
+});
+check('nights come in both flavours', pronouns.m > 20 && pronouns.f > 20,
+  `${pronouns.m} male, ${pronouns.f} female`);
+check('and no line ever reaches the player with a token still in it',
+  pronouns.leftovers === 0 && pronouns.wrong.length === 0,
+  pronouns.wrong.join(' | ') || `${pronouns.leftovers} leftovers`);
+check('every tokenised line reads differently for a woman',
+  pronouns.pairs > 12 && pronouns.differ === pronouns.pairs,
+  `${pronouns.differ} of ${pronouns.pairs} change`);
+console.log('      M: ' + String(pronouns.sample.m).slice(0, 88));
+console.log('      F: ' + String(pronouns.sample.f).slice(0, 88));
+
 console.log('\n--- errors ---');
 console.log(errors.length ? errors.join('\n') : '(none)');
 await browser.close();

@@ -72,6 +72,16 @@ const PIZZA_DROP = { x: 10.75, z: 0.95 };
    where the frame rate is the horror. */
 const MAX_SPILLS = 26;
 
+/* A pile has to sit far enough off the furniture that the vacuum head can
+   get to the middle of it. Slightly wider than the player's own radius. */
+const SPILL_CLEAR = 0.34;
+
+/* Where a line longer than the counter goes. Three rows across the front
+   of the shop, clear of the aisles, which start at z 3.2. It doubles back
+   on itself rather than running out of the building. */
+const QUEUE_ROWS = [0.84, 1.78, 2.72];
+const QUEUE_X0 = 2.00, QUEUE_X1 = 7.60, QUEUE_STEP = 0.86;
+
 /* Where the vacuum stands in the back room. Against the shelf, by the
    door, exactly where it has stood since 1984. */
 const VACUUM_HOME = { x: 5.15, z: 10.6, yaw: 0.4 };
@@ -1728,7 +1738,12 @@ export class Game {
       this.ui.setHold(this.hold ? this.hold.t / SHELVE_TIME : 0);
     } else {
       if (this.hold) { this.hold = null; this.ui.setHold(0); }
-      if (act && (this.input.hit('KeyE') || this.input.mousePressed[0])) act();
+      /* Both hands are on the vacuum. Interact is its throttle while you
+         are pushing it and nothing else -- holding it down to clean the
+         run behind the counter used to pick up the telephone on the way
+         past, because the first frame of that hold is also a press. */
+      if (act && !this.vacuum.held
+        && (this.input.hit('KeyE') || this.input.mousePressed[0])) act();
     }
   }
 
@@ -2788,6 +2803,27 @@ export class Game {
       this.raster.drawMesh(this.world.puffMesh, M.m,
         { shade: lightAt(q.x, q.y, q.z) * this.lights });
     }
+    /* The pizza: on the counter, under the delivery kid's arm on the way
+       in, and under the customer's on the way out. */
+    const P = this.pizza;
+    if (P) {
+      if (P.box) {
+        setPosYaw(M.m, P.box.x, P.box.y, P.box.z, P.box.yaw);
+        this.raster.drawMesh(this.world.pizzaMesh, M.m,
+          { shade: lightAt(P.box.x, P.box.y, P.box.z) * this.lights });
+      }
+      const carriers = [];
+      if (P.driver && P.driver.carrying && !P.driver.hidden) carriers.push(P.driver);
+      if (P.customer && P.customer.carryingPizza && !P.customer.hidden) carriers.push(P.customer);
+      for (const who of carriers) {
+        const hs = who.app.height.scale;
+        const lx = 0.26 * who.app.build.w * hs, ly = 1.02 * hs, lz = 0.16 * hs;
+        const cy = Math.cos(who.yaw), sy = Math.sin(who.yaw);
+        setPosYaw(M.m, who.x + lx * cy + lz * sy, ly, who.z - lx * sy + lz * cy, who.yaw + 0.2);
+        this.raster.drawMesh(this.world.pizzaMesh, M.m,
+          { shade: lightAt(who.x, ly, who.z) * this.lights });
+      }
+    }
     const v = this.vacuum;
     if (!v.out) return;
     if (v.held) {
@@ -3286,21 +3322,69 @@ export class Game {
    * behind whoever is currently last -- and it moves while you are walking,
    * which is why the walker re-aims at it rather than setting off once.
    */
+  /**
+   * Where the Nth person in the line stands.
+   *
+   * The window, then the three marked spots along the counter, and then it
+   * doubles back across the front of the shop the way a queue in a small
+   * room actually does -- and when it outgrows even that, it keeps filling
+   * outward from the counter.
+   *
+   * Every position past the marked three is checked against the same
+   * solids that stop the player walking, so nobody is ever sent to stand
+   * inside a shelf run or the candy stand. The old version stepped ninety
+   * centimetres west per person and never turned: fine for the four or
+   * five a normal night puts in the line, and absurd for a coach party --
+   * the twenty-eighth person stood at x -13.8, through the wall and most
+   * of the way across the parade.
+   */
+  queueSpots() {
+    if (this._queueSpots) return this._queueSpots;
+    const out = [SPOTS.service].concat(SPOTS.queue.map((q) => ({ x: q.x, z: q.z })));
+    const far = (x, z) => out.every((p) => Math.hypot(p.x - x, p.z - z) > 0.68);
+    const take = (x, z) => {
+      if (!this.onOpenFloor(x, z) || !far(x, z)) return;
+      out.push({ x, z });
+    };
+    // the snake across the front of the shop: a real line, doubling back
+    QUEUE_ROWS.forEach((z, row) => {
+      const n = Math.floor((QUEUE_X1 - QUEUE_X0) / QUEUE_STEP);
+      for (let k = 0; k <= n; k++) {
+        take(row % 2 === 0 ? QUEUE_X1 - k * QUEUE_STEP : QUEUE_X0 + k * QUEUE_STEP, z);
+      }
+    });
+    /* And past that it stops being a line and becomes a shop with too many
+       people in it. Fill outward from the counter across whatever floor is
+       actually standable -- the aisle mouths, the gap by the door, the
+       middle of the room. */
+    const spare = [];
+    for (let x = 1.2; x < 12.6; x += 0.8) {
+      for (let z = 0.5; z < 8.8; z += 0.8) spare.push({ x, z });
+    }
+    spare.sort((a, b) => Math.hypot(a.x - SPOTS.service.x, a.z - SPOTS.service.z)
+      - Math.hypot(b.x - SPOTS.service.x, b.z - SPOTS.service.z));
+    for (const p of spare) take(p.x, p.z);
+    this._queueSpots = out;
+    return out;
+  }
+
+  queueSpot(i) {
+    if (i <= 0) return SPOTS.service;
+    const all = this.queueSpots();
+    return all[Math.min(i, all.length - 1)];
+  }
+
   lineTail(c) {
     const others = this.queue.filter((q) => q !== c);
     if (!others.length) return SPOTS.service;
-    const i = others.length;                    // the place they would take
-    const q = SPOTS.queue[Math.min(i - 1, SPOTS.queue.length - 1)];
-    return { x: q.x - Math.max(0, i - SPOTS.queue.length) * 0.9, z: q.z };
+    return this.queueSpot(others.length);       // the place they would take
   }
 
   claimCounterSpot(c) {
     if (!this.queue.includes(c)) this.queue.push(c);
     const i = this.queue.indexOf(c);
     c.queueIndex = i;
-    if (i === 0) return SPOTS.service;
-    const q = SPOTS.queue[Math.min(i - 1, SPOTS.queue.length - 1)];
-    return { x: q.x - Math.max(0, i - SPOTS.queue.length) * 0.9, z: q.z };
+    return this.queueSpot(i);
   }
   releaseCounterSpot(c) {
     const i = this.queue.indexOf(c);
@@ -3518,6 +3602,8 @@ export class Game {
       anim: makeAnim(), speed: 1.6, moveSpeed: 0, observed: new Set(),
       mood: 100, phoneLabel: 'The delivery kid', isKiller: false, hidden: false,
       state: 'IN', timer: 0, path: null, pathI: 0,
+      /* He comes in with it under one arm. */
+      carrying: true,
     };
     P.phase = 'DELIVERING';
     P.t = 0;
@@ -3539,9 +3625,12 @@ export class Game {
       d.yaw = angleTowards(d.yaw, Math.PI, dt * 5);
       if (!d.dropped && d.timer > 0.9) {
         d.dropped = true;
+        d.carrying = false;
         this.sound.impact(0.25);
         this.ui.toast(`The box goes on the counter. It is a real pizza and it is warm.`, 'good');
         P.onCounter = true;
+        /* An actual box, on the actual counter, between the two of them. */
+        P.box = { x: PIZZA_DROP.x, y: COUNTER.y, z: PIZZA_DROP.z + 0.55, yaw: this.rng.range(-0.3, 0.3) };
       }
       if (d.timer > 2.4) { d.state = 'PAID'; d.timer = 0; }
     } else if (d.state === 'PAID') {
@@ -3557,6 +3646,10 @@ export class Game {
         if (c) {
           c.onPhone = false;
           this.ctx.mood(c, +50);
+          /* He takes it off the counter and it goes with him. */
+          P.box = null;
+          c.carryingPizza = true;
+          this.sound.pickup();
           this.ui.toast(`${c.name}: "${this.rng.pick(PIZZA_BYE)}"`, '');
           this.ctx.leave(c);
         }
@@ -3674,13 +3767,37 @@ export class Game {
     const rng = this.rng;
     /* Out from the machine and along the clerk's side, because that is
        where it would actually go: it comes over the front of the case and
-       spreads down the run behind the counter. */
-    const a = rng.range(-1.5, 1.5);
-    const d = 0.5 + rng() * (1.2 + Math.min(3.4, this.spills.length * 0.22));
-    const x = clamp(12.35 + Math.sin(a) * d - d * 0.25, 9.4, 12.75);
-    const z = clamp(6.10 - Math.cos(a) * d * 0.85, 1.9, 6.6);
-    this.spills.push({ x, z, yaw: rng.range(0, Math.PI * 2), s: 0.75 + rng() * 0.5 });
-    this.popper.spilled++;
+       spreads down the run behind the counter.
+
+       And it has to land on floor you can stand on. It used to go under
+       the cart and under both counters, where you cannot see it and the
+       vacuum head cannot reach it, so a shift could not be finished --
+       the ask was to clean a floor with half the mess inside the
+       furniture. Candidates are tested against the same solids that stop
+       the player walking, and one that is inside something is thrown away
+       and rolled again. */
+    for (let tries = 0; tries < 14; tries++) {
+      const a = rng.range(-1.5, 1.5);
+      const d = 0.5 + rng() * (1.2 + Math.min(3.4, this.spills.length * 0.22));
+      const x = clamp(12.35 + Math.sin(a) * d - d * 0.25, 9.2, 12.8);
+      const z = clamp(6.10 - Math.cos(a) * d * 0.85, 1.4, 7.2);
+      if (!this.onOpenFloor(x, z)) continue;
+      this.spills.push({ x, z, yaw: rng.range(0, Math.PI * 2), s: 0.75 + rng() * 0.5 });
+      this.popper.spilled++;
+      return;
+    }
+  }
+
+  /**
+   * Is this a patch of floor, or the inside of a cupboard?
+   *
+   * Asked of the same solid list that stops the player walking through
+   * things: push a small circle out of the world at that point, and if it
+   * moves, the point was inside something.
+   */
+  onOpenFloor(x, z) {
+    const [px, pz] = collide(x, z, SPILL_CLEAR, this.solids, true);
+    return Math.hypot(px - x, pz - z) < 0.001;
   }
 
   /** How much of it is still down. */
@@ -3791,7 +3908,10 @@ export class Game {
          one tile, which is a doorway full of people wedged in each other. */
       const B = this.bus;
       B.t += dt;
-      while (B.made < B.total && B.t > B.made * 0.55) {
+      /* Four dozen at half a second each is half a minute of doorway, so
+         they come in a good deal faster than that -- close to as fast as
+         the door will pass them. */
+      while (B.made < B.total && B.t > B.made * 0.26) {
         this.customers.push(this.makeBusRider(B, B.made));
         B.made++;
       }
@@ -3815,7 +3935,9 @@ export class Game {
     const app = randomAppearance(rng);
     this.bus = {
       app, skin: paintSkin(app),
-      total: 18 + rng.int(9),
+      /* Three to four dozen. Enough that the shop stops being a shop with
+         a queue in it and becomes a room you cannot cross. */
+      total: 36 + rng.int(13),
       made: 0, t: 0,
       /* Their name, which is also all the same, give or take. */
       surname: randomName(rng, app.gender).split(' ')[1],
@@ -3840,11 +3962,47 @@ export class Game {
        person underneath it, which is what makes some of them quick and
        some of them the reason the line is not moving. */
     c.fromBus = true;
-    c.x = SPOTS.street.x + rng.range(-3.2, 3.2);
-    c.z = SPOTS.street.z - 0.4 - (i % 5) * 0.5;
+    /* They are not in a hurry and they are not going to get shirty with
+       you. They have been on a coach for four hours together and they are
+       all waiting for each other anyway -- and forty of them running down
+       their patience at once would empty the shop through the one door
+       just as you got on top of it. Whatever else the coach is, it is not
+       a crowd that storms out. */
+    c.patient = true;
+    /* Along the sidewalk, not out in the road. The curb is at z -4.6 and
+       there is a solid behind it, so spreading four dozen people backwards
+       off the pavement pinned most of the coach against that wall with
+       nowhere to path from -- eighteen of them stacked on one tile in the
+       middle of the street, not moving, for the rest of the night.
+       They spread sideways instead, which is where a pavement goes. */
+    const spread = this.busSpawn(i, B.total);
+    c.x = spread.x;
+    c.z = spread.z;
     /* About one in four wants to tell you about the journey. */
     c.rambles = rng.chance(0.26) ? 0 : -1;
     return c;
+  }
+
+  /**
+   * Where the Nth person off the coach is standing when they get out.
+   *
+   * Strung along the pavement in front of the shop, on floor they can
+   * actually walk on -- checked against the same solids as everything
+   * else, because the curb has a wall behind it.
+   */
+  busSpawn(i, total) {
+    const S = SPOTS.street;
+    const lanes = 3;
+    const lane = i % lanes;
+    const along = Math.floor(i / lanes);
+    const perLane = Math.max(1, Math.ceil(total / lanes));
+    const t = perLane <= 1 ? 0.5 : along / (perLane - 1);
+    for (let give = 0; give < 4; give++) {
+      const x = S.x + (t - 0.5) * (9.0 - give * 1.8);
+      const z = S.z + 0.45 - lane * 0.62 + give * 0.25;
+      if (this.onOpenFloor(x, z)) return { x, z };
+    }
+    return { x: S.x + (i % 5 - 2) * 0.4, z: S.z };
   }
 
   /** Are we in the middle of it? The shop is a different place while we are. */

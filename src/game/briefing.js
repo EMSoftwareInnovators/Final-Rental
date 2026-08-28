@@ -24,38 +24,38 @@
    between yesterday's shift and this one.
    ------------------------------------------------------------ */
 export const MORE_DETAIL = [
-  `We got a good long look at him tonight. Girl at the filling station on Route 9 served him coffee and stared at him the entire time he drank it.`,
+  `We got a good long look at {him} tonight. Girl at the filling station on Route 9 served {him} coffee and stared at {him} the entire time {he} drank it.`,
   `The man we took last night talked. Not about himself — about the others. Half of what I'm giving you came out of that room at four this morning.`,
   `There's a camera over the pumps at the truck stop. It's a terrible camera. It was pointed at the right place at the right time exactly once.`,
-  `A woman followed him two blocks in her car with the lights off, which was a stupid thing to do, and I am not going to say that to her face because she gave us four new details.`,
-  `He left a print on a chest freezer. First one in six weeks. That gave us the hand, and the hand gave us a good deal else.`,
+  `A woman followed {him} two blocks in her car with the lights off, which was a stupid thing to do, and I am not going to say that to her face because she gave us four new details.`,
+  `{He} left a print on a chest freezer. First one in six weeks. That gave us the hand, and the hand gave us a good deal else.`,
   `Two separate people gave us the same walk, an hour apart, on opposite sides of the river. When two strangers describe a walk the same way, that is worth writing down.`,
-  `The dry cleaner on Third had his coat in for two days. She kept the ticket. She kept the ticket, clerk.`,
-  `A boy on a paper round saw him standing still for eleven minutes. Eleven minutes. Kids notice a man who does not move.`,
+  `The dry cleaner on Third had {his} coat in for two days. She kept the ticket. She kept the ticket, clerk.`,
+  `A boy on a paper round saw {him} standing still for eleven minutes. Eleven minutes. Kids notice a {man} who does not move.`,
   `We have got the smell now, and I know how that sounds, but three people who have never met each other led with it.`,
-  `He spoke to somebody. Properly spoke, a whole conversation, and she remembered the voice because it did not match the rest of him.`,
-  `State lab came back on the tape from Delaney's. There is about nine seconds where he turns and faces the counter.`,
+  `{He} spoke to somebody. Properly spoke, a whole conversation, and the woman on the other end of it remembered the voice, because it did not match the rest of {him}.`,
+  `State lab came back on the tape from Delaney's. There is about nine seconds where {he} turns and faces the counter.`,
   `Woman at the church hall does the flowers on a Tuesday and has a memory like a filing cabinet. She gave us four things and got three of them right.`,
   `We had him in a room for six hours last night. Wrong man — but he watched the one we want walk past his window twice.`,
   `Somebody finally reported the car. Nobody had reported the car. There has been a car this whole time.`,
-  `A nurse coming off shift walked straight past him under a streetlight and turned around to look. She is trained to look at people. It shows.`,
-  `He tried a door at the laundromat that has a bell on it. She got a clear look before he was back out on the sidewalk.`,
+  `A nurse coming off shift walked straight past {him} under a streetlight and turned around to look. Nurses are trained to look at people. It shows.`,
+  `{He} tried a door at the laundromat that has a bell on it. The girl folding towels got a clear look before {he} was back out on the sidewalk.`,
   `There is a description in the file from January that nobody connected until this morning. Same everything.`,
   `The one we arrested described who he was copying, in detail, for two hours, because he was proud of it.`,
-  `Man at the hardware store sold him something specific. I am not going to tell you what. But he remembered the customer.`,
-  `Two of my own people saw him at a distance on Sunday and wrote it up properly, which is not always the case.`,
+  `Man at the hardware store sold {him} something specific. I am not going to tell you what. But he remembered the customer.`,
+  `Two of my own people saw {him} at a distance on Sunday and wrote it up properly, which is not always the case.`,
   `The girl at the drive-in ticket booth has been giving us a description since October and nobody would take it seriously. We are taking it seriously.`,
-  `He was in a bar on the county line for forty minutes. Bartenders are the best witnesses there are and the worst at coming forward.`,
+  `{He} was in a bar on the county line for forty minutes. Bartenders are the best witnesses there are and the worst at coming forward.`,
   `Photograph. Bad one, off a cheque, seven years old. Enough for the build and the face.`,
   `A cab driver picked somebody up two streets from the last one, at the right time, and only rang us because his wife made him.`,
   `We pulled the tape from the bank machine across from Delaney's. It faces the wrong way. It caught the reflection.`,
   `The neighbour who found her has been remembering things in pieces all week. Three more came back to her last night.`,
   `We've had the same anonymous call four nights running now. Same voice, same phone box. He's telling the truth, whoever he is.`,
-  `He was seen buying gasoline in a can. That is the kind of detail that comes with a good long look at somebody.`,
+  `{He} was seen buying gasoline in a can. That is the kind of detail that comes with a good long look at somebody.`,
   `Highway patrol stopped a vehicle on Thursday and let it go. The trooper wrote a very thorough note about the driver.`,
-  `A kid at the arcade sat next to him for half an hour. Kids will tell you everything if you let them talk long enough.`,
-  `The county over has been working the same man for a month and would not share a file until this morning.`,
-  `The one we took last night had a notebook. In the notebook was a description. Of him.`,
+  `A kid at the arcade sat next to {him} for half an hour. Kids will tell you everything if you let them talk long enough.`,
+  `The county over has been working the same {man} for a month and would not share a file until this morning.`,
+  `The one we took last night had a notebook. In the notebook was a description. Of {him}.`,
   `There is a dog that will not go near a particular stretch of the towpath. That got us looking somewhere we had not looked.`,
   `Woman came in with a shoe. Just a shoe. It turned out to be a very useful shoe.`,
   `Sketch artist finally got somewhere with the Delaney witness. Took four sessions and she cried through three of them.`,
@@ -93,11 +93,11 @@ export const PRIOR_ARREST = [
    Why the man in custody does not help the clerk tonight.
    ------------------------------------------------------------ */
 export const DIFFERENT_MAN = [
-  `And there is another one out tonight, and he does not look anything like the one we've got.`,
+  `And there is another one out tonight, and {he} does not look anything like the one we've got.`,
   `Which would be the end of it, except somebody who is not him tried a door on Fenner Street at eleven.`,
   `So that's one. The trouble is the one we took was in a cell when the last call came in.`,
   `He was in an interview room when it happened again. So it is not him, and it is not finished.`,
-  `Different height. Different coat. Different everything. It is not the same man and I am not going to pretend it is.`,
+  `Different height. Different coat. Different everything. It is not the same {man} and I am not going to pretend it is.`,
   `We thought that was it, too. Then the call came in at half past one and the man we had was asleep.`,
   `The one we've got is five foot six. The one from last night was six foot two. Somebody has been busy.`,
   `That was Tuesday's. Tonight's is somebody else, and we are back to a coat and a walk.`,
@@ -180,6 +180,32 @@ export const ALL_CLEAR_WHY = [
   `Everything since September was one man wearing four different coats. We have the coats.`,
   `The one you helped us with on the phone was the last of them, as it happens.`,
 ];
+
+/* ------------------------------------------------------------
+   WHO HE IS TONIGHT
+
+   Some nights the person the county is looking for is a woman. The lines
+   above are written with tokens where they talk about that person -- and
+   only there. The man arrested last night, the woman who followed a car
+   with her lights off, the boy on the paper round and the anonymous caller
+   all keep their own words, because they are their own people.
+   ------------------------------------------------------------ */
+const PRONOUNS = {
+  m: { he: 'he', him: 'him', his: 'his', man: 'man' },
+  f: { he: 'she', him: 'her', his: 'her', man: 'woman' },
+};
+
+/** Put tonight's suspect into a line written with {he} / {him} / {his} / {man}. */
+export function voice(text, app) {
+  if (!text) return text;
+  const g = (app && app.gender && app.gender.id === 'f') ? 'f' : 'm';
+  const P = PRONOUNS[g];
+  return String(text).replace(/\{(He|Him|His|Man|he|him|his|man)\}/g, (_, k) => {
+    const lower = k.toLowerCase();
+    const word = P[lower] || lower;
+    return k[0] === k[0].toUpperCase() ? word[0].toUpperCase() + word.slice(1) : word;
+  });
+}
 
 /** Pull a stable item for a given night, so a night always reads the same. */
 export function pick(list, night, salt = 0) {

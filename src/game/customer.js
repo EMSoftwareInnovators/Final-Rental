@@ -304,16 +304,37 @@ export function updateCustomer(c, dt, ctx) {
       // Fan out a little on the way in. On a busy night a dozen people all
       // aiming at the same tile inside the door simply wedge there.
       if (!c.path) {
-        setDest(c, SPOTS.door.x + (c.id % 5 - 2) * 0.22, SPOTS.door.z + 0.9 + (c.id % 3) * 0.2, ctx);
+        /* Well clear of the doorway, and spread wide. Everybody used to
+           aim at one of fifteen tiles just inside the door, which four
+           dozen people cannot share: they wedged in the entrance and the
+           back half of the coach never got in at all. */
+        setDest(c, SPOTS.door.x + (c.id % 7 - 3) * 0.42,
+          SPOTS.door.z + 1.0 + (c.id % 4) * 0.40, ctx);
       }
       c.timer += dt;
-      // Wherever they got to, they are inside now.
-      if (step(c, dt, ctx) || c.timer > 5) {
+      /* Through the doorway, not merely tired of standing behind it.
+
+         This used to be "wherever they got to, they are inside now" after
+         five seconds, which is true of the four or five people an ordinary
+         night puts through that door and wildly untrue of a coach party.
+         Four dozen people cannot all be inside within five seconds of the
+         first one, so most of them were declared inside while still on the
+         pavement -- and then tried to browse from out there, and could not
+         walk through the front of the shop to do it. */
+      const arrived = step(c, dt, ctx);
+      /* Past the threshold is inside. Waiting to reach the destination
+         first is what made the doorway a funnel -- once you are through
+         it, browsing or the back of the line will take you somewhere
+         sensible from wherever you are standing. */
+      if (c.z > 0.35 || (arrived && c.z > 0.30)) {
         c.path = null; c.timer = 0;
         if (c.act) { c.state = CS.ACTING; }
         else if (c.script === 'rent' || c.browsesFirst) c.state = CS.BROWSING;
         else if (repelled(c, ctx)) c.state = CS.BROWSING;
         else c.state = CS.TO_COUNTER;
+      } else if (c.timer > 6) {
+        // still outside: the doorway is jammed. Re-aim and keep shuffling.
+        c.timer = 0; c.path = null;
       }
       break;
     }
@@ -619,6 +640,16 @@ export function updateCustomer(c, dt, ctx) {
       if (c.served) {
         c.doneTimer = (c.doneTimer || 0) + dt;
         if (c.doneTimer > 10) { c.leaving = true; c.state = CS.LEAVING; c.path = null; ctx.releaseCounterSpot(c); }
+        break;
+      }
+      if (c.patient) {
+        /* The coach party. They have been together for four hours and
+           they are all waiting for each other anyway, so standing in a
+           line is not the imposition it is for somebody who came in on
+           their own. They do not run down and they do not storm out --
+           four dozen people all losing patience at once would empty the
+           shop through the one door just as you got on top of it, which
+           is the opposite of what the coach is for. */
         break;
       }
       {

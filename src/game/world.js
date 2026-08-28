@@ -378,12 +378,28 @@ export function buildWorld(T) {
   }
   const vacMesh = vacB.build();
 
+  /* A large, from Bertucci's on the parade. Corrugated card, printed
+     badly, and warm. Built as its own mesh because it is carried in,
+     put down on the counter and carried out again. */
+  const pizzaB = new MeshBuilder();
+  pizzaB.light = () => 1;
+  {
+    const R = 0.23, H = 0.055;
+    pizzaB.box(-R, 0, -R, R, H, R, {
+      all: { tex: T.pizzaSide, uv: [0, 0, 64, 10], sub: [2, 1, false] },
+      py: { tex: T.pizzaTop, uv: [0, 0, 64, 64], sub: [2, 2, false] },
+      ny: null,
+    });
+  }
+  const pizzaMesh = pizzaB.build();
+
   return {
     mesh,
     boomMesh,
     spillMesh,
     puffMesh,
     vacMesh,
+    pizzaMesh,
     tvMesh, tvPos, tvTextures,
     cashMesh,
     doorOpenMesh: doorLeaf(T.doorGlass),

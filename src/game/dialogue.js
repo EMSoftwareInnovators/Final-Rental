@@ -2486,7 +2486,7 @@ export function buildPizzaOrder(ctx) {
   ]);
 
   const order = () => say(caller,
-    `Right. Large. ${cap(W.ok)}, and ${W.odd}.\\n\\nAnd don't skimp on the ${W.odd}, last time it was like you'd waved it at the thing.`, [
+    `Right. Large. ${cap(W.ok)}, and ${W.odd}.\n\nAnd don't skimp on the ${W.odd}, last time it was like you'd waved it at the thing.`, [
     reply(`Sir, this is a video rental store.`, () => push(1)),
     reply(`We don't sell food. We sell films.`, () => push(1)),
     reply(`...${cap(W.odd)}.`, () => say(caller,
@@ -2538,7 +2538,7 @@ export function buildPizzaParlour(ctx) {
       reply(`Me again. Large, ${W.ok} and ${P.agreed}.`, () => {
         ctx.pizzaCook(rng.range(55, 95));
         return say(shop,
-          `"${cap(W.ok)} and ${P.agreed}. Now that we can do."\\n\\n(the sound of a man writing on a pad)\\n\\n"Twenty minutes. Delaney, yeah? The video place?"`, [
+          `"${cap(W.ok)} and ${P.agreed}. Now that we can do."\n\n(the sound of a man writing on a pad)\n\n"Twenty minutes. Delaney, yeah? The video place?"`, [
           reply(`The video place. Yes.`, () => {
             ctx.toast(`Ordered. Twenty minutes, they said.`, 'good');
             return hang();
@@ -2557,7 +2557,7 @@ export function buildPizzaParlour(ctx) {
 
   return say(shop, rng.pick([
     `"Bertucci's, collection or delivery?"`,
-    `"Bertucci's."\\n\\n(somebody shouting an order in the background)`,
+    `"Bertucci's."\n\n(somebody shouting an order in the background)`,
     `"Yeah, Bertucci's, hold on — yeah, go ahead."`,
   ]), [
     reply(`Delivery. To Sunset Video, on Delaney. Large, ${W.ok} and ${W.odd}.`, () => {
@@ -2565,7 +2565,7 @@ export function buildPizzaParlour(ctx) {
       return say(shop, rng.pick([
         `"${cap(W.ok)}, fine. ${cap(W.odd)} — no. We haven't got that. We've never had that."`,
         `"Yeah. Yeah. ...${cap(W.odd)}? On a pizza? No, pal. Not a thing we own."`,
-        `"Hold on."\\n\\n(muffled, away from the phone: "Have we got ${W.odd}?" ... "Have we WHAT?")\\n\\n"No. That's a no."`,
+        `"Hold on."\n\n(muffled, away from the phone: "Have we got ${W.odd}?" ... "Have we WHAT?")\n\n"No. That's a no."`,
       ]), [
         reply(`What have you got?`, () => say(shop,
           `"What everyone's got. ${PARLOUR_STOCK.join(', ')}. It's a pizza place, not a chemist."`, [
@@ -2599,7 +2599,7 @@ function pizzaRoot(c, ctx) {
 
   const standing = () => say(c, rng.pick([
     `(he stops arguing and stands there, arms folded, facing the back room)`,
-    `Fine. I'll wait. Waiting's free.\\n\\n(he does not leave)`,
+    `Fine. I'll wait. Waiting's free.\n\n(he does not leave)`,
     `(he has stopped listening and is watching the door)`,
   ]), [reply(`...`, () => null)]);
 
@@ -2607,7 +2607,7 @@ function pizzaRoot(c, ctx) {
   const floor = (lead) => {
     c.pizzaRound++;
     if (c.pizzaRound > 6) return standing();
-    return say(c, `${lead ? lead + '\\n\\n' : ''}${rng.pick(PIZZA_FLOOR)}`, [
+    return say(c, `${lead ? lead + '\n\n' : ''}${rng.pick(PIZZA_FLOOR)}`, [
       reply(`This is a video shop. There is no pizza.`, () => {
         ctx.mood(c, -6);
         return floor(rng.pick([`Then what's the popcorn for?`, `You keep saying that.`,

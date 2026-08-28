@@ -94,6 +94,27 @@ check('and it spreads out across the floor rather than sitting in a heap',
 check('with no two piles the same', mess.sizes > 3 && mess.yaws > 3,
   `${mess.sizes} sizes, ${mess.yaws} angles`);
 
+/* And it lands where you can see it and reach it. It used to go under the
+   cart and under both counters, where the vacuum head cannot get to it --
+   so the shift asked you to clean a floor with half the mess inside the
+   furniture. */
+const visible = await ev(() => {
+  const g = window.__game;
+  const box = (s, x0, z0, x1, z1) => s.x > x0 && s.x < x1 && s.z > z0 && s.z < z1;
+  return {
+    n: g.spills.length,
+    inSolid: g.spills.filter((s) => !g.onOpenFloor(s.x, s.z)).length,
+    underCart: g.spills.filter((s) => box(s, 12.24, 5.80, 12.96, 6.52)).length,
+    underBack: g.spills.filter((s) => box(s, 12.30, 3.70, 12.98, 5.60)).length,
+    underCounter: g.spills.filter((s) => box(s, 9.0, 1.20, 12.9, 1.95)).length,
+  };
+});
+check('every pile is on floor you can walk on',
+  visible.inSolid === 0, `${visible.inSolid} of ${visible.n} inside something`);
+check('none of it is under the machine or either counter',
+  visible.underCart === 0 && visible.underBack === 0 && visible.underCounter === 0,
+  `cart ${visible.underCart}, back counter ${visible.underBack}, till ${visible.underCounter}`);
+
 /* ---------- 3. he takes some shifting ---------- */
 const eject = await ev(() => {
   const g = window.__game;
@@ -291,6 +312,42 @@ const bound = await ev(() => {
 });
 check('and it runs off the interact binding, not a hardcoded key',
   bound.hasPadA, bound.keys.join(' '));
+
+/* Both hands are on the vacuum. Running it along the run behind the
+   counter used to pick up the telephone on the way past, because the
+   first frame of a hold is also a press. */
+const busyHands = await ev(async () => {
+  const g = window.__game;
+  g.vacuum.held = true;
+  g.phone.node = null;
+  // stand behind the counter looking straight at the phone
+  const P = window.__world.PROPS.phone;
+  const px = (P.x0 + P.x1) / 2, pz = (P.z0 + P.z1) / 2;
+  g.player.x = px - 1.0; g.player.z = pz - 0.9;
+  g.player.yaw = Math.atan2(px - g.player.x, pz - g.player.z);
+  g.player.pitch = -0.25;
+  for (let k = 0; k < 4; k++) await new Promise((r) => requestAnimationFrame(r));
+  const hover = g.hover && g.hover.kind;
+  g.input.pressed.add('KeyE');
+  g.input.down.add('KeyE');
+  for (let k = 0; k < 4; k++) await new Promise((r) => requestAnimationFrame(r));
+  const withVac = { phone: !!g.phone.node, running: g.vacuum.running };
+  g.input.down.delete('KeyE');
+  // and with empty hands the same press does pick it up
+  g.vacuum.held = false; g.vacuum.running = false;
+  for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
+  g.input.pressed.add('KeyE');
+  for (let k = 0; k < 3; k++) await new Promise((r) => requestAnimationFrame(r));
+  const empty = { phone: !!g.phone.node };
+  g.hangUp();
+  return { hover, withVac, empty };
+});
+check('the reticle really is on the phone', busyHands.hover === 'phone', `${busyHands.hover}`);
+check('running the vacuum does not answer the telephone',
+  busyHands.withVac.phone === false && busyHands.withVac.running === true,
+  `phone ${busyHands.withVac.phone}, vacuum running ${busyHands.withVac.running}`);
+check('and with your hands free the same press still picks it up',
+  busyHands.empty.phone === true);
 check('and running it across the room from the mess cleans nothing', clean.away === clean.started);
 check('pushing it over the popcorn is what clears it',
   clean.left === 0, `${clean.started} piles down to ${clean.left}`);
