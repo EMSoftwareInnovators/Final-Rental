@@ -265,6 +265,13 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 #title-menu li.sel::before{content:"\25B8 "}
 #title-menu li:not(.sel)::before{content:"  ";white-space:pre}
 .hint{margin-top:2.4cqw;font-size:2.1cqw;color:#4b3a1c}
+/* Pinned to the bottom of the title card rather than following the menu,
+   so it sits where a copyright line sits and does not move when the menu
+   grows a row. */
+.copyright{
+  position:absolute;left:0;right:0;bottom:2.6cqw;
+  text-align:center;font-size:1.75cqw;letter-spacing:.06em;color:#3f3016;
+}
 
 /* ---------------- FADE + LETTERBOX ---------------- */
 #fade{background:#000;opacity:0;transition:opacity .45s linear}
