@@ -113,9 +113,9 @@ export function glyph(action) {
   const on = buttonsFor(action);
   if (!on.length) return `<span class="key">${CAPS[action] || escape(String(action).toUpperCase())}</span>`;
   /* An action can sit on more than one button -- sprint is on both
-     triggers, and interact throws the bolt as well -- so say so rather
-     than picking one and quietly being half right. Two is plenty; the
-     panel has to fit a 4:3 screen without scrolling. */
+     triggers, and a player can put two jobs on one face button -- so say
+     so rather than picking one and quietly being half right. Two is
+     plenty; the panel has to fit a 4:3 screen without scrolling. */
   return on.slice(0, 2).map(padGlyph).join('<span class="key-or"> </span>');
 }
 

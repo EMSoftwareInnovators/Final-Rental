@@ -192,6 +192,44 @@ async function session(id, expectScheme, expectSelect) {
   check(`${label}: but the select button still does`,
     (await st()).state === 'PLAY', (await st()).state);
 
+  /* ---- the shoulder button throws the bolt, in the room it is for ---- */
+  /* On the pad, through the real loop, standing where a player stands when
+     they want it: in the back room, looking at the door they are hiding
+     behind. The from-anywhere bolt used to be suppressed whenever the
+     reticle was on that door -- correct when interacting with the door WAS
+     the bolt, and dead wrong once interacting opened it instead, which left
+     the button doing nothing at all in the one place it matters. */
+  const boltRun = async (yaw) => {
+    await ev((y) => {
+      const g = window.__game;
+      g.state = 'PLAY';
+      g.customers.length = 0;
+      g.storage.locked = false; g.storage.open = false; g.storage.broken = false;
+      g.player.x = 5.95; g.player.z = 10.2; g.player.yaw = y; g.player.pitch = 0;
+      g.player.frozen = false;
+    }, yaw);
+    await wait(200);
+    const hover = await ev(() => window.__game.hover && window.__game.hover.kind);
+    await tap(5);
+    const thrown = await ev(() => window.__game.storage.locked);
+    await tap(5);
+    const drawn = await ev(() => window.__game.storage.locked);
+    return { hover, thrown, drawn };
+  };
+  const atDoor = await boltRun(Math.PI);      // looking straight at it
+  check(`${label}: ${expectScheme === 'xbox' ? 'RB' : 'R1'} throws the bolt from inside the back room`,
+    atDoor.hover === 'storage' && atDoor.thrown === true && atDoor.drawn === false,
+    `looking at ${atDoor.hover}, thrown ${atDoor.thrown}, then ${atDoor.drawn}`);
+  const away = await boltRun(0);              // and with your back to it
+  check(`${label}: and does it without lining the door up first`,
+    away.hover !== 'storage' && away.thrown === true && away.drawn === false,
+    `looking at ${away.hover}, thrown ${away.thrown}, then ${away.drawn}`);
+  await ev(() => {
+    const g = window.__game;
+    g.storage.locked = false; g.storage.open = false;
+    g.player.x = 10.75; g.player.z = 3.0;
+  });
+
   /* ---- and the how-to page names the buttons it is actually on ---- */
   const named = await ev(() => {
     const U = window.__ui;

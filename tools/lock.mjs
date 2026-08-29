@@ -179,6 +179,53 @@ check('and interact opens it rather than bolting you in',
 check('with the bolt named as the other thing you could do',
   /throws the bolt/.test(doorInside.prompt));
 
+/* And the bolt goes across when the key for it is pressed -- with the door
+   under the reticle, which is where you are looking when you are hiding
+   behind it, and with your back to it. Pressed for real, through the
+   browser, because the bug this covers was a guard in the input path and
+   not in anything a prompt string would have shown. */
+const boltAt = async (yaw) => {
+  await ev((y) => {
+    const g = window.__game;
+    g.state = 'PLAY';
+    g.customers.length = 0;
+    g.storage.locked = false; g.storage.open = false; g.storage.broken = false;
+    g.player.x = 5.95; g.player.z = 10.2; g.player.yaw = y; g.player.pitch = 0;
+    g.player.frozen = false;
+  }, yaw);
+  await page.waitForTimeout(160);
+  const hover = await ev(() => window.__game.hover && window.__game.hover.kind);
+  await page.keyboard.press('KeyF');
+  await page.waitForTimeout(160);
+  const thrown = await ev(() => window.__game.storage.locked);
+  await page.keyboard.press('KeyF');
+  await page.waitForTimeout(160);
+  return { hover, thrown, drawn: await ev(() => window.__game.storage.locked) };
+};
+const fAtDoor = await boltAt(Math.PI);
+check('F throws the bolt with the door right in front of you',
+  fAtDoor.hover === 'storage' && fAtDoor.thrown === true && fAtDoor.drawn === false,
+  `looking at ${fAtDoor.hover}, thrown ${fAtDoor.thrown}, then ${fAtDoor.drawn}`);
+const fAway = await boltAt(0);
+check('and with your back to it, without lining it up',
+  fAway.hover !== 'storage' && fAway.thrown === true && fAway.drawn === false,
+  `looking at ${fAway.hover}, thrown ${fAway.thrown}, then ${fAway.drawn}`);
+
+/* Out on the floor it does nothing: it is the back room's bolt, not a
+   remote control for it. */
+const fOutside = await ev(async () => {
+  const g = window.__game;
+  g.storage.locked = false; g.storage.open = false;
+  g.player.x = 10.75; g.player.z = 3.0; g.player.yaw = Math.PI;
+  await new Promise((r) => requestAnimationFrame(r));
+  return true;
+});
+void fOutside;
+await page.keyboard.press('KeyF');
+await page.waitForTimeout(160);
+check('but not from out on the store floor',
+  (await ev(() => window.__game.storage.locked)) === false);
+
 const boltKeys = await ev(() => {
   const A = window.__input.PAD_ACTIONS;
   const d = window.__input.defaultBinds();

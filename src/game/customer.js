@@ -65,6 +65,12 @@ export function createCustomer(rng, opts = {}) {
     barked: 0,
 
     isKiller: !!opts.isKiller,
+    /* Does the room smell of them? Only two of the regulars, but every
+       customer carries the field so nothing has to ask twice. */
+    smelly: false,
+    /* Seconds before they will grumble again about not being able to get
+       to the counter. */
+    holdOffT: 0,
     observed: new Set(),
     talkedTo: false,
     smelled: false,
@@ -119,6 +125,10 @@ export function makeSpecial(rng, sp) {
   c.act = sp.act || null;
   c.specialScript = sp.script || null;
   c.nuisance = sp.nuisance || null;
+  /* Whether the room smells of them. Separate from `nuisance` because
+     being talked into renting a tape clears that, and a man sent off to
+     the ACTION wall does not stop smelling on the way. */
+  c.smelly = sp.nuisance === 'stench' || sp.nuisance === 'skunk';
   c.complaints = sp.complaints || null;
   c.blocksLine = !!sp.blocksLine;
   /* Some of them cannot be got rid of by being rude to them, because
@@ -140,17 +150,37 @@ export function makeSpecial(rng, sp) {
 }
 
 /**
- * Is the store currently unbearable?
+ * Is the store currently unbearable, and what is doing it?
  *
- * Two of the regulars make the place genuinely hard to stand in -- the one
- * who has not washed and the one who smells like a bonfire in a hedge. An
- * ordinary customer will keep shopping, at a distance, but will not walk up
- * to a counter and hold a conversation next to it. Nobody checks out and
- * nobody hands a tape back until whoever it is has gone.
+ * Three of the regulars make it so. Two make the place genuinely hard to
+ * stand in -- the one who has not washed and the one who smells like a
+ * bonfire in a hedge -- and the third has brought a stereo and put it on
+ * the carpet. An ordinary customer will keep shopping, at a distance, but
+ * will not walk up to a counter and hold a conversation next to it. Nobody
+ * checks out and nobody hands a tape back until it stops.
+ *
+ * Neither stops when the man responsible agrees that it should. The smell
+ * is in the room the whole time he is walking to the door and for a while
+ * after it shuts; the music plays until somebody crouches down and finds
+ * the switch, which he only does on his way out -- so if you talk him into
+ * renting something instead, it is playing through his whole shopping trip
+ * and his transaction. Both used to clear the moment the conversation did,
+ * which had the store rushing the counter behind a man still standing in
+ * the middle of it.
+ *
+ * The killer is not exempt, and used to be. He is passing for an ordinary
+ * customer, and an ordinary customer does not walk through that to pay for
+ * a tape -- so with the store hanging back at the shelves, the one man
+ * strolling up to the counter was him, free, without a description being
+ * read. It cost nothing to fix and it is the whole game.
+ *
+ * Returns why, so the person can complain about the right thing.
  */
-function repelled(c, ctx) {
-  if (c.special || c.isKiller || c === ctx.officer) return false;
-  return ctx.stenchActive();
+function repelledBy(c, ctx) {
+  if (c.special || c === ctx.officer) return null;
+  if (ctx.stenchActive()) return 'smell';
+  if (ctx.musicActive()) return 'noise';
+  return null;
 }
 
 /* Where each act happens. */
@@ -259,7 +289,7 @@ export function updateCustomer(c, dt, ctx) {
      counter stood at the window sprinting in place for the rest of the
      night. Whoever moves this frame will say so; everybody else is still. */
   c.moveSpeed = 0;
-  if (c.stenchGripe > 0) c.stenchGripe -= dt;
+  if (c.holdOffT > 0) c.holdOffT -= dt;
   // The two who will not be told go back to what they were doing between
   // goes, and are not listening again for a while.
   if (c.brushT > 0) c.brushT -= dt;
@@ -330,7 +360,7 @@ export function updateCustomer(c, dt, ctx) {
         c.path = null; c.timer = 0;
         if (c.act) { c.state = CS.ACTING; }
         else if (c.script === 'rent' || c.browsesFirst) c.state = CS.BROWSING;
-        else if (repelled(c, ctx)) c.state = CS.BROWSING;
+        else if (repelledBy(c, ctx)) c.state = CS.BROWSING;
         else c.state = CS.TO_COUNTER;
       } else if (c.timer > 6) {
         // still outside: the doorway is jammed. Re-aim and keep shuffling.
@@ -510,15 +540,16 @@ export function updateCustomer(c, dt, ctx) {
           B.seen++;
           const lastChance = B.seen >= B.visits;
           const keep = lastChance || rng() < 0.30 + B.seen * 0.22;
-          if (keep && repelled(c, ctx)) {
+          const held = keep ? repelledBy(c, ctx) : null;
+          if (held) {
             /* They have picked something and they are not going anywhere
                near the counter with THAT in the building. They hang back
                and wait it out. */
             B.phase = 'GOTO'; B.shelf = null; B.spot = null; B.t = 0; B.seen = 0;
             c.path = null;
-            if (!c.stenchGripe || c.stenchGripe <= 0) {
-              c.stenchGripe = 12 + rng() * 12;
-              ctx.stenchHoldsOff(c);
+            if (!c.holdOffT || c.holdOffT <= 0) {
+              c.holdOffT = 12 + rng() * 12;
+              ctx.holdsOff(c, held);
             }
           } else if (keep) {
             c.anim.headPitch = 0;
@@ -695,7 +726,18 @@ export function updateCustomer(c, dt, ctx) {
     case CS.LEAVING: {
       /* He does not leave without his music. He walks back to it, crouches,
          turns it off -- the store goes quiet there, not the moment he agreed
-         to go -- picks it up, and only then heads for the door. */
+         to go -- picks it up, and only then heads for the door.
+
+         Armed here rather than by whatever sent him home, because there
+         are half a dozen ways out of this building and only two of them
+         used to do it. Talk him into renting something instead of ejecting
+         him and he went shopping, queued, paid and walked out with the
+         thing still playing on the carpet behind him -- for the rest of
+         the night, since nothing else ever switches it off. */
+      if (!c.packUp) {
+        const own = ctx.ownsBoombox(c);
+        if (own) c.packUp = { x: own.x, z: own.z, phase: 'GO', t: 0, off: false };
+      }
       if (c.packUp) {
         const B = c.packUp;
         if (B.phase === 'GO') {

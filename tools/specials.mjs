@@ -500,8 +500,13 @@ const boom = await ev(async () => {
   /* And he takes it with him -- on foot. Telling him to go should NOT make
      it vanish off the floor and reappear under his arm. */
   g.ctx.leave(c);
-  const told = { box: !!g.boombox, playing: !!g.sound.boom, carrying: c.carrying,
-    packing: !!c.packUp };
+  const told = { box: !!g.boombox, playing: !!g.sound.boom, carrying: c.carrying };
+  /* One tick, and he has a plan to go and get it. Armed by the LEAVING
+     state rather than by whatever sent him there, so that checking out
+     and closing time collect it too -- see tools/nuisance.mjs. */
+  window.__cust.updateCustomer(c, 1 / 20, g.ctx);
+  told.packing = !!c.packUp;
+  told.stillDown = !!g.boombox && !!g.sound.boom;
   // let him walk back to it, switch it off and pick it up
   let quietAt = -1;
   for (let i = 0; i < 4000; i++) {
@@ -527,8 +532,9 @@ check('and it is coming from the machine, not from your head',
   boom.near > boom.far && boom.far >= 0,
   `${boom.far.toFixed(3)} across the store, ${boom.near.toFixed(3)} standing over it`);
 check('telling him to go does not teleport it into his hands',
-  boom.told.box && boom.told.playing && boom.told.carrying !== 'BOOMBOX' && boom.told.packing,
-  `still on the floor and playing: ${boom.told.box && boom.told.playing}`);
+  boom.told.box && boom.told.playing && boom.told.carrying !== 'BOOMBOX'
+  && boom.told.stillDown && boom.told.packing,
+  `still on the floor and playing: ${boom.told.stillDown}, going back for it: ${boom.told.packing}`);
 check('he walks back to it, switches it off and picks it up',
   !boom.afterLeave.box && !boom.afterLeave.playing && boom.afterLeave.carrying === 'BOOMBOX'
   && Math.hypot(boom.afterLeave.at[0] - boom.box[0], boom.afterLeave.at[1] - boom.box[1]) < 1.2,
@@ -627,13 +633,18 @@ check('and one you never speak to gives up on his own eventually',
   ['SMOKER', 'REEKER', 'SOVEREIGN'].every((id) => ignored[id].left),
   ['SMOKER', 'REEKER', 'SOVEREIGN'].map((id) => `${id.toLowerCase()} ${ignored[id].minutes}min`).join(', '));
 
+/* The smell, and how long it outlasts the man. Saying he will go is not
+   going, and going is not the air being breathable again -- see
+   tools/nuisance.mjs, which holds the whole sequence down. */
 const stink = await ev(async () => {
   const g = window.__game;
   g.customers.length = 0;
+  g.stenchT = 0;
   const before = g.ctx.stenchActive();
   const reeker = window.__cust.makeSpecial(g.rng, window.__specials.specialById('REEKER'));
   reeker.x = 4; reeker.z = 4; reeker.state = 'ACTING';
   g.customers.push(reeker);
+  g.updateStench(1 / 20);
   const during = g.ctx.stenchActive();
   // an ordinary shopper who has picked something out
   const shopper = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
@@ -643,27 +654,37 @@ const stink = await ev(async () => {
   shopper.browse.shelf = window.__world.SHELVES[0];
   shopper.browse.spot = shopper.browse.shelf.browse[0];
   g.customers.push(shopper);
-  let wentToCounter = false;
-  for (let i = 0; i < 600; i++) {
-    window.__cust.updateCustomer(shopper, 1 / 20, g.ctx);
-    if (shopper.state === 'TO_COUNTER' || shopper.state === 'WAITING') { wentToCounter = true; break; }
-  }
-  // now get rid of him and try again
-  reeker.state = 'LEAVING';
+  const runShopper = (n) => {
+    for (let i = 0; i < n; i++) {
+      g.updateStench(1 / 20);
+      window.__cust.updateCustomer(shopper, 1 / 20, g.ctx);
+      if (shopper.state === 'TO_COUNTER' || shopper.state === 'WAITING') return true;
+    }
+    return false;
+  };
+  const wentToCounter = runShopper(600);
+  // he agrees to go -- and is still standing in the middle of the floor
+  reeker.state = 'LEAVING'; reeker.leaving = true; reeker.path = null;
+  g.updateStench(1 / 20);
+  const onTheWay = g.ctx.stenchActive();
+  const wentWhileLeaving = runShopper(300);
+  // put him on the sidewalk and let the room air out
+  reeker.state = 'GONE';
+  for (let i = 0; i < 20 * 20; i++) g.updateStench(1 / 20);
   const after = g.ctx.stenchActive();
-  let wentAfter = false;
-  for (let i = 0; i < 900; i++) {
-    window.__cust.updateCustomer(shopper, 1 / 20, g.ctx);
-    if (shopper.state === 'TO_COUNTER' || shopper.state === 'WAITING') { wentAfter = true; break; }
-  }
+  const wentAfter = runShopper(900);
   g.customers.length = 0;
-  return { before, during, after, wentToCounter, wentAfter };
+  g.stenchT = 0;
+  return { before, during, onTheWay, after, wentToCounter, wentWhileLeaving, wentAfter };
 });
 check('the store knows when it is unbearable',
   !stink.before && stink.during && !stink.after);
 check('and nobody will come to the counter while it is',
   !stink.wentToCounter, `went anyway: ${stink.wentToCounter}`);
-check('but they will once he has gone', stink.wentAfter);
+check('nor while he is only on his way out',
+  stink.onTheWay && !stink.wentWhileLeaving,
+  `still smells: ${stink.onTheWay}, went anyway: ${stink.wentWhileLeaving}`);
+check('but they will once he has gone and it has aired out', stink.wentAfter);
 
 const errand = await ev(async () => {
   const g = window.__game;

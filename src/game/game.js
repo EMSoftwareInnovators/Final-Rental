@@ -44,6 +44,18 @@ const RES = [[256, 192, '256x192'], [320, 240, '320x240'], [400, 300, '400x300']
    He is free; his mess is not. */
 const GRINDERS = { REEKER: true, SMOKER: true, SOVEREIGN: true, POPCORN: true };
 
+/* How long the store goes on smelling of them after the door shuts.
+   Agreeing to go is not the same as being gone, and being gone is not
+   the same as the air being breathable: a man who has been standing in
+   the ACTION aisle for twenty minutes leaves something behind him. The
+   whole store used to rush the counter the instant he said "fine", while
+   he was still crossing the carpet. */
+const STENCH_LINGER = 14;
+
+/* Past the threshold is inside. The doorway is at z 0 and the sidewalk
+   runs negative, so this is "has not got out of the building yet". */
+const INSIDE_Z = 0.15;
+
 const SHELVE_REACH = 1.05;
 const SHELVE_TIME = 1.5;
 
@@ -152,6 +164,9 @@ export class Game {
     this.puffs = [];
     this.bus = null;
     this.vacuum = { out: false, held: false, x: 0, z: 0, yaw: 0, running: false };
+    /* Seconds of smell left in the room. Counts down once the last of them
+       is out of the building, not once they have agreed to go. */
+    this.stenchT = 0;
     this.killer = null;
     this.lights = 1; this.flickerAmt = 0; this.flickerT = 4;
     this.distress = 0; this.tension = 0;
@@ -251,6 +266,7 @@ export class Game {
     this.closingClear = 0;
     this.walkInAt = 0;
     this.boombox = null;
+    this.stenchT = 0;
     this.arrest = null;
     this.sound.boomboxStop();
     this.player = createPlayer();
@@ -790,13 +806,26 @@ export class Game {
       else if (topTape(this.player)) this.dropHeld();
     }
 
-    // Throwing the bolt is the one thing you may need to do without lining
-    // up a crosshair first, so it gets its own key anywhere in the room.
-    /* The from-anywhere bolt. If the reticle is already on the door then
-       interacting with it does the same job, and on a pad where one button
-       carries both that would toggle it twice and leave it as it was. */
+    /* Throwing the bolt is the one thing you may need to do without lining
+       up a crosshair first, so it gets its own button anywhere in the room.
+
+       Reads the bolt action's whole key set rather than the F key alone.
+       A pad button sends every key of every action bound to it, so the
+       literal 'KeyF' did happen to catch RB -- but it read as "the F key"
+       and it would have missed a rebind.
+
+       It used to be suppressed whenever the reticle was on the door, back
+       when interacting with the door WAS the bolt and doing both would
+       have toggled it twice. Interacting with it now opens it, which is a
+       different verb, and the suppression meant that standing in the back
+       room looking at the door -- which is where you are and what you are
+       looking at, because you are hiding behind it -- there was no way to
+       throw the bolt at all. The only case left is somebody who has put
+       both actions on one button, and there interact wins. */
     const onDoor = this.hover && this.hover.kind === 'storage';
-    if (i.hit('KeyF') && !onDoor && this.player.z > D + 0.05 && !this.storage.broken) {
+    const doubled = onDoor && i.bindsFor('bolt').some((b) => i.bindsFor('confirm').includes(b));
+    if (i.hit(...PAD_ACTIONS.bolt.keys) && !doubled
+      && this.player.z > D + 0.05 && !this.storage.broken) {
       if (this.storage.locked) this.toggleStorage(); else this.lockStorage();
     }
 
@@ -853,6 +882,7 @@ export class Game {
       this.updatePuffs(h);
       this.updateBus(h);
       this.updateVacuum(h);
+      this.updateStench(h);
       for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
       this.customers = this.customers.filter((c) => c.state !== CS.GONE);
       updateKiller(this.killer, h, this.ctx);
@@ -1268,6 +1298,32 @@ export class Game {
     if (c.queueIndex > 0) return 'waiting in line';
     return 'not at the counter';
   }
+
+  /**
+   * How long the store still smells of somebody.
+   *
+   * Two of the regulars make the place genuinely hard to stand in, and
+   * neither of them stops doing it by agreeing to leave. The smell is in
+   * the room the whole time they are walking to the door, and it hangs
+   * there for a while after it shuts behind them. This used to ask only
+   * whether they had entered the LEAVING state, so the moment one of them
+   * said "fine" the entire store walked up to the counter behind him.
+   *
+   * Being sent off to find a tape does not stop a man smelling either, so
+   * this reads a flag set when they spawn rather than `nuisance`, which
+   * the shopping errand clears.
+   */
+  updateStench(dt) {
+    const inside = this.customers.some((c) => !c.hidden && c.smelly
+      && c.state !== CS.GONE && c.z > INSIDE_Z);
+    if (inside) { this.stenchT = STENCH_LINGER; return; }
+    if (this.stenchT <= 0) return;
+    this.stenchT = Math.max(0, this.stenchT - dt);
+    if (this.stenchT <= 0) this.ui.toast(`The air in here is clearing.`, '');
+  }
+
+  /** Is there music playing in the store that nobody asked for? */
+  musicPlaying() { return !!this.boombox; }
 
   /**
    * Is one of the ones who will not be told still in here?
@@ -2983,10 +3039,13 @@ export class Game {
         c.speed *= 1.12;
       },
 
-      /** Is anybody in here making the store genuinely hard to stand in? */
-      stenchActive: () => g.customers.some((c) => !c.hidden && c.nuisance
-        && (c.nuisance === 'stench' || c.nuisance === 'skunk')
-        && c.state !== CS.LEAVING && c.state !== CS.GONE),
+      /** Is the store still hard to stand in? See updateStench(). */
+      stenchActive: () => g.stenchT > 0,
+      /** And is somebody's stereo still going? */
+      musicActive: () => g.musicPlaying(),
+      /** The boombox on the floor, if this is the person who put it there. */
+      ownsBoombox: (c) => (g.boombox && g.boombox.owner === c.id
+        ? { x: g.boombox.x, z: g.boombox.z } : null),
       /** He is being worn down, and the store can see it. */
       wearingDown: (c, gone) => {
         const step = Math.floor(gone * 5);
@@ -3000,8 +3059,13 @@ export class Game {
       },
 
       /** Somebody decides they will wait until the air clears. */
-      stenchHoldsOff: (c) => {
-        g.ui.toast(g.rng.pick([
+      /** Somebody has picked a tape and will not carry it to the counter. */
+      holdsOff: (c, why) => {
+        g.ui.toast(g.rng.pick(why === 'noise' ? [
+          `${c.name} says something at the counter, hears nothing back, and gives up.`,
+          `${c.name} is not queuing up to shout over that.`,
+          `${c.name} would like to pay, and would like to be heard doing it.`,
+        ] : [
           `${c.name} looks at the counter, looks at the smell, and stays where they are.`,
           `${c.name} is not coming any closer while that is in here.`,
           `${c.name} would like to pay, and is not walking through that to do it.`,
@@ -3035,6 +3099,7 @@ export class Game {
         if (!g.boombox || (c && g.boombox.owner !== c.id)) return;
         g.boombox = null;
         g.sound.boomboxStop();
+        g.ui.toast(`${c.name} switches the music off and picks it up.`, '');
         if (c) c.carrying = 'BOOMBOX';
       },
 
@@ -3068,9 +3133,6 @@ export class Game {
         g.ui.toast(`${c.name} has lost patience.`, 'bad');
       },
       storm: (c) => {
-        if (g.boombox && g.boombox.owner === c.id) {
-          c.packUp = { x: g.boombox.x, z: g.boombox.z, phase: 'GO', t: 0, off: false };
-        }
         g.stats.stormedOut++;
         c.leaving = true; c.rushing = true; c.state = CS.LEAVING; c.path = null;
         g.releaseCounterSpot(c);
@@ -3078,13 +3140,7 @@ export class Game {
         g.ui.toast(`${c.name} walked out.`, 'bad');
       },
       leave: (c) => {
-        /* Whatever he brought in, he takes back out -- on foot. It used to
-           reappear under his arm the instant he agreed to go, which is not
-           how carrying something works. */
-        if (g.boombox && g.boombox.owner === c.id) {
-          c.packUp = { x: g.boombox.x, z: g.boombox.z, phase: 'GO', t: 0, off: false };
-        }
-        /* And whatever he picked up and forgot about goes in the returns
+        /* Whatever he picked up and forgot about goes in the returns
            bin on the way past, which makes it the clerk's problem. */
         if (c.special === 'SMOKER' && c.tape && !c.checkedOut) {
           g.bin.push(c.tape); c.tape = null;
