@@ -39,6 +39,44 @@ starts on your first click.
 
 ---
 
+## Shipping it
+
+The game is a web page, and a web page in a downloaded folder is `file://`,
+which browsers refuse to load ES modules from. So the desktop build does not
+open a file &mdash; it serves itself over its own scheme, `game://app/`, out of
+`electron/main.js`. No socket, no port to collide with, no firewall prompt on
+first launch, and a real origin, which is what relative imports, `localStorage`
+and pointer lock all need.
+
+```bash
+npm install
+npm run app          # the desktop app, from the repo
+npm run icon         # redraw build/icon.png (it is drawn, not sourced)
+npm run dist         # installers and archives for this platform, into dist/
+npm run dist:win     # or one at a time
+npm run check:app    # launch it and check it actually came up
+```
+
+`npm run dist` produces a zip and an NSIS installer for Windows, zips for both
+macOS architectures, and an AppImage and a tarball for Linux. The zips are the
+ones worth uploading to itch: they unpack into a folder the itch client can run,
+and nobody has to trust an installer.
+
+Only `index.html`, `src/` and `electron/` go into the build &mdash; about 800K
+before Electron's own 250MB. The tests, the tools, the screenshots and the dev
+server are not in there, and are not reachable from the app if they were: the
+protocol handler serves the page and `src/`, resolves every request before it
+decides, and refuses everything else.
+
+Cross-building is the usual Electron story: Windows and Linux artifacts build
+anywhere, macOS ones want a Mac (and want signing and notarizing if they are to
+open without a right-click on somebody else's machine).
+
+`npm run check:app` needs a display. On a headless box:
+`xvfb-run -a npm run check:app`.
+
+---
+
 ## Controls
 
 Keyboard and mouse, or a controller. A pad is detected the moment you touch it,
@@ -58,6 +96,10 @@ Controller**, and one button can carry more than one job, the way `E` does.
 | throw the bolt on the back room | `F` | RB / R1 |
 | pause | `ESC` | Start / Options |
 | back out of a menu | `ESC` | B / ○ |
+
+In the desktop build, `F11` (or `ALT`+`ENTER`) toggles fullscreen. `ESC` is left
+alone: it is the pause key, and native fullscreen does not eat it the way the
+browser's own fullscreen would.
 
 ---
 

@@ -6,9 +6,95 @@
   "scripts": {
     "start": "node serve.cjs",
     "dev": "node serve.cjs",
-    "check": "node tools/check.mjs"
+    "check": "node tools/check.mjs",
+    "app": "electron .",
+    "dist": "electron-builder --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "icon": "node tools/icon.mjs",
+    "check:app": "node tools/electron.mjs"
   },
   "engines": {
-    "node": ">=8"
+    "node": ">=18"
+  },
+  "main": "electron/main.js",
+  "productName": "Final Rental",
+  "author": "EM Software Innovators",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "playwright-core": "^1.62.1"
+  },
+  "build": {
+    "appId": "com.emsoftwareinnovators.finalrental",
+    "productName": "Final Rental",
+    "copyright": "(c) 2026 EM Software Innovators",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "index.html",
+      "src/**/*",
+      "electron/**/*",
+      "package.json",
+      "!**/{.DS_Store,.git,.github,node_modules}"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "final-rental-${version}-windows-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Final Rental"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.games",
+      "artifactName": "final-rental-${version}-macos-${arch}.${ext}"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Game",
+      "artifactName": "final-rental-${version}-linux-${arch}.${ext}"
+    }
   }
 }
