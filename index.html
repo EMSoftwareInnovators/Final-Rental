@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
-<title>BE KIND, REWIND</title>
+<title>FINAL RENTAL</title>
 <link rel="stylesheet" href="src/style.css">
 </head>
 <body>
@@ -13,7 +13,6 @@
   <!-- ============ HUD ============ -->
   <div id="hud" class="layer">
     <div id="clock"><span id="clock-time">9:00 PM</span><span id="clock-night">NIGHT 1</span></div>
-    <div id="till">TILL $<span id="till-amt">0</span></div>
     <div id="hands"></div>
     <div id="reticle"></div>
     <div id="prompt"></div>
@@ -65,12 +64,14 @@
       </div>
       <p class="tag">SUNSET VIDEO &middot; OCT 1996 &middot; GRAVEYARD SHIFT</p>
       <ul id="title-menu">
-        <li data-act="start" class="sel">START SHIFT</li>
+        <li data-act="start" class="sel">START SHIFT<span class="sub">the graveyard shift, and whoever else is working it</span></li>
+        <li data-act="casual">CASUAL SHIFT<span class="sub">just the store. nobody is coming for you.</span></li>
         <li data-act="howto">HOW TO WORK THE COUNTER</li>
         <li data-act="options">OPTIONS</li>
       </ul>
       <p class="hint">arrows / mouse &middot; ENTER to select</p>
     </div>
+    <p class="copyright">&copy; 2026 EM Software Innovators</p>
   </div>
 
   <!-- ============ PANEL (howto / options / report / ending) ============ -->

@@ -1,4 +1,5 @@
-/* Runs every automated check: renderer orientation, a gameplay soak, and a
+/* Runs every automated check: the American-English read of the source,
+   renderer orientation, the front-end menus, a gameplay soak, and a
    real-input playthrough. Boots its own static server. */
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -12,7 +13,7 @@ const server = spawn(process.execPath, ['serve.cjs'], { stdio: 'ignore', env: { 
 await new Promise((r) => setTimeout(r, 700));
 
 let failed = 0;
-for (const t of ['tools/uvtest.mjs', 'tools/soak.mjs', 'tools/playthrough.mjs']) {
+for (const t of ['tools/english.mjs', 'tools/uvtest.mjs', 'tools/menuwalk.mjs', 'tools/padmenu.mjs', 'tools/phonelist.mjs', 'tools/lock.mjs', 'tools/deputy.mjs', 'tools/closing.mjs', 'tools/arrest.mjs', 'tools/sweep.mjs', 'tools/manager.mjs', 'tools/nuisance.mjs', 'tools/endings.mjs', 'tools/pizza.mjs', 'tools/popcorn.mjs', 'tools/bus.mjs', 'tools/soak.mjs', 'tools/specials.mjs', 'tools/playthrough.mjs']) {
   console.log(`\n===== ${t} =====`);
   failed += await run(process.execPath, [t]);
 }

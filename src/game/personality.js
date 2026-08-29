@@ -6,6 +6,8 @@
    appearance, name and quirk are rolled separately.
    ============================================================ */
 
+import { EXTRA_LINES } from './chatter.js';
+
 const P = (id, o) => ({ id, ...o });
 
 export const ARCHETYPES = [
@@ -290,7 +292,7 @@ export const ARCHETYPES = [
       greetRent: [`I'll take this, though I've seen it. On a screen. A real one.`],
       feeAccept: [`Naturally. The cost of art.`],
       feeDispute: [`Your ledger is wrong. Mine isn't.`],
-      feeWaived: [`Civilised. Thank you.`],
+      feeWaived: [`Civilized. Thank you.`],
       noMoney: [`I've an account. Somewhere. Under a different name.`],
       thanks: [`Mm. Adequate.`],
       wait: [`Do carry on.`],
@@ -329,7 +331,7 @@ export const ARCHETYPES = [
       feeAccept: [`Yep. Cash alright?`],
       feeDispute: [`I was in Ohio. Physically in Ohio.`],
       feeWaived: [`You're alright. You're alright.`],
-      noMoney: [`Company card's frozen till Monday.`],
+      noMoney: [`Company card's frozen until Monday.`],
       thanks: [`Preciate you.`],
       wait: [`I got nothin' but road ahead of me.`],
       angry: [`Hey. Hey. Watch the tone, kid.`],
@@ -420,6 +422,16 @@ export const OFFICER = P('OFFICER', {
   lines: {},
 });
 
+/* The bulk of the writing lives in chatter.js. Fold it on here so the
+   table above stays a table of behavior rather than a wall of dialogue. */
+for (const a of ARCHETYPES) {
+  const extra = EXTRA_LINES[a.id];
+  if (!extra) continue;
+  for (const key of Object.keys(extra)) {
+    a.lines[key] = (a.lines[key] || []).concat(extra[key]);
+  }
+}
+
 export function pickPersonality(rng, exclude = []) {
   const pool = ARCHETYPES.filter((a) => !exclude.includes(a.id));
   let total = 0;
@@ -429,8 +441,24 @@ export function pickPersonality(rng, exclude = []) {
   return pool[pool.length - 1];
 }
 
+const TAPE_WORD = /\btapes?\b/i;
+
+/**
+ * One line out of somebody's bank.
+ *
+ * If what they are holding is a cartridge rather than a tape, lines that
+ * say "tape" are quietly taken out of the running -- a man handing back a
+ * game should not greet you with "same time, same tape". Every bank has
+ * plenty left over; on the rare occasion it does not, the caller's fallback
+ * covers it.
+ */
 export function line(person, key, rng, fallback = '...') {
-  const pool = person.personality.lines[key];
+  let pool = person.personality.lines[key];
   if (!pool || !pool.length) return fallback;
+  if (person.tape && person.tape.game) {
+    const clean = pool.filter((t) => !TAPE_WORD.test(t));
+    if (!clean.length) return fallback;
+    pool = clean;
+  }
   return pool[rng.int(pool.length)];
 }

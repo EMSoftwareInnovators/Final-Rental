@@ -17,7 +17,7 @@ import { MeshBuilder } from '../engine/mesh.js';
 import { mat, mul, setPosYaw, setRotX, setRotY, setRotZ, setScale, setTranslate } from '../engine/mathx.js';
 import { ATLAS } from './appearance.js';
 
-/* body metrics for a 1.75 m person, in metres */
+/* body metrics for a 1.75 m person, in meters */
 const LEG_LEN = 0.74, SHOE_H = 0.085, HIP_Y = 0.90;
 const TORSO_H = 0.58, TORSO_W = 0.205, TORSO_D = 0.125;
 const SHOULDER_Y = 1.40, ARM_LEN = 0.58, ARM_R = 0.056;
@@ -150,7 +150,7 @@ export function buildActorMeshes() {
     // Sits from the brow up, hugging the skull profile. The hairline itself
     // is painted on the head; the mesh is only here to give the silhouette
     // volume -- otherwise "curly and thick" and "buzzed" look identical from
-    // across the shop.
+    // across the store.
     b.loft([
       { y: HEAD_H * 0.78, w: HEAD_W * 1.01 * k, d: HEAD_D * 1.01 * k },
       { y: HEAD_H * 0.93, w: HEAD_W * 0.95 * k, d: HEAD_D * 0.95 * k },
@@ -381,6 +381,15 @@ export function makeAnim() {
 }
 
 export function updateAnim(an, dt, moveSpeed, app, opts = {}) {
+  /* `keep` means somebody else is driving the rig this frame -- a special
+     customer performing whatever it is they came in to perform -- so the
+     idle and walk cycles stay out of it and only the legs settle. */
+  if (opts.keep) {
+    an.phase += dt * 1.4;
+    an.legSwing += (0 - an.legSwing) * Math.min(1, dt * 8);
+    an.crouch = 0;
+    return;
+  }
   an.limp = app.gait.id === 'limp';
   const stiff = app.gait.id === 'stiff';
   const shuffle = app.gait.id === 'shuffle';

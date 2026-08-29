@@ -35,20 +35,29 @@ for (let i = 0; i < 40; i++) {
 }
 check('briefing done', await ev(() => window.__game.officerDone));
 
-// force a returning customer with a late, unrewound HORROR tape
-await ev(() => {
+/* Force a returning customer with a late, unrewound HORROR tape, and hold
+   the door on everybody else -- customers are scheduled against the store
+   floor clock, so one could otherwise wander in and take index zero. */
+const SUBJECT = await ev(() => {
   const g = window.__game;
+  g.night.schedule.length = 0;
   g.customers.length = 0;
   const c = window.__cust.createCustomer(g.rng, { intent: 'RETURN' });
   c.tape = { id: 5150, title: 'BLOOD ORCHARD', genre: 'HORROR', rewound: false, price: 3.5, daysLate: 3, heldBy: c.id };
   c.script = 'return'; c.hasMoney = true; c.personality = { ...c.personality, honesty: 1, chattiness: 0 };
   g.customers.push(c);
+  return c.id;
 });
+const subject = () => ev((id) => {
+  const c = window.__game.customers.find((x) => x.id === id);
+  return c ? { state: c.state, name: c.name } : null;
+}, SUBJECT);
 for (let i = 0; i < 80; i++) {
-  if (await ev(() => window.__game.customers[0] && window.__game.customers[0].state === 'WAITING')) break;
+  const st = await subject();
+  if (st && st.state === 'WAITING') break;
   await wait(200);
 }
-check('customer walked in and queued', await ev(() => window.__game.customers[0].state) === 'WAITING');
+check('customer walked in and got in line', ((await subject()) || {}).state === 'WAITING');
 
 await ev(() => { window.__game.timeScale = 1; });
 await look(10.75, 3.05, Math.PI, 0.0);
@@ -85,10 +94,10 @@ await wait(300);
 const hand = await ev(() => ({
   cash: window.__game.player.cash.tendered,
   owed: window.__game.player.cash.owed,
-  till: window.__game.till,
+  drawer: window.__game.drawer,
 }));
-check('the cash is in your hand, not the till', hand.cash >= 3 && hand.owed >= 3 && hand.till === 0,
-  `hand $${hand.cash.toFixed(2)} / owed $${hand.owed.toFixed(2)} / till $${hand.till.toFixed(2)}`);
+check('the cash is in your hand, not the register', hand.cash >= 3 && hand.owed >= 3 && hand.drawer === 0,
+  `hand $${hand.cash.toFixed(2)} / owed $${hand.owed.toFixed(2)} / register $${hand.drawer.toFixed(2)}`);
 
 await ev(() => window.__game.ui.finishTyping()); await wait(200);
 await page.keyboard.press('Enter'); await wait(300);
@@ -113,18 +122,18 @@ check('the register offers to take the cash', /Ring up/.test(pReg), pReg.slice(0
 await page.keyboard.press('KeyE');
 await wait(300);
 const after = await ev(() => ({
-  till: window.__game.till,
+  drawer: window.__game.drawer,
   cash: window.__game.player.cash.owed,
   change: window.__game.changeOwed === undefined ? window.__game.player.changeInHand : 0,
 }));
-check('ringing up moves it into the drawer', after.till >= 3 && after.cash === 0,
-  `till $${after.till.toFixed(2)}`);
+check('ringing up moves it into the drawer', after.drawer >= 3 && after.cash === 0,
+  `register $${after.drawer.toFixed(2)}`);
 
 // if they overpaid, they are still standing there waiting
-const owedChange = await ev(() => {
-  const c = window.__game.customers[0];
+const owedChange = await ev((id) => {
+  const c = window.__game.customers.find((x) => x.id === id);
   return c ? { waiting: !!c.awaitingChange, due: c.changeDue || 0, inHand: window.__game.player.changeInHand } : null;
-});
+}, SUBJECT);
 if (owedChange && owedChange.waiting) {
   check('change was counted out of the drawer', owedChange.inHand >= owedChange.due - 0.001,
     `$${owedChange.inHand.toFixed(2)} for $${owedChange.due.toFixed(2)} owed`);
@@ -154,27 +163,43 @@ const p2 = await prompt();
 check('rewinder is reachable from behind the counter', /Load BLOOD ORCHARD/.test(p2), p2.slice(0, 60));
 await page.keyboard.press('KeyE');
 await wait(200);
-await ev(() => { window.__game.timeScale = 10; });
-await wait(1400);
+const dur = await ev(() => Math.round(window.__game.rewinder.dur));
+await ev(() => { window.__game.timeScale = 30; });
+await wait(2200);
 await ev(() => { window.__game.timeScale = 1; });
-check('the tape rewound', await ev(() => window.__game.rewinder.done));
+check('the tape rewound', await ev(() => window.__game.rewinder.done), `${dur}s of shift time`);
 await page.keyboard.press('KeyE');
 await wait(250);
 check('and came back out rewound',
   await ev(() => window.__game.player.held.length === 1 && window.__game.player.held[0].rewound));
 
-// shelve it on HORROR
+/* Shelve it on HORROR. Two rules now: you have to be at the run, and it
+   is a held action rather than a tap. */
+await look(3.2, 5.2, -Math.PI / 2, -0.05);
+await wait(250);
+const far = await prompt();
+check('you cannot shelve from across the aisle', /step up to the shelf/.test(far), far.slice(0, 70));
+
 await look(2.45, 5.2, -Math.PI / 2, -0.05);
 await wait(250);
 const p3 = await prompt();
-check('the horror run offers the right shelf', /Shelve BLOOD ORCHARD/.test(p3) && /correct section/.test(p3), p3.slice(0, 80));
-await page.keyboard.press('KeyE');
-await wait(300);
+check('the horror run offers the right shelf', /shelve BLOOD ORCHARD/i.test(p3) && /correct section/.test(p3), p3.slice(0, 80));
+
+await page.keyboard.down('KeyE');
+await wait(400);
+const partway = await ev(() => ({ held: window.__game.player.held.length, hold: window.__game.hold && +window.__game.hold.t.toFixed(2) }));
+check('holding starts the put-back rather than finishing it',
+  partway.held === 1 && partway.hold > 0, `${partway.hold}s in`);
+await wait(1500);
+await page.keyboard.up('KeyE');
+await wait(200);
 check('shelved and scored',
   await ev(() => window.__game.stats.shelvedRight === 1 && window.__game.player.held.length === 0));
 
-// the phone and the door are both reachable from the clerk's side
-await look(12.2, 3.1, Math.PI / 2, -0.05);
+/* The phone and the door are both reachable from the clerk's side. The
+   phone is a desk set on the back counter now rather than a box on the
+   wall, so this looks down at the counter instead of straight ahead. */
+await look(11.95, 3.95, 1.01, -0.64);
 await wait(250);
 check('phone is reachable', /Pick up the phone/.test(await prompt()), (await prompt()).slice(0, 40));
 await look(6.0, 1.3, Math.PI, -0.15);

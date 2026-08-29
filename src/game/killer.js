@@ -14,40 +14,67 @@ import { navPath } from './nav.js';
 import { updateAnim } from './actor.js';
 import { updateCustomer, createCustomer, CS } from './customer.js';
 import { KILLER_MASK } from './personality.js';
+import { randomName } from './appearance.js';
+
+/* The first few shifts are a video store and nothing else. You need to have
+   learned where the SCI-FI run is and what a rewind charge is before any of
+   the rest of it means anything, and a bulletin read out on night one lands
+   on somebody who does not yet know what normal looks like. */
+export const KILLER_FIRST_NIGHT = 4;
+
+/** Odds he comes at all tonight. Exactly zero before he can. */
+export function killerChance(night, casual) {
+  if (casual) return 0;
+  if (night < KILLER_FIRST_NIGHT) return 0;
+  return Math.min(0.92, 0.34 + (night - KILLER_FIRST_NIGHT) * 0.14);
+}
 
 export const KP = {
   ABSENT: 'ABSENT', WAITING: 'WAITING', CUSTOMER: 'CUSTOMER', GONE_QUIET: 'GONE_QUIET',
   STALK: 'STALK', APPROACH: 'APPROACH', TRY_DOOR: 'TRY_DOOR',
-  BREACH: 'BREACH', HUNT: 'HUNT', ATTACK: 'ATTACK', CAUGHT: 'CAUGHT',
+  BREACH: 'BREACH', HUNT: 'HUNT', SIEGE: 'SIEGE', ATTACK: 'ATTACK', CAUGHT: 'CAUGHT',
 };
 
-export function planKiller(rng, night, nightLength) {
+/**
+ * Tuning for one night of him.
+ *
+ * The old numbers gave you a minute and a half of a man visibly loitering
+ * under a streetlamp before anything happened, which is a warning, not a
+ * fright. Everything here is compressed: he is at the glass for a few
+ * seconds, at the handle for a few more, and then he is a problem.
+ */
+export function planKiller(rng, night, nightLength, mode) {
   // Every field is always present, even on a night he never shows: nothing
   // downstream should ever have to guess whether a tuning value exists.
-  const appearChance = Math.min(0.92, 0.42 + (night - 1) * 0.13);
+  const chance = killerChance(night, mode === 'CASUAL');
   const visitAt = nightLength * rng.range(0.18, 0.55);
-  const stalkAt = Math.max(visitAt + 55, nightLength * rng.range(0.55, 0.86) - night * 8);
+  const stalkAt = Math.max(visitAt + 45, nightLength * rng.range(0.5, 0.82) - night * 8);
   return {
-    appears: rng() < appearChance,
+    appears: chance > 0 && rng() < chance,
     visits: rng() < 0.86,                            // sometimes he skips the polite part
-    stalks: rng() < Math.min(0.95, 0.68 + night * 0.06),
+    stalks: rng() < Math.min(0.95, 0.72 + night * 0.05),
     visitAt,
     stalkAt,
-    postDwell: Math.max(4.5, 11 - night * 0.7),      // seconds at each window
-    doorDelay: Math.max(5.5, 15 - night * 1.1),      // dithering outside an unlocked door
-    breachLocked: Math.max(20, 48 - night * 3.6),    // how long the deadbolt holds him
-    huntSpeed: 1.55 + night * 0.09,
+    postDwell: Math.max(2.0, 4.6 - night * 0.22),    // seconds at each window
+    prowlFor: Math.max(6, 13 - night * 0.8),         // total time out there before he comes
+    doorDelay: Math.max(1.8, 4.2 - night * 0.28),    // dithering outside an unlocked door
+    breachLocked: Math.max(16, 34 - night * 2.0),    // how long the deadbolt holds him
+    breakStorage: Math.max(19, 34 - night * 1.2),    // and how long the back room holds
+    huntSpeed: 1.62 + night * 0.09,
   };
 }
 
-export function createKiller(rng, app, plan, nightLength) {
+export function createKiller(rng, app, plan, nightLength, caseFile) {
   const ent = createCustomer(rng, {
     app,
     personality: KILLER_MASK,
     isKiller: true,
     intent: rng.chance(0.82) ? 'RENT' : 'RETURN',
     hasMoney: true,
-    name: 'THE CUSTOMER',
+    /* He used to be called THE CUSTOMER, in capitals, standing in a room
+       where everyone else had a first name and a surname. Whatever else
+       gave him away, that did it first. */
+    name: (caseFile && caseFile.name) || randomName(rng, app.gender),
   });
   ent.speed = 1.16;
   ent.phoneLabel = `The one in the ${app.jacket.color.name} ${app.jacket.kind}`;
@@ -66,8 +93,10 @@ export function createKiller(rng, app, plan, nightLength) {
     postTimer: 0,
     knockTimer: 0,
     nightLength,
+    caseFile: caseFile || null,
     proximity: 0,
     everSeenTonight: false,
+    siegeDamage: 0,
   };
 }
 
@@ -79,7 +108,14 @@ export function addIntel(k, n) {
 
 export function killerActive(k) {
   return k && (k.phase === KP.STALK || k.phase === KP.APPROACH || k.phase === KP.TRY_DOOR
-    || k.phase === KP.BREACH || k.phase === KP.HUNT || k.phase === KP.ATTACK);
+    || k.phase === KP.BREACH || k.phase === KP.HUNT || k.phase === KP.SIEGE
+    || k.phase === KP.ATTACK);
+}
+
+/** Inside the building and coming for you. */
+export function killerInside(k) {
+  return k && (k.phase === KP.BREACH || k.phase === KP.HUNT
+    || k.phase === KP.SIEGE || k.phase === KP.ATTACK);
 }
 
 export function killerPresent(k) {
@@ -94,6 +130,8 @@ export function updateKiller(k, dt, ctx) {
 
   switch (k.phase) {
     case KP.WAITING: {
+      // He does not exist as a threat until you have been told he might.
+      if (!ctx.briefingDone) break;
       if (k.plan.visits && t >= k.plan.visitAt) {
         k.phase = KP.CUSTOMER;
         e.hidden = false;
@@ -148,7 +186,7 @@ export function updateKiller(k, dt, ctx) {
         const dwell = k.plan.postDwell / (1 + Math.max(0, k.intel) * 0.14);
         if (k.postTimer > dwell) {
           k.postTimer = 0;
-          if (k.timer > 26 + Math.max(0, 3 - k.intel) * 6) {
+          if (k.timer > k.plan.prowlFor + Math.max(0, 2 - k.intel) * 1.5) {
             k.phase = KP.APPROACH; k.timer = 0; e.path = null;
             ctx.onKillerApproaches();
           } else {
@@ -200,6 +238,7 @@ export function updateKiller(k, dt, ctx) {
 
     case KP.HUNT: {
       const p = ctx.player;
+      if (ctx.playerHidden) { k.phase = KP.SIEGE; k.timer = 0; e.path = null; break; }
       const d = dist(e.x, e.z, p.x, p.z);
       if (d < 1.15) {
         k.phase = KP.ATTACK; e.moveSpeed = 0;
@@ -222,6 +261,37 @@ export function updateKiller(k, dt, ctx) {
       }
       break;
     }
+
+    /* He knows where you went. The back room has one door and he is on the
+       wrong side of it, which is a problem he can solve given long enough. */
+    case KP.SIEGE: {
+      if (!ctx.playerHidden) { k.phase = KP.HUNT; k.timer = 0; e.path = null; break; }
+      const door = ctx.storageDoorSpot;
+      const d = dist(e.x, e.z, door.x, door.z);
+      if (d > 0.55) {
+        const end = e.path && e.path[e.path.length - 1];
+        if (!e.path || e.pathI >= e.path.length || !end || dist(end.x, end.z, door.x, door.z) > 0.8) {
+          e.path = navPath(e.x, e.z, door.x, door.z, ctx.solids, e.r + 0.05);
+          e.pathI = 0;
+        }
+        const wp = e.path[Math.min(e.pathI, e.path.length - 1)];
+        const lastLeg = e.pathI >= e.path.length - 1;
+        if (stepTo(e, wp.x, wp.z, dt, k.plan.huntSpeed, ctx, true, lastLeg ? 0.3 : 0.34)) {
+          if (!lastLeg) e.pathI++;
+        }
+      } else {
+        e.moveSpeed = 0;
+        e.yaw = angleTowards(e.yaw, Math.PI, dt * 4);
+        k.siegeDamage += dt / k.plan.breakStorage;
+        k.swingTimer = (k.swingTimer || 0) - dt;
+        if (k.swingTimer <= 0) {
+          k.swingTimer = 0.9 + ctx.rng.range(0, 0.5);
+          ctx.killerHitsStorage(Math.min(1, k.siegeDamage));
+        }
+        if (k.siegeDamage >= 1) { ctx.storageGivesWay(); k.phase = KP.HUNT; k.timer = 0; e.path = null; }
+      }
+      break;
+    }
     default: break;
   }
 
@@ -229,9 +299,9 @@ export function updateKiller(k, dt, ctx) {
     updateAnim(e.anim, dt, e.moveSpeed, e.app, {
       talking: ctx.speaking === e,
       reach: e.state === CS.TALKING && e.tape && !e.gaveTape && !e.checkedOut,
-      headPitch: k.phase === KP.HUNT ? -0.10 : 0,
+      headPitch: (k.phase === KP.HUNT || k.phase === KP.SIEGE) ? -0.10 : 0,
     });
-    if (k.phase === KP.HUNT || k.phase === KP.BREACH) {
+    if (k.phase === KP.HUNT || k.phase === KP.BREACH || k.phase === KP.SIEGE) {
       e.anim.lean = 0.16;
       e.anim.armL = -0.55 + e.anim.armL * 0.3;
       e.anim.armR = -0.28 + e.anim.armR * 0.3;
@@ -258,7 +328,8 @@ function stepTo(e, tx, tz, dt, speed, ctx, canEnter, thresh) {
   if (d < (thresh || 0.12)) { e.moveSpeed = 0; return true; }
   const nx = e.x + (dx / d) * speed * dt;
   const nz = e.z + (dz / d) * speed * dt;
-  const [px, pz] = collide(nx, nz, e.r, ctx.solids, canEnter ? true : ctx.doorPassable(e));
+  const [px, pz] = collide(nx, nz, e.r, ctx.solids,
+    canEnter ? true : ctx.doorPassable(e), ctx.storagePassable());
   const moved = Math.hypot(px - e.x, pz - e.z);
   e.x = px; e.z = pz;
   e.moveSpeed = moved / Math.max(dt, 0.0001);

@@ -1,5 +1,5 @@
 /* ============================================================
-   BE KIND, REWIND -- 1996 CRT / PS1 front-end styling
+   FINAL RENTAL -- 1996 CRT / PS1 front-end styling
    Everything is sized in `cqw` against the cabinet so the UI
    scales with the screen exactly like a fixed-res console would.
    ============================================================ */
@@ -46,15 +46,11 @@ body{
 }
 #clock-time{display:block;font-size:4.4cqw;font-weight:bold;color:var(--amber)}
 #clock-night{display:block;font-size:2.4cqw;color:var(--amber-dim)}
-#till{
-  position:absolute;top:2cqw;right:2.4cqw;
-  font-size:3.4cqw;text-shadow:var(--shadow);color:var(--green);
-}
 #hands{
   position:absolute;bottom:1.6cqw;left:2.4cqw;max-width:62cqw;
   font-size:2.3cqw;line-height:1.25;text-shadow:var(--shadow);white-space:pre-line;
 }
-body.talking #hands,body.talking #till,body.talking #objective{display:none}
+body.talking #hands,body.talking #objective{display:none}
 #hands .tape-line{color:#fff}
 #hands .warn{color:var(--red)}
 #hands .ok{color:var(--green)}
@@ -67,6 +63,12 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
   transition:width .08s,height .08s,border-color .08s;
 }
 #reticle.hot{width:2.2cqw;height:2.2cqw;border-color:var(--amber)}
+/* held actions: the reticle fills clockwise while you keep the key down */
+#reticle.holding{
+  width:4.4cqw;height:4.4cqw;border-color:var(--amber-dim);
+  background:conic-gradient(var(--amber) calc(var(--hold,0) * 360deg), transparent 0);
+}
+#prompt .hold{color:var(--amber);font-weight:bold}
 
 #prompt{
   position:absolute;left:50%;top:60%;transform:translateX(-50%);
@@ -76,6 +78,32 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 #prompt .key{
   display:inline-block;padding:0 .7cqw;margin-right:.6cqw;
   border:0.25cqw solid var(--amber);color:var(--amber);
+}
+
+/* ---------------- controller glyphs ----------------
+   A pad button is a filled roundel in its own color, so it reads as the
+   thing on the controller rather than as a word. */
+.key.btn{
+  border-radius:50%;border-width:0.22cqw;
+  min-width:2.9cqw;text-align:center;font-weight:bold;
+  padding:0 .45cqw;
+}
+.key.x-a{border-color:#7ac943;color:#9ade6a}
+.key.x-b{border-color:#d64b3a;color:#ff7f6a}
+.key.x-x{border-color:#3a7fd6;color:#79b4ff}
+.key.x-y{border-color:#e0b32a;color:#ffd86a}
+.key.x-m,.key.x-d{border-color:#cfc7b0;color:#e8e0c8;border-radius:0.5cqw}
+.key.p-x,.key.p-o,.key.p-t,.key.p-s{border-color:#cfd6e6;color:#e6ecf8}
+.key.p-m,.key.p-d{border-color:#cfd6e6;color:#e6ecf8;border-radius:0.5cqw}
+/* An action can sit on two buttons -- sprint is on both triggers. A hair
+   of space between them, so they read as two things and not one label. */
+.key-or{display:inline-block;width:.3cqw}
+.pad li .key.btn,#panel-body .key.btn{
+  min-width:2.4cqw;border-color:#5a5140;color:#2a2418;background:#cfc7ac;
+}
+#panel-body .key{
+  display:inline-block;min-width:2.2cqw;padding:0 .4cqw;
+  border:0.18cqw solid #8c1d0e;color:#8c1d0e;text-align:center;
 }
 #prompt .sub{display:block;font-size:2.2cqw;color:var(--amber-dim)}
 
@@ -140,7 +168,7 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 /* ---------------- PADS (notes/phone/panel) ---------------- */
 .pad{
   position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-  width:78cqw;max-height:80cqh;overflow:hidden;
+  width:78cqw;max-height:88cqh;overflow-y:auto;overflow-x:hidden;
   background:var(--paper);color:var(--ink);
   border:0.6cqw solid #2a2418;
   box-shadow:0 1.2cqw 0 rgba(0,0,0,.6);
@@ -151,6 +179,7 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
   font-size:2.9cqw;letter-spacing:.2cqw;border-bottom:0.3cqw solid var(--ink);
   margin:0 0 .8cqw;padding-bottom:.3cqw;
 }
+.pad:has(.howto){padding:1.4cqw 2.2cqw}
 .pad h2+h2,.pad ul+h2{margin-top:1.4cqw}
 .pad ul{list-style:none}
 .pad li{padding-left:1.6cqw;text-indent:-1.6cqw}
@@ -162,6 +191,42 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 .pad .pad-foot{margin-top:1.2cqw;font-size:2.1cqw;color:#5a5140;text-align:right}
 .pad .k{color:#8c1d0e;font-weight:bold}
 .pad .quiet{color:#5a5140}
+/* ---------------- pages shown behind the cinema bars ----------------
+   The end of a night -- the shift report, and the three endings -- goes up
+   with the bars down, which take eleven percent off the top and eleven off
+   the bottom. The panel allowed itself 88cqh of a 78cqh hole and then
+   scrolled the difference, which is no help at all: there is nothing to
+   scroll it with. The pointer is locked, the player may be on a pad, and
+   the arrest page ends in a choice, so what fell off the bottom was a
+   decision nobody could see.
+
+   tools/endings.mjs measures every branch of every one of these against
+   the space actually there, at four window shapes, and fails if one of
+   them needs to scroll or runs under a bar. */
+body.cine .pad{max-height:76cqh}
+/* The report is fourteen rows and a grade whatever kind of night it was,
+   so its height barely moves and it sat a few pixels under the bottom bar
+   every night of every run. The rows carry the whole cost: fourteen of
+   them at a tighter setting is the difference. */
+body.cine #panel-body td{line-height:1.2;padding:0}
+body.cine #panel-body table{font-size:2.15cqw}
+body.cine #panel-body h2{margin-bottom:.5cqw}
+body.cine #panel-body .report .note{line-height:1.3}
+
+/* An ending is a page of prose rather than a table: a slightly smaller
+   face and tighter leading than the notepad or the options screen get,
+   and a little wider, because the alternative was shrinking the type far
+   enough to read as an apology. */
+.pad:has(.ending){
+  width:84cqw;padding:1.5cqw 2.2cqw;
+  font-size:2.25cqw;line-height:1.3;
+}
+.pad:has(.ending) h2{font-size:2.6cqw;margin-bottom:.6cqw;padding-bottom:.25cqw}
+.pad:has(.ending) p{margin-bottom:.5cqw}
+.pad:has(.ending) .big{font-size:3.3cqw;margin:.7cqw 0 .5cqw}
+.pad:has(.ending) .pad-foot{margin-top:.7cqw}
+.pad:has(.ending) ul{margin-top:.2cqw}
+
 #notes .pad{width:88cqw;padding:1.6cqw 2cqw}
 #notes .sheet{display:grid;grid-template-columns:1fr 1fr;gap:0 2.4cqw;align-items:start}
 #notes .sheet>div{min-width:0}
@@ -188,6 +253,28 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 #panel-body .big{font-size:4cqw;font-weight:bold;letter-spacing:.2cqw}
 #panel-body .cols{display:grid;grid-template-columns:1fr 1fr;gap:0 2cqw}
 
+/* The controls page has to fit a 4:3 screen with nothing clipped off the
+   bottom: four short key columns over two columns of prose, all a size
+   down from the rest of the pads. */
+#panel-body .howto{width:100%}
+#panel-body .howto h2{font-size:2.4cqw;margin:0 0 .45cqw;padding-bottom:.2cqw}
+#panel-body .howto .keys{
+  /* The first column carries the widest cells now that an action can name
+     two buttons -- sprint is on both triggers. */
+  display:grid;grid-template-columns:1.05fr 1.15fr 1fr;gap:0 1.1cqw;
+  margin-bottom:.7cqw;padding-bottom:.6cqw;border-bottom:0.2cqw solid #b3a983;
+}
+#panel-body .howto .keys li{font-size:1.95cqw;line-height:1.24;white-space:nowrap}
+#panel-body .howto .keys b{display:inline-block;min-width:6.4cqw;color:#8c1d0e}
+#panel-body .howto .keys .key{min-width:5.2cqw;margin-right:.5cqw}
+#panel-body .howto .keys .key.btn{min-width:3.4cqw}
+#panel-body .howto .cols{gap:0 1.8cqw}
+#panel-body .howto .cols li{
+  font-size:1.95cqw;line-height:1.26;margin-bottom:.4cqw;
+  padding-left:1.3cqw;text-indent:-1.3cqw;
+}
+#panel-body .howto .pad-foot{margin-top:.5cqw;font-size:1.9cqw}
+
 /* ---------------- TITLE ---------------- */
 #title{
   background:radial-gradient(ellipse at 50% 45%,rgba(0,0,0,.72) 0%,rgba(0,0,0,.9) 55%,#000 100%);
@@ -202,9 +289,21 @@ body.talking #hands,body.talking #till,body.talking #objective{display:none}
 #title-menu{list-style:none;font-size:3.4cqw}
 #title-menu li{color:var(--amber-dim);padding:.2cqw}
 #title-menu li.sel{color:var(--amber)}
+#title-menu .sub{
+  display:block;font-size:1.9cqw;color:#4b3a1c;letter-spacing:0;
+  margin:-.2cqw 0 .5cqw;text-transform:none;
+}
+#title-menu li.sel .sub{color:var(--amber-dim)}
 #title-menu li.sel::before{content:"\25B8 "}
 #title-menu li:not(.sel)::before{content:"  ";white-space:pre}
 .hint{margin-top:2.4cqw;font-size:2.1cqw;color:#4b3a1c}
+/* Pinned to the bottom of the title card rather than following the menu,
+   so it sits where a copyright line sits and does not move when the menu
+   grows a row. */
+.copyright{
+  position:absolute;left:0;right:0;bottom:2.6cqw;
+  text-align:center;font-size:1.75cqw;letter-spacing:.06em;color:#3f3016;
+}
 
 /* ---------------- FADE + LETTERBOX ---------------- */
 #fade{background:#000;opacity:0;transition:opacity .45s linear}

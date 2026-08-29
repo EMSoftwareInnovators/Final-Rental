@@ -5,7 +5,7 @@
      * integer vertex snapping        -> the famous polygon wobble
      * AFFINE texture mapping         -> textures swim on big polys
      * per-vertex shade + black fog   -> vertex lighting, no lightmaps
-     * nearest-neighbour texels       -> no bilinear smear
+     * nearest-neighbor texels        -> no bilinear smear
      * 1/z depth buffer               -> keeps it sane at 60fps
 
    Everything writes into one Uint32Array in 0xAABBGGRR order so it
@@ -79,7 +79,7 @@ export class Raster {
     if (vz - r > this.fogFar * 1.6) return false;
     const vx = m[0] * x + m[1] * y + m[2] * z + m[3];
     const vy = m[4] * x + m[5] * y + m[6] * z + m[7];
-    // distance to left/right planes: (vz*slope - |vx|) normalised
+    // distance to left/right planes: (vz*slope - |vx|) normalized
     if ((vz * this._slopeX - Math.abs(vx)) * this._planeX < -r) return false;
     if ((vz * this._slopeY - Math.abs(vy)) * this._planeY < -r) return false;
     return true;

@@ -3,16 +3,137 @@
    HUD, dialogue box, the notepad you compare faces against,
    the phone, and the screens that end a night.
    ============================================================ */
+import { PAD_ACTIONS } from '../engine/input.js';
 import { paintPortrait } from './appearance.js';
 import { KEY_LABEL, VISIBLE_KEYS, traitLabel, sameTrait } from './appearance.js';
 import { GENRE_LABEL } from './tapes.js';
+import { voice } from './briefing.js';
 
 const $ = (id) => document.getElementById(id);
+
+/* ============================================================
+   BUTTON GLYPHS
+   Every prompt in the game names a control, and which control it is
+   depends on what is plugged in. One table, three columns: a keyboard
+   cap, an Xbox face button, a PlayStation shape.
+   ============================================================ */
+/* What each button is CALLED, by index, under the standard mapping. The
+   one factual table: index 6 is the left trigger, and on an Xbox pad that
+   is "LT" and on a DualSense it is "L2". */
+const PAD_BUTTONS = {
+  0: ['A', '\u2715', 'x-a', 'p-x'],
+  1: ['B', '\u25CB', 'x-b', 'p-o'],
+  2: ['X', '\u25A1', 'x-x', 'p-s'],
+  3: ['Y', '\u25B3', 'x-y', 'p-t'],
+  4: ['LB', 'L1', 'x-m', 'p-m'],
+  5: ['RB', 'R1', 'x-m', 'p-m'],
+  6: ['LT', 'L2', 'x-m', 'p-m'],
+  7: ['RT', 'R2', 'x-m', 'p-m'],
+  8: ['\u29C9', 'CREATE', 'x-m', 'p-m'],
+  9: ['\u2630', '\u2630', 'x-m', 'p-m'],
+  10: ['L3', 'L3', 'x-m', 'p-m'],
+  11: ['R3', 'R3', 'x-m', 'p-m'],
+  12: ['\u2191', '\u2191', 'x-d', 'p-d'],
+  13: ['\u2193', '\u2193', 'x-d', 'p-d'],
+  14: ['\u2190', '\u2190', 'x-d', 'p-d'],
+  15: ['\u2192', '\u2192', 'x-d', 'p-d'],
+};
+
+/* The keyboard cap for each thing you can do, and the two analog sticks,
+   which are not buttons and never move.
+
+   Everything else is worked out from the bindings rather than written
+   down twice. There used to be a third column here listing the pad button
+   for every action, kept in step with the real table by hand, and it was
+   not in step: sprint moved to the triggers and this still said LB. */
+const CAPS = {
+  interact: 'E', confirm: 'E', back: 'ESC', pause: 'ESC', notes: 'TAB',
+  drop: 'G', bolt: 'F', run: 'SHIFT',
+  up: '\u2191', down: '\u2193', left: '\u2190', right: '\u2192',
+};
+const STICKS = {
+  move: ['WASD', '\u25CE L', 'x-d', 'p-d'],
+  look: ['MOUSE', '\u25CE R', 'x-d', 'p-d'],
+};
+
+/** Whatever the player has actually bound, when they have bound anything. */
+let USER_BINDS = null;
+export function setPadBinds(binds) { USER_BINDS = binds || null; }
+
+/* Prompts ask for "interact"; the binding table calls the same thing
+   "confirm", because in a menu it is a select. One name, two words. */
+const ALIAS = { interact: 'confirm' };
+
+/** Which physical buttons do `action`, as indices under the standard mapping. */
+function buttonsFor(name) {
+  const action = ALIAS[name] || name;
+  if (USER_BINDS) {
+    const out = [];
+    for (const k of Object.keys(USER_BINDS)) {
+      if ((USER_BINDS[k] || []).includes(action)) out.push(+k);
+    }
+    if (out.length) return out.sort((a, b) => a - b);
+  }
+  const a = PAD_ACTIONS[action];
+  return (a && a.def) || [];
+}
+
+let SCHEME = 'kbm';
+/** Told by the game whenever the active input device changes. */
+export function setScheme(s) { SCHEME = s || 'kbm'; }
+export function currentScheme() { return SCHEME; }
+
+/** One button, drawn as the thing on the controller. */
+function padGlyph(i) {
+  const b = PAD_BUTTONS[i];
+  // NB: not "pad" -- that is the paper-panel class, and a glyph wearing it
+  // inherited the panel's absolute positioning and 78cqw width.
+  if (!b) return `<span class="key btn x-m">${i}</span>`;
+  const ps = SCHEME === 'playstation';
+  return `<span class="key btn ${ps ? b[3] : b[2]}">${ps ? b[1] : b[0]}</span>`;
+}
+
+function padText(i) {
+  const b = PAD_BUTTONS[i];
+  if (!b) return `BUTTON ${i}`;
+  return SCHEME === 'playstation' ? b[1] : b[0];
+}
+
+/** The markup for one control, in whatever language the player's hands speak. */
+export function glyph(action) {
+  const stick = STICKS[action];
+  if (stick) {
+    if (SCHEME === 'kbm') return `<span class="key">${stick[0]}</span>`;
+    const ps = SCHEME === 'playstation';
+    return `<span class="key btn ${ps ? stick[3] : stick[2]}">${ps ? stick[1] : stick[1]}</span>`;
+  }
+  if (SCHEME === 'kbm') {
+    const cap = CAPS[action];
+    return `<span class="key">${cap || escape(String(action).toUpperCase())}</span>`;
+  }
+  const on = buttonsFor(action);
+  if (!on.length) return `<span class="key">${CAPS[action] || escape(String(action).toUpperCase())}</span>`;
+  /* An action can sit on more than one button -- sprint is on both
+     triggers, and a player can put two jobs on one face button -- so say
+     so rather than picking one and quietly being half right. Two is
+     plenty; the panel has to fit a 4:3 screen without scrolling. */
+  return on.slice(0, 2).map(padGlyph).join('<span class="key-or"> </span>');
+}
+
+/** Bare text form, for places that cannot take markup. */
+export function glyphText(action) {
+  const stick = STICKS[action];
+  if (stick) return SCHEME === 'kbm' ? stick[0] : stick[1];
+  if (SCHEME === 'kbm') return CAPS[action] || String(action).toUpperCase();
+  const on = buttonsFor(action);
+  if (!on.length) return CAPS[action] || String(action).toUpperCase();
+  return on.slice(0, 2).map(padText).join('/');
+}
 
 export class UI {
   constructor() {
     this.el = {
-      hud: $('hud'), clockTime: $('clock-time'), clockNight: $('clock-night'), till: $('till-amt'),
+      hud: $('hud'), clockTime: $('clock-time'), clockNight: $('clock-night'),
       hands: $('hands'), reticle: $('reticle'), prompt: $('prompt'), toasts: $('toasts'),
       objective: $('objective'),
       dialogue: $('dialogue'), dlgFace: $('dlg-face'), dlgName: $('dlg-name'),
@@ -32,13 +153,26 @@ export class UI {
   }
 
   /* ---------------- HUD ---------------- */
-  setClock(time, night) {
+  /**
+   * The clock over the door.
+   *
+   * It does stop -- while the deputy still has something to say, and while
+   * the killer is in the building -- but it does not SAY that it has
+   * stopped, and it is not dimmed while it is. It used to be marked
+   * "STOPPED", which told the player, before anybody had walked through the
+   * door, that tonight was a night with a deputy in it, and therefore a
+   * night the killer might be working. That is the one thing the shift is
+   * supposed to keep from them. A clock that seems slow is ambience; a
+   * clock that announces it has been held is the answer to the question.
+   */
+  setClock(time, night, held) {
     this.el.clockTime.textContent = time;
     this.el.clockNight.textContent = `NIGHT ${night}`;
+    this.el.clockTime.parentElement.classList.remove('held');
+    void held;
   }
-  setTill(v) { this.el.till.textContent = v.toFixed(2); }
 
-  setHands(tapes, rewinder, player) {
+  setHands(tapes, rewinder, player, owedOut, vacuum) {
     const rows = [];
     if (player) {
       if (player.cash && player.cash.owed > 0.001) {
@@ -46,7 +180,11 @@ export class UI {
           + ` — $${player.cash.owed.toFixed(2)} NOT RUNG UP</span>`);
       }
       if (player.changeInHand > 0.001) {
-        rows.push(`<span class="warn">CHANGE TO RETURN $${player.changeInHand.toFixed(2)}</span>`);
+        const to = owedOut && owedOut.who ? ` FOR ${owedOut.who.toUpperCase()}` : '';
+        rows.push(`<span class="warn">CHANGE IN HAND $${player.changeInHand.toFixed(2)}${to}</span>`);
+      } else if (owedOut && owedOut.total > 0.001) {
+        rows.push(`<span class="warn">${owedOut.who.toUpperCase()} IS OWED `
+          + `$${owedOut.total.toFixed(2)} — RING IT UP</span>`);
       }
     }
     if (rewinder && rewinder.tape) {
@@ -55,11 +193,21 @@ export class UI {
         ? `<span class="ok">REWINDER: ${rewinder.tape.title} - DONE</span>`
         : `REWINDER: ${rewinder.tape.title} [${'='.repeat(Math.floor(pct / 10)).padEnd(10, '.')}]`);
     }
-    if (!tapes.length) rows.push('<span class="tape-line">HANDS EMPTY</span>');
+    /* You are pushing a vacuum. Worth saying, because it is the one thing
+       you can be holding that is not a tape, and because it is how you
+       find out you can put it down again. */
+    if (vacuum && vacuum.held) {
+      rows.push(`<span class="tape-line">&gt; THE VACUUM</span> `
+        + `<span class="${vacuum.running ? 'ok' : 'warn'}">`
+        + `${vacuum.running ? 'RUNNING' : `hold ${glyphText('interact')} to run it`}`
+        + ` &middot; ${glyphText('drop')} puts it down</span>`);
+    } else if (!tapes.length) rows.push('<span class="tape-line">HANDS EMPTY</span>');
     for (let i = tapes.length - 1; i >= 0; i--) {
       const t = tapes[i];
+      // a cartridge has no reel, so it is never rewound or otherwise
+      const state = t.game ? 'CARTRIDGE' : (t.rewound ? 'REWOUND' : 'NOT REWOUND');
       rows.push(`<span class="tape-line">${i === tapes.length - 1 ? '>' : ' '} ${t.title}</span> `
-        + `<span class="${t.rewound ? 'ok' : 'warn'}">${GENRE_LABEL[t.genre]} / ${t.rewound ? 'REWOUND' : 'NOT REWOUND'}</span>`);
+        + `<span class="${t.game || t.rewound ? 'ok' : 'warn'}">${GENRE_LABEL[t.genre]} / ${state}</span>`);
     }
     this.el.hands.innerHTML = rows.join('\n');
   }
@@ -68,6 +216,16 @@ export class UI {
     if (this.el.prompt.innerHTML !== (html || '')) this.el.prompt.innerHTML = html || '';
   }
   setReticle(hot) { this.el.reticle.classList.toggle('hot', !!hot); }
+
+  /** Ring round the reticle that fills while a held action runs. 0 clears it. */
+  setHold(f) {
+    const on = f > 0.001;
+    if (on !== this._holdOn) {
+      this._holdOn = on;
+      this.el.reticle.classList.toggle('holding', on);
+    }
+    if (on) this.el.reticle.style.setProperty('--hold', String(Math.min(1, f)));
+  }
   setObjective(text, pulse) {
     this.el.objective.textContent = text || '';
     this.el.objective.classList.toggle('pulse', !!pulse);
@@ -207,6 +365,8 @@ export class UI {
     return items.length;
   }
 
+  keyHint(action) { return glyph(action); }
+
   setHudVisible(v) { this.el.hud.classList.toggle('hidden', !v); }
   /** DOM-level blackout, used for hard cuts between scenes. 0 = clear. */
   fade(to, flash) {
@@ -223,32 +383,47 @@ function escape(s) {
 /* ============================================================
    Panel content
    ============================================================ */
+/* The whole thing has to fit one screen without scrolling: it is a pause
+   menu on a 4:3 CRT, not a web page. Three tight columns of key bindings
+   over two short columns of prose does it. */
 export function howToHtml() {
-  return `<h2>WORKING THE COUNTER</h2>
-  <div class="cols">
+  const key = (g, what) => `<li class="plain">${glyph(g)} ${what}</li>`;
+  const onPad = SCHEME !== 'kbm';
+  return `<div class="howto">
+  <h2>WORKING THE COUNTER${onPad ? ` <span class="quiet">&mdash; ${SCHEME === 'playstation' ? 'PLAYSTATION' : 'XBOX'} PAD</span>` : ''}</h2>
+  <div class="keys">
     <ul>
-      <li class="plain"><b>WASD</b> walk &nbsp; <b>SHIFT</b> hurry</li>
-      <li class="plain"><b>MOUSE</b> look &nbsp; <b>E</b> interact / talk</li>
-      <li class="plain"><b>1-4</b> or <b>UP/DOWN + E</b> pick a reply</li>
-      <li class="plain"><b>TAB</b> notepad (suspect vs. person in view)</li>
-      <li class="plain"><b>G</b> put down the tape in hand</li>
-      <li class="plain"><b>ESC</b> pause</li>
+      ${key('move', 'walk')}
+      ${key('run', 'hurry')}
+      ${key('look', 'look')}
+      ${key('pause', 'pause')}
     </ul>
     <ul>
-      <li class="plain"><b>Returns.</b> Take the tape, collect any late fee at $1 a day.</li>
-      <li class="plain"><b>Rewind.</b> A tape that comes back unwound goes in the rewinder before it goes on a shelf.</li>
-      <li class="plain"><b>Shelve.</b> Every tape belongs on its own genre run. Wrong shelf, wrong night.</li>
-      <li class="plain"><b>Rentals.</b> People pull their own tapes. Ring them up and take the money.</li>
+      ${key('interact', 'interact / talk')}
+      ${onPad ? key('up', 'pick a reply') : `<li class="plain"><span class="key">1-4</span> pick a reply</li>`}
+      ${key('down', 'move the cursor')}
+      ${key('notes', 'the notepad')}
+    </ul>
+    <ul>
+      ${key('drop', 'put it down')}
+      ${key('bolt', 'bolt the back room')}
     </ul>
   </div>
-  <h2>THE OTHER THING</h2>
-  <ul>
-    <li>A deputy reads you a description at the start of every shift. It is the only thing you get.</li>
-    <li>He may come in first as a customer. Polite. Pays cash. Asks what time you lock up.</li>
-    <li>If you are sure: <b>lock the front door</b>, then <b>pick up the phone</b>. The deadbolt only buys minutes.</li>
-    <li class="plain"><span class="k">Call it in on the wrong person and you are finished here.</span></li>
-  </ul>
-  <p class="pad-foot">[E] back</p>`;
+  <div class="cols">
+    <ul>
+      <li><b>Returns.</b> Take the tape &mdash; or the cartridge, if it came off the games wall. Late fees are $1 a day, $2 on a game.</li>
+      <li><b>Rewind.</b> An unwound tape goes in the rewinder before it goes on a shelf. Cartridges do not rewind.</li>
+      <li><b>Shelve.</b> Every tape belongs on its own genre run.</li>
+      <li><b>Rentals.</b> People pull their own tapes. Ring them up, take the money.</li>
+    </ul>
+    <ul>
+      <li><b>Change.</b> Cash sits in your hand until you ring it up. The drawer pays the change; the customer waits for it.</li>
+      <li><b>The bulletin.</b> A deputy reads you a description. ${glyphText('notes')} holds it against whoever is in front of you.</li>
+      <li><b>If you are sure.</b> Lock the front door, then the phone. Call it in on the wrong person and you are finished here.</li>
+      <li><b>The back room.</b> The one door in the building with a bolt. It does not hold forever.</li>
+    </ul>
+  </div>
+  <p class="pad-foot">${glyph('back')} back</p></div>`;
 }
 
 export function optionsHtml(o) {
@@ -260,10 +435,66 @@ export function optionsHtml(o) {
     <li class="opt">Master volume &nbsp; ${bar(o.vol)}</li>
     <li class="opt">Internal resolution &nbsp; ${o.resLabel}</li>
     <li class="opt">Polygon jitter &nbsp; ${o.snap ? 'PS1 (ON)' : 'SMOOTH'}</li>
-    <li class="opt">Tape damage &nbsp; ${bar(o.grain)}</li>
+    <li class="opt">VHS tape &nbsp; ${o.vhs ? 'ON' : 'OFF &mdash; clean PS1'}</li>
+    <li class="opt">Tape damage &nbsp; ${bar(o.grain)}${o.vhs ? '' : ' <span class="quiet">(tape off)</span>'}</li>
+    <li class="opt">Controller${o.pad ? '' : ' <span class="quiet">(none connected)</span>'}</li>
     <li class="opt">Back</li>
   </ul>
-  <p class="pad-foot">LEFT / RIGHT adjust &nbsp;&middot;&nbsp; [E] select</p>`;
+  <p class="pad-foot">${glyph('left')}${glyph('right')} adjust &nbsp;&middot;&nbsp; ${glyph('confirm')} select &nbsp;&middot;&nbsp; ${glyph('back')} back</p>
+  <p class="pad-foot quiet">${o.pad
+    ? `Controller: ${escape(o.pad)}${o.padNeedsSetup ? ' &mdash; layout not recognized, set it up below' : ''}`
+    : 'No controller detected'}</p>`;
+}
+
+/**
+ * The controller screen.
+ *
+ * Deliberately usable with a pad that has no working buttons at all: the
+ * stick moves the highlight, and pressing ANY button while an action is
+ * highlighted binds it to that action. Nothing here needs a button that
+ * already works, which is the entire point of the screen.
+ */
+export function padHtml(p) {
+  const row = (r) => {
+    const on = r.capturing;
+    const val = on ? '<span class="k">press a button&hellip;</span>'
+      : r.buttons.length ? r.buttons.map((b) => `<span class="key btn">${b}</span>`).join(' ')
+        : '<span class="quiet">unbound</span>';
+    // One button can do several jobs, the way E does on the keyboard.
+    const also = !on && r.shared && r.shared.length
+      ? ` <span class="quiet">(also ${escape(r.shared.join(', ').toLowerCase())})</span>` : '';
+    return `<li class="opt">${escape(r.label)} &nbsp; ${val}${also}</li>`;
+  };
+  const live = p.down.length
+    ? p.down.map((i) => `<span class="key btn">${i}</span>`).join(' ')
+    : '<span class="quiet">nothing pressed</span>';
+  // Axes that are actually doing something, so a d-pad on a hat is findable.
+  const moving = (p.axes || []).map((v, i) => [i, v]).filter(([, v]) => Math.abs(v) > 0.12);
+  const axes = moving.length
+    ? moving.map(([i, v]) => `<span class="key btn">${i}</span>&#8202;${v.toFixed(2)}`).join(' &nbsp; ')
+    : '<span class="quiet">all centred</span>';
+  const warn = p.name && !p.trusted && !p.custom
+    ? (p.known
+      ? `<p class="pad-foot">This browser does not describe your controller's layout, but it is
+         one we know &mdash; laid out below. Change anything that is wrong.</p>`
+      : `<p class="pad-foot k">This browser does not recognize your controller's layout, so
+         nothing is bound yet &mdash; any button will work a menu until you set it up here.</p>`)
+    : '';
+  return `<h2>CONTROLLER</h2>
+  <p class="pad-foot">${p.name ? escape(p.name) : 'Nothing connected'}${
+  p.name ? ` &nbsp;&middot;&nbsp; ${escape(p.mapping || 'non-standard')} mapping &nbsp;&middot;&nbsp; ${p.count} buttons` : ''}</p>
+  ${warn}
+  <ul>
+    ${p.rows.map(row).join('\n    ')}
+    <li class="opt">Reset to defaults</li>
+    <li class="opt">Back</li>
+  </ul>
+  <p class="pad-foot">Held down now: ${live}</p>
+  <p class="pad-foot">Axes moving: ${axes}</p>
+  <p class="pad-foot quiet">Move with the stick or ${glyphText('up')}${glyphText('down')}.
+  Highlight a line and press the button you want for it &mdash; one button can do
+  several jobs, and pressing the same one again takes that job off it.
+  ESC on the keyboard leaves at any time.</p>`;
 }
 
 export function reportHtml(night, stats, grade, next) {
@@ -294,31 +525,71 @@ export function reportHtml(night, stats, grade, next) {
   <p class="pad-foot">[E] clock in for night ${night + 1}</p>`;
 }
 
+/**
+ * The last page of a night.
+ *
+ * Written with {he} / {him} / {his} and run through the same expander the
+ * bulletin uses, because the person these pages are about is a different
+ * person every night and half the time she is a woman. The arrest page
+ * used to put a woman face down on the carpet and then call her "he" three
+ * sentences running.
+ *
+ * The whole thing is wrapped in .ending so the stylesheet can give it a
+ * page of prose to live on: cinema bars take eleven percent off the top
+ * and the bottom while these are up, and the longest arrest -- hid in the
+ * back room, caught the same man last night, several quiet nights coming
+ * -- ran the last option off the bottom of the panel with no way to
+ * scroll to it. tools/endings.mjs measures every variant.
+ */
 export function endingHtml(kind, data) {
+  const say = (text) => voice(text, data.app);
   switch (kind) {
-    case 'CAUGHT':
-      return `<h2>UNITS RESPONDING</h2>
-        <p>You gave dispatch the jacket, the walk, the mark on his face. Everything the deputy read you, back the other way.</p>
-        <p>Two cruisers took the alley behind the laundromat and boxed him in before he made the corner. They found the duffel. They will not tell you what was in it, and one day you will stop asking.</p>
-        <p><b>${data.name || 'He'}</b> did not resist.</p>
-        <p class="quiet">You survived ${data.nights} night${data.nights > 1 ? 's' : ''} on the counter at Sunset Video, and on the last one you got it right.</p>
-        <p class="big">GOOD ENDING &mdash; CASE CLOSED</p>
-        <p class="pad-foot">[E] new tape</p>`;
+    case 'CAUGHT': {
+      const where = data.offscreen
+        ? `<p>They took {him} on the sidewalk outside, before {he} reached the corner.</p>`
+        : data.broke
+          ? `<p>They came through the front while {he} was still working on the stock room door.</p>`
+          : data.hid
+            ? `<p>You heard the doors, the shouting, then a knock on the stock room door and a badge number, twice, before you would open it.</p>`
+            : `<p>{He} was against the returns bin with {his} hands behind {him} before {he} had finished turning around.</p>`;
+      /* No pronoun for the deputy: that is a different person again, and
+         rolled separately, so a line about what he said last night was
+         wrong about as often as this one was. */
+      const more = data.caseFile && data.caseFile.caughtLast
+        ? `<p class="quiet">The deputy said the same thing last night: that they had got {him}. You have started counting how many times a week somebody has got {him}.</p>`
+        : '';
+      const calm = data.calmNights
+        ? `<p class="quiet">Nobody will be working this block for ${data.calmNights} night${data.calmNights > 1 ? 's' : ''}. Nobody they know about.</p>`
+        : '';
+      return say(`<div class="ending"><h2>UNITS RESPONDING</h2>
+        <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>
+        ${where}
+        <p><b>${escape(data.name || 'Nobody')}</b> did not resist.</p>
+        ${more}${calm}
+        <p class="big">CASE CLOSED &mdash; NIGHT ${data.night}</p>
+        <ul>
+          <li class="opt sel">Take tomorrow's shift</li>
+          <li class="opt">Hand in the keys</li>
+        </ul></div>`);
+    }
     case 'ATTACKED':
-      return `<h2>PLEASE REWIND BEFORE RETURNING</h2>
+      return say(`<div class="ending"><h2>PLEASE REWIND BEFORE RETURNING</h2>
         <p>The chime over the door goes off the way it always does. Two notes, cheerful, made in 1981.</p>
-        <p>He does not hurry. There is no reason to hurry.</p>
+        <p>{He} does not hurry. There is no reason to hurry.</p>
         <p class="quiet">The store stays open until midnight. The tape in the deck keeps turning until somebody stops it.</p>
         <p class="big">NIGHT ${data.night} &mdash; SHIFT ENDED</p>
-        <p class="pad-foot">[E] rewind</p>`;
+        <p class="pad-foot">[E] rewind</p></div>`);
     case 'FIRED':
-      return `<h2>TERMINATED</h2>
-        <p>Two units, lights, the whole street awake. They put <b>${data.name}</b> face down on the carpet by the returns bin in front of six people.</p>
+      /* The name here is the person you were wrong about, and `reason` is
+         written about them by describeInnocent -- so nothing on this page
+         goes through the expander. */
+      return `<div class="ending"><h2>TERMINATED</h2>
+        <p>Two units, lights, the whole street awake. They put <b>${escape(data.name || 'a customer')}</b> face down on the carpet by the returns bin in front of six people.</p>
         <p>${data.reason}</p>
         <p>The district manager drove in at two in the morning to say it in person. You handed over the keys and the little pin with the film reel on it.</p>
         <p class="quiet">Somewhere out there, the actual one is still renting tapes.</p>
         <p class="big">BAD ENDING &mdash; YOU'RE DONE HERE</p>
-        <p class="pad-foot">[E] new tape</p>`;
+        <p class="pad-foot">[E] new tape</p></div>`;
     default: return '';
   }
 }

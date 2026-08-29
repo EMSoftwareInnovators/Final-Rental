@@ -8,6 +8,15 @@ import * as mathx from './engine/mathx.js';
 import * as customer from './game/customer.js';
 import * as personality from './game/personality.js';
 import * as dialogue from './game/dialogue.js';
+import * as night from './game/night.js';
+import * as world from './game/world.js';
+import * as uimod from './game/ui.js';
+import * as tapes from './game/tapes.js';
+import * as specials from './game/specials.js';
+import * as catalog from './game/catalog.js';
+import * as chatter from './game/chatter.js';
+import * as briefing from './game/briefing.js';
+import * as inputmod from './engine/input.js';
 
 const start = async () => {
   const game = new Game();
@@ -18,6 +27,15 @@ const start = async () => {
   window.__cust = customer;
   window.__pers = personality;
   window.__dlg = dialogue;
+  window.__night = night;
+  window.__world = world;
+  window.__ui = uimod;
+  window.__tapes = tapes;
+  window.__specials = specials;
+  window.__catalog = catalog;
+  window.__chat = chatter;
+  window.__brief = briefing;
+  window.__input = inputmod;
   try {
     await game.boot();
     game.applyOptions();
@@ -25,7 +43,7 @@ const start = async () => {
     console.error(err);
     document.body.innerHTML =
       `<pre style="color:#ffb641;font:14px monospace;padding:2rem;white-space:pre-wrap">`
-      + `BE KIND, REWIND failed to start.\n\n${err && err.stack ? err.stack : err}\n\n`
+      + `FINAL RENTAL failed to start.\n\n${err && err.stack ? err.stack : err}\n\n`
       + `Serve the folder over http:// (npm start) -- ES modules will not load from file://.</pre>`;
   }
 };

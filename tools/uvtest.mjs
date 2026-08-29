@@ -98,5 +98,64 @@ function check(label, got, want) {
   check('screen bottom-right-> texture bottom-right', sample(rz, 38, 39), 'WHITE(tex BR)');
 }
 
+/* ---- Case 5: plate(), which is what every sign in the store is ----
+   A plate is double-sided, so it is never culled -- which means getting the
+   winding wrong does not hide it, it mirrors it. The counter signs read
+   "3SA3J9" for exactly this reason. Each yaw is checked from the side it is
+   meant to be read from. */
+{
+  const cases = [
+    // yaw, where the reader stands, which way they look
+    ['facing -Z (a sign on the front of the counter)', Math.PI, [0, 1, -4], 0],
+    ['facing +Z (a sign on the back wall)', 0, [0, 1, 4], Math.PI],
+    ['facing -X (a poster on the right-hand wall)', -Math.PI / 2, [-4, 1, 0], Math.PI / 2],
+    ['facing +X (a poster on the left-hand wall)', Math.PI / 2, [4, 1, 0], -Math.PI / 2],
+  ];
+  for (const [label, yaw, camPos, camYaw] of cases) {
+    const mb = new MeshBuilder();
+    mb.light = () => 1;
+    mb.plate(0, 0.4, 0, 1.6, 1.2, yaw, tex, [0, 0, 8, 8], 0, [2, 2, false]);
+    const mesh = mb.build();
+    const rz = new Raster(64, 64);
+    rz.snap = 0; rz.fogNear = 100; rz.fogFar = 200;
+    rz.clear(0xFF000000);
+    const cam = mat(), view = mat();
+    setPosYaw(cam, camPos[0], camPos[1], camPos[2], camYaw);
+    invertRigid(view, cam);
+    rz.setCamera(view, 1.2);
+    rz.drawMesh(mesh, mat(), {});
+    console.log(`\n-- plate ${label} --`);
+    check('screen top-left    -> texture top-left', sample(rz, 27, 26), 'RED(tex TL)');
+    check('screen top-right   -> texture top-right', sample(rz, 37, 26), 'GREEN(tex TR)');
+    check('screen bottom-left -> texture bottom-left', sample(rz, 27, 36), 'BLUE(tex BL)');
+    check('screen bottom-right-> texture bottom-right', sample(rz, 37, 36), 'WHITE(tex BR)');
+  }
+}
+
+/* ---- Case 6: the other four box faces ---- */
+{
+  const cases = [
+    ['+X', [4, 1, 0], -Math.PI / 2],
+    ['-Z', [0, 1, -4], 0],
+  ];
+  for (const [label, camPos, camYaw] of cases) {
+    const mb = new MeshBuilder();
+    mb.light = () => 1;
+    mb.box(-1, 0, -1, 1, 2, 1, { all: { tex, uv: [0, 0, 8, 8] } });
+    const mesh = mb.build();
+    const rz = new Raster(64, 64);
+    rz.snap = 0; rz.fogNear = 100; rz.fogFar = 200;
+    rz.clear(0xFF000000);
+    const cam = mat(), view = mat();
+    setPosYaw(cam, camPos[0], camPos[1], camPos[2], camYaw);
+    invertRigid(view, cam);
+    rz.setCamera(view, 1.2);
+    rz.drawMesh(mesh, mat(), {});
+    console.log(`\n-- box ${label} face, viewed head on --`);
+    check('screen top-left    -> texture top-left', sample(rz, 27, 26), 'RED(tex TL)');
+    check('screen bottom-right-> texture bottom-right', sample(rz, 37, 36), 'WHITE(tex BR)');
+  }
+}
+
 console.log(fails ? `\n${fails} FAILURE(S)` : '\nall orientation checks passed');
 process.exit(fails ? 1 : 0);

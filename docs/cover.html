@@ -1,0 +1,107 @@
+<!-- The sleeve. Built out of the game's own typography and a still taken
+     from the running game, so the box and the thing in the box match. -->
+<!doctype html>
+<meta charset="utf-8">
+<title>FINAL RENTAL — cover</title>
+<style>
+  @page { margin: 0 }
+  html, body { margin: 0; padding: 0; background: #000 }
+  body { width: 1200px; height: 1800px; overflow: hidden;
+         font-family: "Courier New", Courier, ui-monospace, monospace; }
+
+  .sleeve {
+    position: relative; width: 1200px; height: 1800px;
+    background: #0b0907;
+    /* the grain of a card sleeve that has been behind a counter for years */
+    background-image:
+      radial-gradient(ellipse at 50% 22%, rgba(120,30,20,.30) 0%, rgba(0,0,0,0) 62%),
+      repeating-linear-gradient(0deg, rgba(255,255,255,.020) 0 1px, rgba(0,0,0,0) 1px 3px);
+  }
+
+  /* ---- the still ---- */
+  .art { position: absolute; left: 76px; top: 470px; width: 1048px; height: 772px; overflow: hidden;
+         border: 5px solid #1b1512; box-shadow: 0 0 0 2px #38291f, 0 26px 70px rgba(0,0,0,.85); }
+  /* Scaled up and pulled down a little: the still is a 4:3 frame with the
+     night sky over the building and the road under it, and neither of them
+     is what the sleeve is for. */
+  .art img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 50%;
+             display: block; transform: scale(1.10); transform-origin: 50% 42%;
+             filter: saturate(1.08) contrast(1.04) brightness(1.28); }
+  /* the picture fades into the sleeve rather than sitting in a window */
+  .art::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(180deg, rgba(11,9,7,.55) 0%, rgba(11,9,7,0) 26%,
+                rgba(11,9,7,0) 62%, rgba(11,9,7,.92) 100%);
+  }
+
+  /* ---- the title ---- */
+  .top { position: absolute; left: 0; right: 0; top: 104px; text-align: center; }
+  .rating {
+    display: inline-block; border: 3px solid #8a7a52; color: #cbb98a;
+    font-size: 19px; letter-spacing: .34em; padding: 7px 18px 6px 22px; margin-bottom: 30px;
+  }
+  .l1 { display: block; font-weight: bold; font-size: 96px; letter-spacing: 10px;
+        color: #e9e2cf; text-shadow: 7px 7px 0 #7d1c12; }
+  .l2 { display: block; font-weight: bold; font-size: 150px; letter-spacing: 6px; line-height: .92;
+        color: #d63b28; text-shadow: 8px 8px 0 #2a0d08, 0 0 54px rgba(214,59,40,.55); }
+
+  /* ---- the copy ---- */
+  .bottom { position: absolute; left: 76px; right: 76px; bottom: 84px; text-align: center; }
+  .tagline { color: #e6d9b4; font-size: 34px; line-height: 1.42; letter-spacing: .045em; }
+  .tagline b { color: #d63b28; font-weight: bold; }
+  .rule { height: 2px; background: #4a3a20; margin: 40px auto 30px; width: 74%; }
+  .where { color: #b9a271; font-size: 23px; letter-spacing: .30em; }
+  .credit { color: #6d5c3c; font-size: 18px; letter-spacing: .21em; margin-top: 44px; }
+
+  /* ---- the spine strip, like a rental case ---- */
+  .spine { position: absolute; left: 0; top: 0; bottom: 0; width: 26px;
+           background: repeating-linear-gradient(0deg, #7d1c12 0 26px, #5d150e 26px 52px); }
+  /* and the sticker the store puts on everything it owns */
+  .sticker {
+    position: absolute; right: 54px; top: 1168px; width: 210px;
+    transform: rotate(-4.2deg);
+    background: #d8cba4; color: #2a2418; border: 2px solid #9c8b5e;
+    padding: 12px 10px; text-align: center; box-shadow: 0 6px 20px rgba(0,0,0,.6);
+  }
+  .sticker .s1 { font-weight: bold; font-size: 21px; letter-spacing: .1em; }
+  .sticker .s2 { font-size: 14px; margin-top: 5px; letter-spacing: .06em; }
+  .sticker .s3 { font-size: 12px; margin-top: 8px; color: #5c5340; letter-spacing: .04em; }
+
+  /* the whole thing sits under a little tape wear */
+  .wear { position: absolute; inset: 0; pointer-events: none;
+          background: repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 2px, rgba(0,0,0,0) 2px 4px);
+          mix-blend-mode: multiply; }
+  .vig { position: absolute; inset: 0; pointer-events: none;
+         background: radial-gradient(ellipse at 50% 46%, rgba(0,0,0,0) 42%, rgba(0,0,0,.72) 100%); }
+</style>
+
+<div class="sleeve">
+  <div class="spine"></div>
+
+  <div class="top">
+    <span class="rating">SUNSET VIDEO &middot; HORROR</span>
+    <span class="l1">FINAL</span>
+    <span class="l2">RENTAL</span>
+  </div>
+
+  <div class="art"><img src="/docs/shots/cover-base.png" alt=""></div>
+
+  <div class="sticker">
+    <div class="s1">BE KIND</div>
+    <div class="s2">REWIND</div>
+    <div class="s3">2 NIGHTS &middot; $2.99</div>
+  </div>
+
+  <div class="bottom">
+    <p class="tagline">
+      You are alone on the counter until midnight.<br>
+      So is <b>he</b>.
+    </p>
+    <div class="rule"></div>
+    <p class="where">4412 DELANEY AVE &middot; OCTOBER 1996</p>
+    <p class="credit">&copy; 2026 EM SOFTWARE INNOVATORS</p>
+  </div>
+
+  <div class="wear"></div>
+  <div class="vig"></div>
+</div>

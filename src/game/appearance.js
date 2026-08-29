@@ -58,7 +58,7 @@ const HAIR_COLORS = [
   { id: 'lightbrown', name: 'light brown', hex: '#6b4a2c', dark: '#4d341e' },
   { id: 'blond', name: 'blond', hex: '#b99553', dark: '#8f7038' },
   { id: 'red', name: 'red', hex: '#8a3a1c', dark: '#642713' },
-  { id: 'grey', name: 'grey', hex: '#8d8a84', dark: '#6a6862' },
+  { id: 'gray', name: 'gray', hex: '#8d8a84', dark: '#6a6862' },
   { id: 'white', name: 'white', hex: '#cfcac0', dark: '#a5a099' },
 ];
 const HAIR_STYLES = [
@@ -103,7 +103,7 @@ const COLORS = [
   { id: 'navy', name: 'navy', hex: '#1e2a4a' },
   { id: 'olive', name: 'olive', hex: '#44492a' },
   { id: 'maroon', name: 'maroon', hex: '#4a1a1e' },
-  { id: 'grey', name: 'grey', hex: '#4a4a50' },
+  { id: 'gray', name: 'gray', hex: '#4a4a50' },
   { id: 'black', name: 'black', hex: '#1a1a1e' },
   { id: 'denim', name: 'denim blue', hex: '#33507a' },
   { id: 'tan', name: 'tan', hex: '#8a7148' },
@@ -174,7 +174,7 @@ export const ALL_KEYS = [...VISIBLE_KEYS, ...HIDDEN_KEYS];
 
 export const KEY_LABEL = {
   gender: 'Sex', height: 'Height', build: 'Build', hair: 'Hair', facial: 'Face', glasses: 'Eyewear',
-  hat: 'Headwear', jacket: 'Outerwear', pants: 'Trousers', mark: 'Distinguishing mark',
+  hat: 'Headwear', jacket: 'Outerwear', pants: 'Pants', mark: 'Distinguishing mark',
   gait: 'Walk', carry: 'Carrying', smell: 'Smell', voice: 'Voice',
 };
 
@@ -213,7 +213,7 @@ export function randomAppearance(rng, force = {}) {
     shirt: shirtColor,
     pants: {
       id: pantsColor.id, color: pantsColor,
-      label: `${cap(pantsColor.name)} trousers`,
+      label: `${cap(pantsColor.name)} pants`,
       bulletin: `${pantsColor.name} pants`,
     },
     shoes: rng.pick(COLORS),
@@ -225,7 +225,7 @@ export function randomAppearance(rng, force = {}) {
     voicePitch: g === 'f' ? 1.22 : 0.92,
   };
   Object.assign(a, force);
-  // `force` may hand us a bare 'm'/'f'; normalise again so downstream code
+  // `force` may hand us a bare 'm'/'f'; normalize again so downstream code
   // can always rely on a.gender being a trait object
   if (typeof a.gender === 'string') a.gender = GENDERS.find((x) => x.id === a.gender) || GENDERS[0];
   return a;
@@ -256,6 +256,105 @@ export function traitBulletin(a, key) {
 }
 
 const cap = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+
+/* ============================================================
+   TELLING TWO PEOPLE APART DOWN A PHONE
+
+   Everybody used to be "the one in the <color> <jacket>", which is fine
+   until two of them are wearing the same coat -- and on a night where the
+   bulletin is about a coat, two of them very often are. The list dispatch
+   read back had the same line on it twice and picking between them was a
+   coin toss, which is not the game: the game is checking a description
+   against a person.
+
+   So the names are built against the room rather than in isolation. A
+   person is described by their coat until that stops separating them from
+   everybody else in the store, and then by whatever does -- silhouette
+   first, because that is what you notice from behind a counter, then the
+   face, then the things you would have to be close to see.
+
+   Nothing here decides anything for the player. Both people in matching
+   windbreakers get the extra detail, so it tells you which is which and
+   never which is him.
+   ============================================================ */
+
+/** One way of picking somebody out, or null if it does not apply to them. */
+const APART = [
+  (a) => adj({ short: 'short', tall: 'tall', verytall: 'very tall' }, a.height),
+  (a) => adj({ thin: 'thin', heavy: 'heavy-set', broad: 'broad-shouldered' }, a.build),
+  (a) => ({ noun: a.gender.id === 'f' ? 'woman' : 'man' }),
+  (a) => with_({ cap: 'a ball cap', trucker: 'a mesh-back cap', beanie: 'a knit beanie', hood: 'the hood up' }, a.hat),
+  (a) => with_({ round: 'round wire glasses', square: 'thick square frames', aviator: 'tinted aviators' }, a.glasses),
+  (a) => with_({ stubble: 'a couple days of stubble', mustache: 'a thick mustache',
+    beard: 'a full beard', goatee: 'a goatee', chops: 'sideburns down to the jaw' }, a.facial),
+  (a) => ({ with: a.hair.style.id === 'bald' ? 'a bald head' : `${a.hair.color.name} hair` }),
+  (a) => with_({ scar: 'a scar through the eyebrow', bandage: 'a bandaged hand',
+    tattoo: 'a tattoo on the neck', burn: 'a burn on the cheek', patch: 'an eye patch',
+    split: 'a split eyebrow' }, a.mark),
+  (a) => with_({ duffel: 'a canvas duffel', backpack: 'a backpack', gloves: 'work gloves on',
+    walkman: 'a walkman on the belt', umbrella: 'a folded umbrella' }, a.carry),
+];
+
+const adj = (map, trait) => (map[trait.id] ? { adj: map[trait.id] } : null);
+const with_ = (map, trait) => (map[trait.id] ? { with: map[trait.id] } : null);
+
+/* Where they are standing, counted from the door. The last resort, for two
+   people who really are dressed identically down to the sideburns: you can
+   always say which one is nearer the front. */
+const FROM_DOOR = ['nearest the door', 'second from the door', 'third from the door',
+  'fourth from the door', 'fifth from the door'];
+
+function assemble(a, parts) {
+  const adjs = parts.filter((p) => p.adj).map((p) => p.adj);
+  const noun = (parts.find((p) => p.noun) || {}).noun || 'one';
+  const withs = parts.filter((p) => p.with).map((p) => p.with);
+  let s = `The ${adjs.concat([noun]).join(' ')} in the ${a.jacket.color.name} ${a.jacket.kind}`;
+  if (withs.length) s += ` with ${withs.slice(0, -1).join(', ')}${withs.length > 1 ? ' and ' : ''}${withs[withs.length - 1]}`;
+  return s;
+}
+
+/**
+ * Name everybody in `list` so that no two names read the same.
+ *
+ * Takes anything with an `.app` and a `.z`; returns the labels in order.
+ * Each person gets the shortest description that separates them from the
+ * rest of the room, so a quiet store stays "the one in the denim jacket"
+ * and a store with two denim jackets in it says which is which.
+ */
+export function describeApart(list) {
+  const parts = list.map(() => []);
+  const label = (i) => assemble(list[i].app, parts[i]);
+  const tied = () => {
+    const seen = new Map();
+    for (let i = 0; i < list.length; i++) {
+      const k = label(i);
+      if (!seen.has(k)) seen.set(k, []);
+      seen.get(k).push(i);
+    }
+    return [...seen.values()].filter((g) => g.length > 1);
+  };
+
+  for (const tell of APART) {
+    const groups = tied();
+    if (!groups.length) break;
+    for (const g of groups) {
+      const got = g.map((i) => tell(list[i].app));
+      // Only worth saying if it actually splits them up.
+      const keys = got.map((p) => (p ? JSON.stringify(p) : ''));
+      if (new Set(keys).size < 2) continue;
+      g.forEach((i, j) => { if (got[j]) parts[i].push(got[j]); });
+    }
+  }
+
+  /* Identical twins in matching coats. Rare enough that it has probably
+     never happened, and cheap enough to cover anyway. */
+  for (const g of tied()) {
+    g.slice().sort((a, b) => list[a].z - list[b].z)
+      .forEach((i, j) => parts[i].push({ with: FROM_DOOR[j] || `number ${j + 1} from the door` }));
+  }
+
+  return list.map((_, i) => label(i));
+}
 
 /* ---------------- names ---------------- */
 const FIRST_M = ['Marty', 'Curtis', 'Ray', 'Ed', 'Duane', 'Vern', 'Gil', 'Stan', 'Dale',
@@ -622,7 +721,7 @@ export function pronounOf(app) {
   return { subj: f ? 'she' : 'he', obj: f ? 'her' : 'him', poss: f ? 'her' : 'his' };
 }
 
-/* ---------------- colour helpers ---------------- */
+/* ---------------- color helpers ---------------- */
 export function shadeHex(hex, k) {
   const n = parseInt(hex.slice(1), 16);
   let r = ((n >> 16) & 255) * k, g = ((n >> 8) & 255) * k, b = (n & 255) * k;
