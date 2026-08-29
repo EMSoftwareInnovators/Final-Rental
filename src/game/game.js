@@ -65,6 +65,21 @@ const SHELVE_TIME = 1.5;
    Seven minutes of store-floor time is several transactions' worth. */
 const CLOSING_LIMIT = 420;
 
+/* How long somebody off the coach will stand in a line that is not moving
+   before deciding the coach is more interesting. The shortest fuse in the
+   party; everybody gets this plus up to eighty percent again, so they go
+   in ones and twos over several minutes rather than in a block. */
+const COACH_FUSE = 200;
+
+/* And how long the person at the FRONT of the line may be unservable
+   before the line gives up on them and moves around them. Nothing the
+   player does can cause this: the head of a line is either servable or
+   walking to the window, and the walk has its own backstops well inside
+   this. It firing means the line is broken, and a broken line takes the
+   whole store with it -- everybody behind the head reads as "waiting in
+   line" and cannot be served either. */
+const HEAD_STUCK_LIMIT = 25;
+
 /* How far the phone flex goes, in meters from the cradle on the back
    counter. Enough for both service positions and the end of the counter;
    nothing like enough for the store floor. */
@@ -267,6 +282,7 @@ export class Game {
     this.walkInAt = 0;
     this.boombox = null;
     this.stenchT = 0;
+    this._headStuck = 0; this._headWas = null; this._coachToldYou = false;
     this.arrest = null;
     this.sound.boomboxStop();
     this.player = createPlayer();
@@ -884,6 +900,7 @@ export class Game {
       this.updateVacuum(h);
       this.updateStench(h);
       for (const c of this.customers) if (!c.hidden) updateCustomer(c, h, this.ctx);
+      this.updateLine(h);
       this.customers = this.customers.filter((c) => c.state !== CS.GONE);
       updateKiller(this.killer, h, this.ctx);
       this.swingForKiller();
@@ -3135,6 +3152,22 @@ export class Game {
         g.sound.error();
         g.ui.toast(`${c.name} has lost patience.`, 'bad');
       },
+      /* Somebody off the coach has stood in a line that is not moving for
+         long enough. This is not a tantrum -- there is a coach outside and
+         forty people they came with -- so they simply go, and the store
+         says so once rather than forty times. */
+      coachGivesUp: (c) => {
+        c.leaving = true; c.state = CS.LEAVING; c.path = null;
+        g.releaseCounterSpot(c);
+        /* No counter for this on the report. It is not a walk-out and it is
+           not a locked door; the cost of it is already there in the rentals
+           that did not happen. */
+        if (!g._coachToldYou) {
+          g._coachToldYou = true;
+          g.sound.chimeBad();
+          g.ui.toast(`The coach party are starting to give up and go back to the bus.`, 'bad');
+        }
+      },
       storm: (c) => {
         g.stats.stormedOut++;
         c.leaving = true; c.rushing = true; c.state = CS.LEAVING; c.path = null;
@@ -3445,6 +3478,45 @@ export class Game {
     const others = this.queue.filter((q) => q !== c);
     if (!others.length) return SPOTS.service;
     return this.queueSpot(others.length);       // the place they would take
+  }
+
+  /**
+   * Nobody holds the front of the line by being impossible to serve.
+   *
+   * Everything behind the head of a line reads as "waiting in line" and
+   * cannot be rung up, so a head that never becomes servable is not one
+   * stuck customer, it is a stopped store -- and the coach makes that
+   * forty people rather than three. Talk to any of them and they say they
+   * are in no hurry, which is true and no help at all.
+   *
+   * A head who is merely being kept waiting is not this: they are
+   * servable, and this does nothing. This counts only the head that
+   * `cannotServe` will not pass, which on a working line lasts as long as
+   * the walk from the back and no longer.
+   */
+  updateLine(dt) {
+    const head = this.queue[0];
+    if (!head) { this._headStuck = 0; this._headWas = null; return; }
+    if (head !== this._headWas) { this._headWas = head; this._headStuck = 0; }
+    // Talking to them is not being stuck, and neither is being servable.
+    if (head.state === CS.TALKING || this.speaking === head || !this.cannotServe(head)) {
+      this._headStuck = 0;
+      return;
+    }
+    this._headStuck = (this._headStuck || 0) + dt;
+    if (this._headStuck < HEAD_STUCK_LIMIT) return;
+    this._headStuck = 0;
+    /* Out of the line and sent to join it again from wherever they are.
+       Whatever was wrong with their approach gets thrown away with it, and
+       the person behind them becomes somebody the player can actually
+       serve. */
+    this.releaseCounterSpot(head);
+    head.queueIndex = -1;
+    head.targetSpot = null;
+    head.shuffleT = 0;
+    head.approachT = 0; head.approachBest = undefined;
+    head.state = CS.TO_COUNTER; head.path = null; head.timer = 0;
+    this.ui.toast(`${head.name} loses their place at the counter.`, '');
   }
 
   claimCounterSpot(c) {
@@ -4036,6 +4108,12 @@ export class Game {
        just as you got on top of it. Whatever else the coach is, it is not
        a crowd that storms out. */
     c.patient = true;
+    /* Not forever, though. Long enough that a clerk who is working can get
+       through most of a coach, different for everybody so they thin out
+       rather than all going at once, and short enough that the store can
+       always empty -- which it could not before, because "patient" was
+       written as no clock at all. */
+    c.patientFuse = COACH_FUSE + rng.range(0, COACH_FUSE * 0.8);
     /* Along the sidewalk, not out in the road. The curb is at z -4.6 and
        there is a solid behind it, so spreading four dozen people backwards
        off the sidewalk pinned most of the coach against that wall with

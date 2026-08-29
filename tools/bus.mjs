@@ -259,9 +259,15 @@ const allIn = await ev(() => {
   window.__bus.land();
   const riders = g.customers.filter((c) => c.fromBus);
   const spawnBad = riders.filter((c) => !g.onOpenFloor(c.x, c.z)).length;
-  for (let i = 0; i < 60000; i++) {
+  /* Two and a half minutes: long enough for the whole coach to get in and
+     form a line, well short of the shortest fuse any of them carries. The
+     old version ran for thirty-three minutes of store time and then asked
+     whether they were all still standing there, which was a fine question
+     when the answer was allowed to be yes. */
+  for (let i = 0; i < 30 * 150; i++) {
     riders.forEach((c) => { if (!c.hidden) window.__cust.updateCustomer(c, 1 / 30, g.ctx); });
     g.updateDoor(1 / 30);
+    g.updateLine(1 / 30);
   }
   const st = {};
   riders.forEach((c) => { st[c.state] = (st[c.state] || 0) + 1; });
@@ -294,6 +300,92 @@ check('the line takes all of them', allIn.inLine >= allIn.n * 0.5,
 check('and not one of them gets impatient',
   allIn.soured === 0 && allIn.gone === 0,
   `${allIn.soured} soured, ${allIn.gone} walked out`);
+
+/* ---------- 7b. and not one of them waits forever either ---------- */
+/* "Patient" was written as no clock at all, which put forty-odd people in
+   the building who would stand in that line until midnight moved them. One
+   head of the line that could not be served and everybody behind it was
+   there for the rest of the night, saying they were in no hurry, because
+   they genuinely were. They have a fuse now: minutes long, a different
+   length each, and it ends in going back to the coach rather than in a
+   tantrum. */
+const giveUp = await ev(() => {
+  const g = window.__game;
+  window.__bus.reset(false);
+  g.updateBus(0.1);
+  window.__bus.land();
+  const riders = g.customers.filter((c) => c.fromBus);
+  const n = riders.length;
+  /* Serve nobody at all, for as long as a whole shift. */
+  const leftBy = [];
+  let angry = 0;
+  for (let i = 0; i < 30 * 900; i++) {
+    riders.forEach((c) => { if (!c.hidden) window.__cust.updateCustomer(c, 1 / 30, g.ctx); });
+    g.updateDoor(1 / 30);
+    g.updateLine(1 / 30);
+    if (i % 30 === 0) leftBy.push([i / 30, riders.filter((c) => c.state === 'GONE').length]);
+    angry += riders.filter((c) => c.wentAngry).length ? 1 : 0;
+  }
+  /* When did the first go, when did the last, and did they go in a block? */
+  const first = (leftBy.find(([, k]) => k > 0) || [Infinity])[0];
+  const last = (leftBy.find(([, k]) => k >= n) || [Infinity])[0];
+  let biggestStep = 0;
+  for (let i = 1; i < leftBy.length; i++) biggestStep = Math.max(biggestStep, leftBy[i][1] - leftBy[i - 1][1]);
+  const st = {};
+  riders.forEach((c) => { st[c.state] = (st[c.state] || 0) + 1; });
+  g.customers.length = 0; g.queue.length = 0; g.bus = null;
+  return { n, gone: riders.filter((c) => c.state === 'GONE').length, first, last, biggestStep, angry, st };
+});
+check('a coach nobody ever serves does not stand there all night',
+  giveUp.gone === giveUp.n,
+  `${giveUp.gone} of ${giveUp.n} gave up and went, states ${JSON.stringify(giveUp.st)}`);
+check('they hold out for minutes first, not seconds',
+  giveUp.first > 120, `the first went at ${giveUp.first}s`);
+check('and they go in ones and twos rather than emptying the store at once',
+  giveUp.biggestStep <= Math.max(3, giveUp.n * 0.15),
+  `${giveUp.biggestStep} of them in one second, over ${(giveUp.last - giveUp.first).toFixed(0)}s`);
+check('and none of it is a tantrum', giveUp.angry === 0, `${giveUp.angry} lost their temper`);
+
+/* ---------- 7c. and one bad head does not stop the whole line ---------- */
+/* Everything behind the head of a line reads as "waiting in line" and
+   cannot be rung up, so a head that never becomes servable is not one
+   stuck customer, it is a stopped store. */
+const badHead = await ev(() => {
+  const g = window.__game;
+  g.customers.length = 0; g.queue.length = 0;
+  const made = [];
+  for (let i = 0; i < 5; i++) {
+    const c = window.__cust.createCustomer(g.rng, { intent: 'RENT' });
+    c.script = 'rent'; c.hasMoney = true;
+    c.tape = window.__tapes.makeTape('HORROR', g.rng, { rewound: true });
+    c.x = 9.0 - i * 0.9; c.z = 0.8; c.state = 'WAITING'; c.path = null;
+    g.customers.push(c); made.push(c);
+    g.claimCounterSpot(c);
+  }
+  const head = made[0];
+  /* Wedge him: at the head of the line, and nowhere near the window. There
+     is no supported way to get here, which is the point -- if one ever
+     turns up, the line has to survive it. */
+  const before = { head: head.name, why: g.cannotServe(head), second: g.cannotServe(made[1]) };
+  const park = () => { head.x = 3.0; head.z = 5.0; head.targetSpot = { x: 3.0, z: 5.0 }; };
+  park();
+  let freed = -1;
+  for (let i = 0; i < 30 * 90; i++) {
+    park();                                   // he cannot get back, ever
+    made.forEach((c) => { if (!c.hidden) window.__cust.updateCustomer(c, 1 / 30, g.ctx); });
+    g.updateLine(1 / 30);
+    if (freed < 0 && g.queue[0] && g.queue[0] !== head && !g.cannotServe(g.queue[0])) freed = i / 30;
+  }
+  const out = { before, freed, headIndex: g.queue.indexOf(head), newHead: g.queue[0] ? g.queue[0].name : null };
+  g.customers.length = 0; g.queue.length = 0;
+  return out;
+});
+check('a head of the line that cannot be served blocks everybody behind it',
+  badHead.before.why !== '' && badHead.before.second === 'waiting in line',
+  `head: "${badHead.before.why}", next: "${badHead.before.second}"`);
+check('so the line gives up on them and moves on',
+  badHead.freed > 0 && badHead.freed < 40,
+  badHead.freed < 0 ? 'it never did' : `${badHead.freed}s later, ${badHead.newHead} is servable`);
 
 /* And the line itself is somewhere a person can stand. */
 const line = await ev(() => {

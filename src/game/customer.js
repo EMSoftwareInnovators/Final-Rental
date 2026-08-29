@@ -71,6 +71,11 @@ export function createCustomer(rng, opts = {}) {
     /* Seconds before they will grumble again about not being able to get
        to the counter. */
     holdOffT: 0,
+    /* How long somebody marked `patient` will stand in a line that is not
+       moving. Whoever sets `patient` sets this too -- the coach staggers
+       it across the party -- but it carries a working default so that
+       "patient" can never again mean "waits until midnight". */
+    patientFuse: 300,
     observed: new Set(),
     talkedTo: false,
     smelled: false,
@@ -650,11 +655,16 @@ export function updateCustomer(c, dt, ctx) {
         if (step(c, dt, ctx)) directStep(c, dt, ctx, c.targetSpot);
         // and if it is taking absurdly long, try the route again from here
         if (c.shuffleT > 6) { c.shuffleT = 0; setDest(c, c.targetSpot.x, c.targetSpot.z, ctx); }
-        break;
+        /* And then fall through rather than stopping here. Everything that
+           ends a wait -- the change clock, the ten seconds after being
+           served, running out of patience -- used to sit behind this
+           `break`, so anybody who could not get exactly onto their mark had
+           no clock running on them at all and no way out of the state. */
+      } else {
+        // Whatever they were hurrying for, they have arrived.
+        c.rushing = false;
+        c.yaw = angleTowards(c.yaw, c.queueIndex === 0 ? 0 : 0.2, dt * 4);
       }
-      // Whatever they were hurrying for, they have arrived.
-      c.rushing = false;
-      c.yaw = angleTowards(c.yaw, c.queueIndex === 0 ? 0 : 0.2, dt * 4);
       if (c.awaitingChange) {
         // they are not going anywhere until the drawer opens
         c.changeTimer = (c.changeTimer || 0) + dt;
@@ -674,13 +684,27 @@ export function updateCustomer(c, dt, ctx) {
         break;
       }
       if (c.patient) {
-        /* The coach party. They have been together for four hours and
-           they are all waiting for each other anyway, so standing in a
-           line is not the imposition it is for somebody who came in on
-           their own. They do not run down and they do not storm out --
-           four dozen people all losing patience at once would empty the
-           store through the one door just as you got on top of it, which
-           is the opposite of what the coach is for. */
+        /* The coach party. They have been together for four hours and they
+           are all waiting for each other anyway, so standing in a line is
+           not the imposition it is for somebody who came in on their own.
+           They do not run down at an ordinary rate and they do not storm
+           out -- four dozen people all losing patience at once would empty
+           the store through the one door just as you got on top of it,
+           which is the opposite of what the coach is for.
+
+           But they do not wait forever either, and they used to. "Patient"
+           was written as no clock at all, which put forty-odd people in
+           this building who would stand in that line until midnight moved
+           them. One head of the line that could not be served -- somebody
+           owed change you never counted out, most likely -- and everybody
+           behind it was there for the rest of the night, saying they were
+           in no hurry, because they genuinely were.
+
+           So: a fuse each, minutes long and a different length for
+           everyone, and they leave the way somebody with a coach outside
+           leaves rather than the way somebody storms out. */
+        c.patientFuse -= dt;
+        if (c.patientFuse <= 0) { ctx.coachGivesUp(c); }
         break;
       }
       {
