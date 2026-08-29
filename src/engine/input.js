@@ -311,7 +311,7 @@ export class Input {
     const rawX = ax[0] || 0, rawY = ax[1] || 0;
     /* Movement wants a squared curve -- it buys fine control near the
        center, and you are only ever walking. Looking does not: squaring it
-       meant half a stick gave a quarter of the speed, and turning round took
+       meant half a stick gave a quarter of the speed, and turning around took
        an age unless you pinned it to the edge. The look axes get a much
        gentler shape. */
     const lookCurve = (v) => {

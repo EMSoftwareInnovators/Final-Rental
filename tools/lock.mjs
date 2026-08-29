@@ -101,8 +101,14 @@ check('and the camera turns', moved > 0.05, `yaw moved ${moved.toFixed(3)}`);
 /* Run the night out. Midnight shuts the door rather than ending the shift,
    so the store has to empty and the tapes have to be away before a report
    appears -- put the strays back as they turn up. */
+/* Run to a wall-clock deadline rather than a fixed number of turns
+   through the loop. Time here is bought a frame at a time out of a
+   headless renderer, so on a loaded machine three hours of shift takes
+   noticeably longer than it does on a quiet one -- and a fixed count of
+   200ms naps failed, intermittently, on the busy runs only. */
 await ev(() => { window.__game.timeScale = 60; });
-for (let i = 0; i < 260; i++) {
+const deadline = Date.now() + 150000;
+while (Date.now() < deadline) {
   if ((await state()).state === 'REPORT') break;
   await ev(() => {
     const g = window.__game;
@@ -115,7 +121,19 @@ for (let i = 0; i < 260; i++) {
   await wait(200);
 }
 await ev(() => { window.__game.timeScale = 1; });
-check('the night runs to a report', (await state()).state === 'REPORT', (await state()).state);
+/* And if it did not get there, say what it was still waiting on rather
+   than just naming the state it is stuck in. */
+const why = await ev(() => {
+  const g = window.__game;
+  return {
+    state: g.state,
+    shiftClock: +g.elapsed.toFixed(0), floor: +g.sim.toFixed(0),
+    closing: !!g.closing, closingT: +(g.closingT || 0).toFixed(0),
+    inside: g.customers.filter((c) => c.state !== 'GONE' && c.z > 0.15).length,
+    music: !!g.boombox, smell: +(g.stenchT || 0).toFixed(1),
+  };
+});
+check('the night runs to a report', why.state === 'REPORT', JSON.stringify(why));
 
 const asksBefore = (await state()).asks;
 // Clear the report panel and be sure the next night actually started before

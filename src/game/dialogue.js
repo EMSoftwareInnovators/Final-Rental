@@ -91,7 +91,7 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
   function standDownOutro() {
     return say(officer, rng.pick([
       `Get home safe. For the ordinary reason, for once.`,
-      `Enjoy the quiet. They don't come round often.`,
+      `Enjoy the quiet. They don't come around often.`,
       `You did alright these last few weeks. Somebody should say so.`,
     ]), [reply(`Goodnight.`, () => { ctx.finishIntro(); return null; })]);
   }
@@ -2077,7 +2077,7 @@ function basementRoot(c, ctx) {
   const rng = ctx.rng;
   if (c.crookStage === undefined) { c.crookStage = 0; c.crookHeat = 0; }
   /* Per conversation, not per night. He is inexhaustible across the shift
-     and finite within one exchange: go round the houses enough times and
+     and finite within one exchange: go around in circles enough times and
      he stops talking to you and goes back to studying the floor. Which
      ends the conversation without ending him -- he is still in the store,
      and still has no basement to be let into. */
@@ -2349,7 +2349,7 @@ function managerRoot(c, ctx) {
   c.karenRound = 0;
 
   const standing = () => say(c, rng.pick([
-    `We're going round. I'll stop, then.\n\n(she folds her arms and looks at the phone on your back counter)`,
+    `We're going in circles. I'll stop, then.\n\n(she folds her arms and looks at the phone on your back counter)`,
     `Right. I'll wait, and you'll do whatever you were going to do.\n\n(she does not leave)`,
     `(she stops answering you, and looks past you at the phone)`,
   ]), [reply(`...`, () => null)]);

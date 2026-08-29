@@ -62,8 +62,6 @@ const BRITISH = [
   ['mate', 'buddy', { skip: ['estimate', 'approximate'] }],
   ['bloke', 'guy'],
   ['half eleven', 'half past eleven'],
-  ['round the back', 'around the back'],
-  ['look round', 'look around'],
   ['quid', 'dollars'],
   ['lorry', 'truck'],
   ['rubbish', 'trash'],
@@ -75,6 +73,14 @@ const BRITISH = [
   ['dustbin', 'trash can'],
   ['biro', 'ballpoint pen'],
 ];
+
+/* "Round" for "around" -- turning round, come round, have a look round.
+   Matched only after a verb, because a round is also a shape, a drink and
+   a shift of the clock. */
+const ROUND = String.raw`\b(turn|turns|turned|turning|come|comes|came|coming|go|goes|went|going`
+  + String.raw`|walk|walks|walked|walking|look|looks|looked|looking|show|shows|showed|showing`
+  + String.raw`|get|gets|got|getting|sit|sits|sat|stand|stands|stood|hang|hangs|hung|hanging`
+  + String.raw`|drive|drives|drove|driving|ask|asks|asked|asking|bring|brings|brought)\s+round\b`;
 
 /* -ise/-yse where American English wants -ize/-yze. Spelled out rather than
    matched by pattern: "premise", "surprise" and a dozen others end that way
@@ -109,6 +115,8 @@ for (const t of TARGETS) {
         hits.push({ f, n: i + 1, word, want, line: line.trim().slice(0, 96) });
       };
       for (const [word, want, opts] of BRITISH) check(word, want, opts);
+      const r = new RegExp(ROUND, 'i').exec(line);
+      if (r) hits.push({ f, n: i + 1, word: r[0], want: `${r[1]} around`, line: line.trim().slice(0, 96) });
       for (const word of ISE) check(word, word.replace(/is(e|ed|ing|ation)?$/, (m) => m.replace('is', 'iz')).replace(/ys(e|ed)$/, (m) => m.replace('ys', 'yz')));
     });
   }

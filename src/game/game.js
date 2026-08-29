@@ -941,7 +941,7 @@ export class Game {
 
        This used to march the whole store out at the stroke of twelve, which
        meant a woman four feet from the counter with a tape in her hand and
-       her money out got turned round and sent home, and the last minutes of
+       her money out got turned around and sent home, and the last minutes of
        a shift were spent watching people you had been serving all night
        file past you. Anybody who was inside before the bolt went across
        still gets to pick something out and pay for it.
@@ -1289,7 +1289,7 @@ export class Game {
     if (c.state === CS.TALKING) return '';
     if (c.awaitingChange) return '';
     /* A little slack on the radius. The window is one spot but a person is
-       not a point, and somebody who has come round the end of the counter
+       not a point, and somebody who has come around the end of the counter
        can settle a few inches off it without having failed to arrive. */
     const atWindow = c.queueIndex === 0
       && (c.state === CS.WAITING || c.state === CS.TO_COUNTER)
@@ -2376,6 +2376,9 @@ export class Game {
     this.police = null;
     this.ending('CAUGHT', Object.assign({
       name: target.name,
+      /* The page is written about this person, and half the time she is a
+         woman. Everything on it that used to say "he" now asks. */
+      app: target.app,
       nights: this.nightNo,
       hid: this.hiding,
       broke: this.storage.broken,
@@ -2418,7 +2421,7 @@ export class Game {
       e.moveSpeed = 0;
     }
     this.sound.duckRoom(0.04);
-    this.ending('ATTACKED', { name: e ? e.name : 'He', night: this.nightNo });
+    this.ending('ATTACKED', { name: e ? e.name : 'He', app: e && e.app, night: this.nightNo });
   }
 
   updateDeath(dt) {

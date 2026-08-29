@@ -7,6 +7,7 @@ import { PAD_ACTIONS } from '../engine/input.js';
 import { paintPortrait } from './appearance.js';
 import { KEY_LABEL, VISIBLE_KEYS, traitLabel, sameTrait } from './appearance.js';
 import { GENRE_LABEL } from './tapes.js';
+import { voice } from './briefing.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -524,48 +525,71 @@ export function reportHtml(night, stats, grade, next) {
   <p class="pad-foot">[E] clock in for night ${night + 1}</p>`;
 }
 
+/**
+ * The last page of a night.
+ *
+ * Written with {he} / {him} / {his} and run through the same expander the
+ * bulletin uses, because the person these pages are about is a different
+ * person every night and half the time she is a woman. The arrest page
+ * used to put a woman face down on the carpet and then call her "he" three
+ * sentences running.
+ *
+ * The whole thing is wrapped in .ending so the stylesheet can give it a
+ * page of prose to live on: cinema bars take eleven percent off the top
+ * and the bottom while these are up, and the longest arrest -- hid in the
+ * back room, caught the same man last night, several quiet nights coming
+ * -- ran the last option off the bottom of the panel with no way to
+ * scroll to it. tools/endings.mjs measures every variant.
+ */
 export function endingHtml(kind, data) {
+  const say = (text) => voice(text, data.app);
   switch (kind) {
     case 'CAUGHT': {
       const where = data.offscreen
-        ? `<p>They took him on the sidewalk outside, before he reached the corner.</p>`
+        ? `<p>They took {him} on the sidewalk outside, before {he} reached the corner.</p>`
         : data.broke
-          ? `<p>They came through the front while he was still working on the stock room door.</p>`
+          ? `<p>They came through the front while {he} was still working on the stock room door.</p>`
           : data.hid
             ? `<p>You heard the doors, the shouting, then a knock on the stock room door and a badge number, twice, before you would open it.</p>`
-            : `<p>He was against the returns bin with his hands behind him before he had finished turning round.</p>`;
+            : `<p>{He} was against the returns bin with {his} hands behind {him} before {he} had finished turning around.</p>`;
+      /* No pronoun for the deputy: that is a different person again, and
+         rolled separately, so a line about what he said last night was
+         wrong about as often as this one was. */
       const more = data.caseFile && data.caseFile.caughtLast
-        ? `<p class="quiet">The deputy said what he said last night: that they had got him. You have started counting how many times a week somebody has got him.</p>`
+        ? `<p class="quiet">The deputy said the same thing last night: that they had got {him}. You have started counting how many times a week somebody has got {him}.</p>`
         : '';
       const calm = data.calmNights
         ? `<p class="quiet">Nobody will be working this block for ${data.calmNights} night${data.calmNights > 1 ? 's' : ''}. Nobody they know about.</p>`
         : '';
-      return `<h2>UNITS RESPONDING</h2>
+      return say(`<div class="ending"><h2>UNITS RESPONDING</h2>
         <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>
         ${where}
-        <p><b>${escape(data.name || 'He')}</b> did not resist.</p>
+        <p><b>${escape(data.name || 'Nobody')}</b> did not resist.</p>
         ${more}${calm}
         <p class="big">CASE CLOSED &mdash; NIGHT ${data.night}</p>
         <ul>
           <li class="opt sel">Take tomorrow's shift</li>
           <li class="opt">Hand in the keys</li>
-        </ul>`;
+        </ul></div>`);
     }
     case 'ATTACKED':
-      return `<h2>PLEASE REWIND BEFORE RETURNING</h2>
+      return say(`<div class="ending"><h2>PLEASE REWIND BEFORE RETURNING</h2>
         <p>The chime over the door goes off the way it always does. Two notes, cheerful, made in 1981.</p>
-        <p>He does not hurry. There is no reason to hurry.</p>
+        <p>{He} does not hurry. There is no reason to hurry.</p>
         <p class="quiet">The store stays open until midnight. The tape in the deck keeps turning until somebody stops it.</p>
         <p class="big">NIGHT ${data.night} &mdash; SHIFT ENDED</p>
-        <p class="pad-foot">[E] rewind</p>`;
+        <p class="pad-foot">[E] rewind</p></div>`);
     case 'FIRED':
-      return `<h2>TERMINATED</h2>
-        <p>Two units, lights, the whole street awake. They put <b>${data.name}</b> face down on the carpet by the returns bin in front of six people.</p>
+      /* The name here is the person you were wrong about, and `reason` is
+         written about them by describeInnocent -- so nothing on this page
+         goes through the expander. */
+      return `<div class="ending"><h2>TERMINATED</h2>
+        <p>Two units, lights, the whole street awake. They put <b>${escape(data.name || 'a customer')}</b> face down on the carpet by the returns bin in front of six people.</p>
         <p>${data.reason}</p>
         <p>The district manager drove in at two in the morning to say it in person. You handed over the keys and the little pin with the film reel on it.</p>
         <p class="quiet">Somewhere out there, the actual one is still renting tapes.</p>
         <p class="big">BAD ENDING &mdash; YOU'RE DONE HERE</p>
-        <p class="pad-foot">[E] new tape</p>`;
+        <p class="pad-foot">[E] new tape</p></div>`;
     default: return '';
   }
 }

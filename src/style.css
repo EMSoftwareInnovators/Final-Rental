@@ -191,6 +191,42 @@ body.talking #hands,body.talking #objective{display:none}
 .pad .pad-foot{margin-top:1.2cqw;font-size:2.1cqw;color:#5a5140;text-align:right}
 .pad .k{color:#8c1d0e;font-weight:bold}
 .pad .quiet{color:#5a5140}
+/* ---------------- pages shown behind the cinema bars ----------------
+   The end of a night -- the shift report, and the three endings -- goes up
+   with the bars down, which take eleven percent off the top and eleven off
+   the bottom. The panel allowed itself 88cqh of a 78cqh hole and then
+   scrolled the difference, which is no help at all: there is nothing to
+   scroll it with. The pointer is locked, the player may be on a pad, and
+   the arrest page ends in a choice, so what fell off the bottom was a
+   decision nobody could see.
+
+   tools/endings.mjs measures every branch of every one of these against
+   the space actually there, at four window shapes, and fails if one of
+   them needs to scroll or runs under a bar. */
+body.cine .pad{max-height:76cqh}
+/* The report is fourteen rows and a grade whatever kind of night it was,
+   so its height barely moves and it sat a few pixels under the bottom bar
+   every night of every run. The rows carry the whole cost: fourteen of
+   them at a tighter setting is the difference. */
+body.cine #panel-body td{line-height:1.2;padding:0}
+body.cine #panel-body table{font-size:2.15cqw}
+body.cine #panel-body h2{margin-bottom:.5cqw}
+body.cine #panel-body .report .note{line-height:1.3}
+
+/* An ending is a page of prose rather than a table: a slightly smaller
+   face and tighter leading than the notepad or the options screen get,
+   and a little wider, because the alternative was shrinking the type far
+   enough to read as an apology. */
+.pad:has(.ending){
+  width:84cqw;padding:1.5cqw 2.2cqw;
+  font-size:2.25cqw;line-height:1.3;
+}
+.pad:has(.ending) h2{font-size:2.6cqw;margin-bottom:.6cqw;padding-bottom:.25cqw}
+.pad:has(.ending) p{margin-bottom:.5cqw}
+.pad:has(.ending) .big{font-size:3.3cqw;margin:.7cqw 0 .5cqw}
+.pad:has(.ending) .pad-foot{margin-top:.7cqw}
+.pad:has(.ending) ul{margin-top:.2cqw}
+
 #notes .pad{width:88cqw;padding:1.6cqw 2cqw}
 #notes .sheet{display:grid;grid-template-columns:1fr 1fr;gap:0 2.4cqw;align-items:start}
 #notes .sheet>div{min-width:0}
