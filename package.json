@@ -13,7 +13,9 @@
     "dist:mac": "electron-builder --mac --publish never",
     "dist:linux": "electron-builder --linux --publish never",
     "icon": "node tools/icon.mjs",
-    "check:app": "node tools/electron.mjs"
+    "check:app": "node tools/electron.mjs",
+    "web": "node tools/web.mjs",
+    "check:web": "node tools/embed.mjs"
   },
   "engines": {
     "node": ">=18"

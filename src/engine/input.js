@@ -165,6 +165,10 @@ export class Input {
     this.padSensitivity = 4.2;          // radians per second at full deflection
     this.invertY = false;
     this.enabled = true;
+    /* Set once the page has made clear it will not hand over the mouse.
+       See lockRefused(). */
+    this.lockBlocked = false;
+    this.refusals = 0;
 
     /* Analog state, merged from keyboard and stick so movement code never
        has to care which one is driving. */
@@ -226,8 +230,17 @@ export class Input {
 
     document.addEventListener('pointerlockchange', () => {
       this.locked = document.pointerLockElement === this.target;
+      if (this.locked) { this.refusals = 0; this.lockBlocked = false; }
       if (this.onLockChange) this.onLockChange(this.locked);
     });
+    /* A refusal that is not going to change its mind.
+       Asking at the wrong moment is normal and the next gesture fixes it,
+       so a single failure means nothing. But the page around the game can
+       refuse outright -- an embed on somebody else's site, in a frame
+       that was not granted pointer lock -- and then the camera never
+       moves, and "Click to look around" is advice the player can follow
+       for the rest of the night without it ever working. */
+    document.addEventListener('pointerlockerror', () => this.lockRefused());
     this.target.addEventListener('mousemove', (e) => {
       if (!this.locked || !this.enabled) return;
       this.mdx += e.movementX || 0;
@@ -493,8 +506,24 @@ export class Input {
     if (this.locked || !this.target.requestPointerLock) return;
     try {
       const p = this.target.requestPointerLock();
-      if (p && p.catch) p.catch(() => { });
-    } catch (err) { /* not granted; the next gesture will try again */ }
+      if (p && p.catch) p.catch((e) => this.lockRefused(e && e.message));
+    } catch (err) { this.lockRefused(err && err.message); }
+  }
+
+  /**
+   * The browser said no. Twice is bad luck; three times is a policy.
+   *
+   * Chrome says why, and when the reason is the frame's permissions there
+   * is no point waiting for a better moment -- that is decided once, by
+   * the page doing the embedding, and it is not going to change. Other
+   * browsers only fire the bare error event, so a run of refusals counts
+   * for the same thing.
+   */
+  lockRefused(why) {
+    this.refusals = (this.refusals || 0) + 1;
+    if (this.refusals >= 3 || /sandbox|permission|disallow|not allowed/i.test(why || '')) {
+      this.lockBlocked = true;
+    }
   }
   exitLock() { if (this.locked && document.exitPointerLock) document.exitPointerLock(); }
 

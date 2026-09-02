@@ -1624,7 +1624,15 @@ export class Game {
     if (this.wantLock && !this.input.locked && this.input.scheme === 'kbm') {
       this.hover = null;
       this.ui.setReticle(false);
-      this.ui.setPrompt(`Click to look around`);
+      /* And if the page has refused outright -- an embed in a frame that
+         was not granted pointer lock -- then "click to look around" is
+         advice the player can follow for the rest of the night without it
+         ever working. Say the true thing instead, and name the two ways
+         out of it. */
+      this.ui.setPrompt(this.input.lockBlocked
+        ? `This page will not let the game take the mouse`
+        + `\n<span class="sub">try the fullscreen button, or the download</span>`
+        : `Click to look around`);
       if (this.hold) { this.hold = null; this.ui.setHold(0); }
       return;
     }
