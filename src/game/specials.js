@@ -785,15 +785,51 @@ export function specialById(id) { return specialRoster().find((s) => s.id === id
  * Normally one or two, dropped in where an ordinary customer would have
  * been. Once in a while -- and you will know when -- the whole rota is
  * one of these, which is a different kind of night entirely.
+ *
+ * `opts` is how Story Mode paces this without a second scheduler:
+ *   requiredSpecials  ids that must appear tonight. They cost no roll and
+ *                     take priority; they are placed first, then the random
+ *                     roll fills whatever room is left.
+ *   specialCap        the most specials the night may hold, required ones
+ *                     included. null/undefined means no cap.
+ *
+ * With neither option -- Graveyard Shift, Casual, and any un-authored Story
+ * night -- this draws from `rng` in exactly the order it always did and
+ * returns exactly what it always returned. The options only ever reshape
+ * the result; the random roll itself is untouched, so a seed's endless-mode
+ * schedule is unchanged.
  */
-export function planSpecials(rng, night, count) {
+export function planSpecials(rng, night, count, opts = {}) {
   const roster = specialRoster();
+  const valid = new Set(roster.map((s) => s.id));
+  const cap = (opts.specialCap == null) ? Infinity : Math.max(0, opts.specialCap | 0);
+
+  // The random roll, drawn identically to the original whatever the options.
   const swarm = rng() < 0.07;
-  const n = swarm
+  const rolled = swarm
     ? Math.max(4, Math.min(roster.length, Math.round(count * 0.7)))
     : (rng() < 0.62 ? 1 : 0) + (rng() < 0.28 ? 1 : 0);
-  if (!n) return { swarm: false, picks: [] };
-  const pool = rng.shuffle(roster.slice());
-  const picks = pool.slice(0, Math.min(n, pool.length)).map((s) => s.id);
-  return { swarm, picks };
+
+  // Required specials first: valid, de-duplicated, and clamped to the cap.
+  const picks = [];
+  for (const id of (opts.requiredSpecials || [])) {
+    if (picks.length >= cap) break;
+    if (valid.has(id) && !picks.includes(id)) picks.push(id);
+  }
+
+  // Random fill: as many as the roll wanted, but no more than the cap leaves
+  // room for. So an uncapped night gets `rolled` randoms on top of any
+  // required (endless behavior when there are none), and a capped night
+  // gets at most `cap - required` -- preserving the procedural variation of
+  // how many, just bounded.
+  const room = (cap === Infinity) ? rolled : Math.max(0, cap - picks.length);
+  const want = Math.min(rolled, room);
+  if (want > 0) {
+    const pool = rng.shuffle(roster.filter((s) => !picks.includes(s.id)));
+    for (let i = 0; i < want && i < pool.length; i++) picks.push(pool[i].id);
+  }
+
+  // A swarm only counts as one if it was actually allowed to fill out -- a
+  // capped Story night is never a swarm however the dice fell.
+  return { swarm: swarm && cap === Infinity && want > 0, picks };
 }

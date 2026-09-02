@@ -273,15 +273,20 @@ export class Game {
     this.nightNo = n;
     if (!this.run) this.run = { calmUntil: 0, standDownNight: 0, arrests: 0 };
     const R = this.run;
-    /* In Story Mode a night can carry a config (campaign.js). Today every
-       night returns the defaults, so this changes nothing yet -- but the
-       lever is real: a config that sets killerEligible false makes a
-       guaranteed-quiet night without any night.js special-casing. */
+    /* In Story Mode the night carries a config (campaign.js) that can steer
+       the killer, the deputy, the coach, and which specials turn up. The
+       cooldown fields (calm/standDown) go in alongside it and take
+       precedence inside makeNight. Graveyard and Casual pass no config, so
+       none of this reaches them -- they generate exactly as before. */
     const cfg = this.mode === MODE.STORY ? nightConfig(n) : null;
     this.night = makeNight(this.seed, n, this.mode, {
       calm: n <= R.calmUntil,
       standDown: n === R.standDownNight,
-      killerEligible: cfg ? cfg.killerEligible : undefined,
+      killerPolicy: cfg ? cfg.killerPolicy : undefined,
+      deputyPolicy: cfg ? cfg.deputyPolicy : undefined,
+      coachPolicy: cfg ? cfg.coachPolicy : undefined,
+      requiredSpecials: cfg ? cfg.requiredSpecials : undefined,
+      specialCap: cfg ? cfg.specialCap : undefined,
     });
     this.rng = this.night.rng;
     /* Two clocks.

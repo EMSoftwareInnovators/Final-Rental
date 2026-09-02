@@ -253,6 +253,184 @@ check('GRAVEYARD SHIFT carries no campaign and writes no save',
 check('and it still just rolls into the next night',
   endless.night === 2, `night ${endless.night}`);
 
+/* ================================================================
+   ACT I -- the authored pacing of Story Nights 1-4.
+
+   These build the night the same way game.js does: nightConfig(n) turned
+   into makeNight opts. Structural facts (deputy present, killer forced,
+   coach forbidden, specials capped) are read straight off the generated
+   night, which is what the game reads too.
+   ================================================================ */
+await ev(() => {
+  const N = window.__night, C = window.__campaign;
+  // Mirror game.js's opts construction exactly, minus any cooldown.
+  window.__story = {
+    night(seed, n, over = {}) {
+      const cfg = C.nightConfig(n);
+      return N.makeNight(seed, n, 'STORY', {
+        calm: false, standDown: false,
+        killerPolicy: cfg.killerPolicy,
+        deputyPolicy: cfg.deputyPolicy,
+        coachPolicy: cfg.coachPolicy,
+        requiredSpecials: cfg.requiredSpecials,
+        specialCap: cfg.specialCap,
+        ...over,
+      });
+    },
+    specials(nt) { return nt.schedule.filter((e) => e.special).map((e) => e.special); },
+  };
+});
+
+/* Sample a night across many seeds and report what stayed constant and what
+   varied. `over` lets a check force a cooldown flag on. */
+const survey = (n, over = {}) => ev(([n, over]) => {
+  const S = window.__story;
+  let appears = 0, visitsT = 0, visitsF = 0, deputies = 0, coaches = 0;
+  let overCap = 0, managerCounts = [], maxSpecials = 0, managerOnDecoy = 0;
+  const cap = window.__campaign.nightConfig(n).specialCap;
+  const SEEDS = 400;
+  for (let i = 0; i < SEEDS; i++) {
+    const nt = S.night(1000 + i, n, over);
+    if (nt.plan.appears) appears++;
+    if (nt.plan.appears) { if (nt.plan.visits) visitsT++; else visitsF++; }
+    if (nt.deputy) deputies++;
+    if (nt.busAt !== Infinity) coaches++;
+    const sp = S.specials(nt);
+    maxSpecials = Math.max(maxSpecials, sp.length);
+    if (cap != null && sp.length > cap) overCap++;
+    const mgr = sp.filter((id) => id === 'MANAGER').length;
+    managerCounts.push(mgr);
+    // MANAGER (when present) must never sit in a decoy slot.
+    nt.schedule.forEach((e) => { if (e.special === 'MANAGER' && e.decoy) managerOnDecoy++; });
+  }
+  return {
+    seeds: SEEDS, appears, visitsT, visitsF, deputies, coaches,
+    overCap, maxSpecials, managerOnDecoy,
+    managerAlways: managerCounts.every((c) => c === 1),
+    managerNever: managerCounts.every((c) => c === 0),
+    managerDupe: managerCounts.some((c) => c > 1),
+  };
+}, [n, over]);
+
+/* ---------- Night 1: the normal job ---------- */
+const N1 = await survey(1);
+check('Night 1 never has the deputy', N1.deputies === 0, `${N1.deputies}/${N1.seeds}`);
+check('Night 1 can never contain the killer', N1.appears === 0, `${N1.appears}/${N1.seeds}`);
+check('Night 1 can never contain the coach', N1.coaches === 0, `${N1.coaches}/${N1.seeds}`);
+/* "Injects none" means the config requires nobody -- a random pick may
+   still happen to be MANAGER, which is fine; what matters is that no
+   special is guaranteed. */
+const n1required = await ev(() => window.__campaign.nightConfig(1).requiredSpecials.length);
+check('Night 1 holds at most one special, and guarantees none',
+  N1.maxSpecials <= 1 && N1.overCap === 0 && n1required === 0 && !N1.managerAlways,
+  `most specials ${N1.maxSpecials}, over cap ${N1.overCap}, required ${n1required}`);
+
+/* ---------- Night 2: something is off ---------- */
+const N2 = await survey(2);
+check('Night 2 never has the deputy', N2.deputies === 0, `${N2.deputies}/${N2.seeds}`);
+check('Night 2 can never contain the killer', N2.appears === 0);
+check('Night 2 can never contain the coach', N2.coaches === 0);
+check('Night 2 has MANAGER every night, exactly once',
+  N2.managerAlways && !N2.managerDupe, `dupe seen: ${N2.managerDupe}`);
+check('Night 2 never exceeds two specials',
+  N2.maxSpecials <= 2 && N2.overCap === 0, `most specials ${N2.maxSpecials}`);
+check('Night 2 never puts MANAGER in a suspect decoy slot',
+  N2.managerOnDecoy === 0, `${N2.managerOnDecoy} decoy collisions`);
+
+/* And that the second special is still procedural: over the sample, some
+   Night 2 runs are MANAGER alone and some are MANAGER-plus-one. */
+const n2variety = await ev(() => {
+  const S = window.__story;
+  let alone = 0, plusOne = 0;
+  for (let i = 0; i < 400; i++) {
+    const c = S.specials(S.night(5000 + i, 2)).length;
+    if (c === 1) alone++; else if (c === 2) plusOne++;
+  }
+  return { alone, plusOne };
+});
+check('Night 2 keeps procedural variation in the second special',
+  n2variety.alone > 0 && n2variety.plusOne > 0,
+  `MANAGER alone ${n2variety.alone}, MANAGER + 1 ${n2variety.plusOne}`);
+
+/* ---------- Night 3: the warning ---------- */
+const N3 = await survey(3);
+check('Night 3 always has the deputy', N3.deputies === N3.seeds, `${N3.deputies}/${N3.seeds}`);
+check('Night 3 still has no killer behind the warning', N3.appears === 0, `${N3.appears}/${N3.seeds}`);
+check('Night 3 has no coach', N3.coaches === 0);
+check('Night 3 respects the one-special cap', N3.maxSpecials <= 1 && N3.overCap === 0);
+/* The decoys are the identification game -- they must still be generated. */
+const n3decoys = await ev(() => {
+  const S = window.__story;
+  let min = 99;
+  for (let i = 0; i < 50; i++) min = Math.min(min, S.night(9000 + i, 3).schedule.filter((e) => e.decoy).length);
+  return min;
+});
+check('Night 3 still seeds suspect decoys for the notepad to work against',
+  n3decoys >= 1, `fewest decoys in a run: ${n3decoys}`);
+
+/* ---------- Night 4: the first real threat ---------- */
+const N4 = await survey(4);
+check('Night 4 always has the deputy', N4.deputies === N4.seeds);
+check('Night 4 guarantees the killer appears, every seed',
+  N4.appears === N4.seeds, `${N4.appears}/${N4.seeds}`);
+check('Night 4 has no coach', N4.coaches === 0);
+check('Night 4 respects the one-special cap', N4.maxSpecials <= 1 && N4.overCap === 0);
+/* Forced forces the outcome only: he still sometimes skips the polite
+   customer phase, so visits is a mix rather than pinned true. */
+check('Night 4 keeps the killer\'s behavior procedural (visits still varies)',
+  N4.visitsT > 0 && N4.visitsF > 0,
+  `polite ${N4.visitsT}, straight-to-it ${N4.visitsF}`);
+
+/* ---------- cooldown wins over a forced threat ---------- */
+const cooled = await survey(4, { calm: true, standDown: true });
+check('an arrest cooldown overrides Night 4\'s forced killer',
+  cooled.appears === 0, `${cooled.appears}/${cooled.seeds} still appeared`);
+
+/* ---------- determinism: a retry rebuilds the night exactly ---------- */
+const deterministic = await ev(() => {
+  const S = window.__story;
+  const fingerprint = (nt) => JSON.stringify({
+    suspect: nt.caseFile.name,
+    appears: nt.plan.appears, visits: nt.plan.visits, visitAt: nt.plan.visitAt,
+    deputy: nt.deputy, busAt: nt.busAt,
+    schedule: nt.schedule.map((e) => [e.t, e.decoy, e.special || null, e.forced]),
+  });
+  const out = {};
+  for (const n of [1, 2, 3, 4]) {
+    const a = fingerprint(S.night(42, n));
+    const b = fingerprint(S.night(42, n));
+    out[n] = a === b;
+  }
+  return out;
+});
+check('the same seed rebuilds each Act I night identically (Continue is safe)',
+  [1, 2, 3, 4].every((n) => deterministic[n]), JSON.stringify(deterministic));
+
+/* ---------- mode isolation: none of this leaks ---------- */
+const modes = await ev(() => {
+  const N = window.__night;
+  // Graveyard passes no policy: killer on night 4 is a probability, not a
+  // guarantee, and specials are not capped at one.
+  let gvAppears = 0, gvMaxSpecials = 0, gvCoach = 0;
+  for (let i = 0; i < 400; i++) {
+    const nt = N.makeNight(7000 + i, 4, 'HORROR', {});
+    if (nt.plan.appears) gvAppears++;
+    gvMaxSpecials = Math.max(gvMaxSpecials, nt.schedule.filter((e) => e.special).length);
+    if (nt.busAt !== Infinity) gvCoach++;
+  }
+  // Casual is never a killer's night.
+  let casAppears = 0;
+  for (let i = 0; i < 200; i++) {
+    if (N.makeNight(8000 + i, 6, 'CASUAL', {}).plan.appears) casAppears++;
+  }
+  return { gvAppears, gvMaxSpecials, gvCoach, casAppears };
+});
+check('Graveyard night 4 keeps the killer a probability, not a certainty',
+  modes.gvAppears > 0 && modes.gvAppears < 400, `${modes.gvAppears}/400 appeared`);
+check('Graveyard is not capped to one special or robbed of its coach',
+  modes.gvMaxSpecials >= 2 && modes.gvCoach > 0, `most specials ${modes.gvMaxSpecials}, coaches ${modes.gvCoach}`);
+check('Casual stays safe from the killer', modes.casAppears === 0, `${modes.casAppears}/200`);
+
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
   window.__campaign.deleteCampaignSave();

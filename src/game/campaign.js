@@ -39,43 +39,95 @@ const SAVE_KEY = 'finalrental.campaign';
 export const STORY_NIGHT_COUNT = 12;
 
 /**
+ * How a Story night may steer three things that would otherwise be rolled:
+ * the killer, the deputy, and the coach.
+ *
+ *   NORMAL     leave it to the procedural generator, exactly as an endless
+ *              shift of the same number would.
+ *   FORBIDDEN  it does not happen tonight.
+ *   FORCED     it happens tonight.
+ *
+ * FORCED means only that: the outcome. It does not script HOW. A forced
+ * killer still decides for himself -- through the existing systems -- whether
+ * he comes as a customer first, when he arrives, whether he stalks, and how
+ * the encounter unfolds. The campaign guarantees the beat; the game still
+ * plays it.
+ */
+export const POLICY = { NORMAL: 'normal', FORBIDDEN: 'forbidden', FORCED: 'forced' };
+
+/**
  * What a single Story night is allowed to be.
  *
- * A place for later work to say "night 4 is the first the killer can come"
- * or "night 9 runs a specific event" without threading `if (night === 4)`
- * through the rest of the game. For now every night returns the defaults,
- * which are exactly what the existing procedural generator already does --
- * so Story nights currently generate the same as an endless shift of the
- * same number, and this layer changes nothing until a later task fills it
- * in.
+ * A NORMAL night on every axis with no required specials and no cap is
+ * exactly what the procedural generator already produces -- so a Story night
+ * with no entry in the table below generates the same as an endless shift of
+ * the same number. The table is the only place that says otherwise, which is
+ * what keeps `if (night === 4)` out of the rest of the game.
  *
- * The one field wired through to generation today is `killerEligible`,
- * defaulting to undefined (meaning "use the normal rule": the killer's
- * odds are already zero before KILLER_FIRST_NIGHT). A future night can set
- * it false to guarantee a quiet night, or true to force him into play.
+ * The fields:
+ *   killerPolicy / deputyPolicy / coachPolicy  -- POLICY, above.
+ *   requiredSpecials  -- ids of specials guaranteed to appear (they take an
+ *                        ordinary customer's slot, never a suspect decoy's).
+ *   specialCap        -- the most specials the night may contain, required
+ *                        ones included. null means no cap (the endless
+ *                        default). Pacing, so an early night is not swarmed.
  */
 export function nightConfig(n) {
   const base = {
     night: n,
-    /* undefined -> the generator's own night-based rule decides. Kept
-       undefined rather than computed here so this file does not have to
-       know KILLER_FIRST_NIGHT; night.js still owns that. */
-    killerEligible: undefined,
-    /* Bags for later. A night can eventually list scripted events or nudge
-       difficulty; nothing reads these yet, and an empty list is the honest
-       default rather than a promise. */
-    storyEvents: [],
-    specialEvents: [],
+    killerPolicy: POLICY.NORMAL,
+    deputyPolicy: POLICY.NORMAL,
+    coachPolicy: POLICY.NORMAL,
+    requiredSpecials: [],
+    specialCap: null,
   };
   return Object.assign(base, NIGHTS[n] || {});
 }
 
-/* Per-night overrides. Empty for now, on purpose: this is the table a later
-   task fills in (night 3 develops the deputy, night 4 the killer becomes
-   possible, and so on). Leaving it empty means every night inherits the
-   procedural defaults, which is the current behavior. */
+/* Act I. Four authored nights that teach the job, then the neighborhood,
+   then the warning, then the first real threat -- while everything inside
+   those boundaries (which customers, what they rent, the suspect, how the
+   killer behaves) stays procedural.
+
+   Nights with no entry here inherit the all-NORMAL defaults above, which is
+   Nights 5-12 for now: still procedural, still finite, not yet authored. */
 const NIGHTS = {
-  // 4: { killerEligible: true, storyEvents: ['deputy_first_warning'] },
+  // Night 1 -- the normal job. No threat, no deputy, no coach; at most one
+  // regular so the place has personality without being chaos.
+  1: {
+    killerPolicy: POLICY.FORBIDDEN,
+    deputyPolicy: POLICY.FORBIDDEN,
+    coachPolicy: POLICY.FORBIDDEN,
+    specialCap: 1,
+  },
+  // Night 2 -- something is off. Cheryl Vandermeer (the MANAGER special)
+  // is guaranteed; her complaint about the dark rear lot is the first note
+  // that the neighborhood is not safe. Still no killer, still no deputy.
+  2: {
+    killerPolicy: POLICY.FORBIDDEN,
+    deputyPolicy: POLICY.FORBIDDEN,
+    coachPolicy: POLICY.FORBIDDEN,
+    requiredSpecials: ['MANAGER'],
+    specialCap: 2,
+  },
+  // Night 3 -- the warning. The deputy arrives and reads the first bulletin;
+  // the decoys make the identification game real. But there is no killer
+  // tonight, so a first-timer can learn the mechanic without being punished
+  // for misreading it.
+  3: {
+    killerPolicy: POLICY.FORBIDDEN,
+    deputyPolicy: POLICY.FORCED,
+    coachPolicy: POLICY.FORBIDDEN,
+    specialCap: 1,
+  },
+  // Night 4 -- the first real threat. The deputy comes and the killer is
+  // guaranteed to appear. HOW he appears is still his own.
+  4: {
+    killerPolicy: POLICY.FORCED,
+    deputyPolicy: POLICY.FORCED,
+    coachPolicy: POLICY.FORBIDDEN,
+    specialCap: 1,
+  },
 };
 
 /**

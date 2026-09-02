@@ -49,8 +49,21 @@ check('casual mode has neither', shape.casual.every((r) => !r.deputy && r.chance
 const KILLER_NIGHT = shape.first + 2;   // by here the odds are comfortably non-zero
 
 /* ---------- 1. boot to a shift ---------- */
+/* The killer's whole arc, the siege, and calling the police are the endless
+   HORROR shift's mechanics. Story Act I deliberately holds the killer (and the
+   deputy, and the bus) back on its early nights, so a forced killer on one of
+   those nights has no real plan behind it. Drive GRAVEYARD instead -- the same
+   endless shift a player picking it off the title gets -- rather than the
+   Story campaign the title now defaults to, so startNight below generates the
+   full procedural night these checks were written against. */
 await ev(() => { window.__game.sound.muted = true; });
-await page.keyboard.press('Enter');
+await ev(() => {
+  const g = window.__game;
+  if (!g._titleMenu) g.refreshTitleMenu();
+  const i = g._titleMenu.findIndex((m) => /GRAVEYARD/i.test(m.label));
+  g.menuSel = i >= 0 ? i : 0;
+  g._titleMenu[g.menuSel].run();
+});
 await wait(600);
 await ev(() => { window.__game.estT = 99; });
 await wait(700);

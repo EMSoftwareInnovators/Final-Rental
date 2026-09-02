@@ -82,7 +82,16 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
      nobody from the county in it at all -- and, importantly, the deputy does
      not come back the following night either, because there is nothing for
      him to say. */
-  const deputy = opts.standDown ? true : (opts.calm ? false : deputyComes(n, mode));
+  /* The deputy. Cooldown wins first -- a stand-down night must announce the
+     all-clear, a calm night has nobody from the county in it -- then Story
+     policy (forced/forbidden), then the ordinary night-based rule. Graveyard
+     and Casual pass no policy, so they fall straight through to that rule. */
+  let deputy;
+  if (opts.standDown) deputy = true;
+  else if (opts.calm) deputy = false;
+  else if (opts.deputyPolicy === 'forbidden') deputy = false;
+  else if (opts.deputyPolicy === 'forced') deputy = true;
+  else deputy = deputyComes(n, mode);
 
   /* ---- the suspect ---- */
   const suspect = randomAppearance(rng);
@@ -114,14 +123,21 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
   /* A stand-down night is a calm night by definition: he is not going to
      walk in and tell you it is over while somebody is working the block.
 
-     `killerEligible` lets a Story night config force the question either
-     way. Left undefined -- which is every night today -- the ordinary
-     night-based odds decide, so nothing changes for existing content. */
+     Story `killerPolicy` steers the rest -- but cooldown wins over it, so an
+     arrest's quiet nights are never overridden by an ordinary threat config.
+     FORCED guarantees only the outcome: planKiller still rolls how he shows
+     (customer first or not, when, whether he stalks), and that is left
+     untouched. Graveyard/Casual pass no policy and fall through to the roll. */
   const quiet = opts.calm || opts.standDown;
-  const forbidKiller = quiet || opts.killerEligible === false;
-  const plan = forbidKiller
-    ? { appears: false, at: Infinity, asCustomer: false }
-    : planKiller(rng, n, length, mode);
+  const killerPolicy = opts.killerPolicy || 'normal';
+  const forbidKiller = quiet || killerPolicy === 'forbidden';
+  let plan;
+  if (forbidKiller) {
+    plan = { appears: false, at: Infinity, asCustomer: false };
+  } else {
+    plan = planKiller(rng, n, length, mode);
+    if (killerPolicy === 'forced') plan.appears = true;
+  }
   const caseFile = makeCaseFile(rng, n, suspect, { standDown: !!opts.standDown });
 
   /* The deputy is not the first person through the door any more. He comes
@@ -170,7 +186,10 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
      so a night with four of them is a night with four fewer normal ones --
      which is exactly what makes it feel like a bad night. Decoy slots are
      left alone: they are load-bearing for the identification game. */
-  const specials = planSpecials(rng, n, count);
+  const specials = planSpecials(rng, n, count, {
+    requiredSpecials: opts.requiredSpecials,
+    specialCap: opts.specialCap,
+  });
   // Read the flag, not the index: the rota was sorted by arrival time above,
   // so the decoys are no longer the first few entries.
   const open = [];
@@ -178,14 +197,21 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
   const slots = rng.shuffle(open).slice(0, specials.picks.length);
   slots.forEach((slot, i) => { schedule[slot].special = specials.picks[i]; });
 
+  /* The bus. Once in a while a coach pulls in off the highway and two dozen
+     people who all look the same come through the door at once. Story
+     `coachPolicy` can forbid it outright (Act I keeps its establishing
+     nights clear) or force it; NORMAL, and every other mode, keeps the
+     ordinary roll -- which already never fires before night 3. */
+  const coachPolicy = opts.coachPolicy || 'normal';
+  let busAt;
+  if (coachPolicy === 'forbidden') busAt = Infinity;
+  else if (coachPolicy === 'forced') busAt = rng.range(length * 0.22, length * 0.58);
+  else busAt = busNight(rng, n) ? rng.range(length * 0.22, length * 0.58) : Infinity;
+
   return {
     n, seed, rng, mode, length, bulletin, suspect, plan, schedule, caseFile,
     deputy, deputyAt, swarm: specials.swarm,
-    /* The bus. Once in a while a coach pulls in off the highway and two
-       dozen people who all look the same come through the door at once.
-       Never on the first couple of nights -- it needs a shift you already
-       know how to run before it means anything. */
-    busAt: busNight(rng, n) ? rng.range(length * 0.22, length * 0.58) : Infinity,
+    busAt,
     calm: quiet, standDown: !!opts.standDown,
     officerApp: makeOfficerApp(rng),
     officerName: `Deputy ${randomName(rng).split(' ')[1]}`,
