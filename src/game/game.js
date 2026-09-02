@@ -19,6 +19,10 @@ import { createCustomer, updateCustomer, CS, observeVisible, moodLabel, makeSpec
 import { specialById } from './specials.js';
 import { createKiller, updateKiller, KP, killerActive, killerInside, killerInView, addIntel } from './killer.js';
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
+import {
+  STORY_NIGHT_COUNT, nightConfig, freshCampaign,
+  saveCampaign, loadCampaign, hasCampaignSave, deleteCampaignSave,
+} from './campaign.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds } from './ui.js';
 import { randomAppearance, paintSkin, voicePitchOf, pronounOf, describeApart, randomName } from './appearance.js';
@@ -30,6 +34,9 @@ const ST = {
   ESTABLISH: 'ESTABLISH', PLAY: 'PLAY', REPORT: 'REPORT', ENDING: 'ENDING', PAUSE: 'PAUSE',
   /* Are you sure. Quitting is the only thing in here that cannot be undone. */
   QUIT: 'QUIT',
+  /* Story Mode bookends: the campaign is finished, and "this will erase your
+     campaign" before a New Game does. Both are retro panels, not the shift. */
+  STORYDONE: 'STORYDONE', NEWGAME: 'NEWGAME',
 };
 
 const RES = [[256, 192, '256x192'], [320, 240, '320x240'], [400, 300, '400x300']];
@@ -157,6 +164,11 @@ export class Game {
     this.nightNo = 1;
     this.mode = MODE.HORROR;
     this.seed = (Math.random() * 0xffffffff) >>> 0;
+    /* The live campaign, in Story Mode only. Plain serializable data (see
+       campaign.js); null in HORROR and CASUAL, which do not persist. The
+       disk save is the source of truth -- this is the working copy that is
+       written to it at each night boundary. */
+    this.campaign = null;
     this._mats = { view: mat(), cam: mat(), m: mat(), tmp: mat() };
     this.frame = this.frame.bind(this);   // handed straight to requestAnimationFrame
     // safe defaults so the attract-mode camera can render before a shift starts
@@ -234,6 +246,7 @@ export class Game {
     this.layout();
 
     this.state = ST.TITLE;
+    this.refreshTitleMenu();
     this.ui.showTitle(true);
     this.ui.setHudVisible(false);
     this.ui.titleSelect(0);
@@ -260,9 +273,15 @@ export class Game {
     this.nightNo = n;
     if (!this.run) this.run = { calmUntil: 0, standDownNight: 0, arrests: 0 };
     const R = this.run;
+    /* In Story Mode a night can carry a config (campaign.js). Today every
+       night returns the defaults, so this changes nothing yet -- but the
+       lever is real: a config that sets killerEligible false makes a
+       guaranteed-quiet night without any night.js special-casing. */
+    const cfg = this.mode === MODE.STORY ? nightConfig(n) : null;
     this.night = makeNight(this.seed, n, this.mode, {
       calm: n <= R.calmUntil,
       standDown: n === R.standDownNight,
+      killerEligible: cfg ? cfg.killerEligible : undefined,
     });
     this.rng = this.night.rng;
     /* Two clocks.
@@ -306,6 +325,10 @@ export class Game {
     this.storage = freshStorageDoor();
     // whatever the last night ended as, none of it belongs to this one
     this.death = null; this.shake = 0; this.endKind = null; this.endData = null;
+    /* A night's grade belongs to that night. Cleared here so an arrest
+       night -- which never files a report -- does not carry the last
+       report's grade into the campaign history. */
+    this.grade = null;
     this.hold = null;
     this.flash = 0; this._exitNagT = -99; this._heldTalk = null;
     this.lights = 1; this.flickerT = 0; this.flickerAmt = 0;
@@ -405,6 +428,8 @@ export class Game {
       case ST.PLAY: this.updatePlay(dt); break;
       case ST.PAUSE: this.updatePause(dt); break;
       case ST.QUIT: this.updateQuitConfirm(); break;
+      case ST.STORYDONE: this.updateStoryDone(); break;
+      case ST.NEWGAME: this.updateNewGameConfirm(); break;
       case ST.REPORT: this.updateReport(dt); break;
       case ST.ENDING: this.updateEnding(dt); break;
       default: break;
@@ -473,6 +498,8 @@ export class Game {
     else if (this.state === ST.PADCFG) this.showPadMenu();
     else if (this.state === ST.PAUSE) this.showPauseMenu();
     else if (this.state === ST.QUIT) this.showQuitConfirm(this.quitSel);
+    else if (this.state === ST.STORYDONE) this.showStoryComplete();
+    else if (this.state === ST.NEWGAME) this.showNewGameConfirm(this.newGameSel);
     this._promptCache = null;
   }
 
@@ -482,21 +509,60 @@ export class Game {
   grabLock() { this._lockAskedT = this.time; this.input.requestLock(); }
   dropLock() { this._lockAskedT = this.time; this.input.exitLock(); }
 
-  /* ---------------- title ---------------- */
-  get titleItems() {
-    return [
-      () => { this.beginRun(MODE.HORROR); },
-      () => { this.beginRun(MODE.CASUAL); },
-      () => { this.state = ST.HOWTO; this.ui.showPanel(howToHtml()); },
-      () => {
+  /* ---------------- title ----------------
+     The menu is built rather than fixed, because CONTINUE only exists when
+     there is a campaign to continue. Each entry carries its own handler, so
+     the list and what it does can never drift apart the way a positional
+     array and a block of static HTML could. */
+  menuActions() {
+    const items = [];
+    if (hasCampaignSave()) {
+      const c = loadCampaign();
+      const n = c ? c.currentNight : 1;
+      items.push({
+        label: 'CONTINUE', sub: `Sunset Video, night ${n} of ${STORY_NIGHT_COUNT}`,
+        run: () => this.continueStory(),
+      });
+    }
+    items.push({
+      label: 'NEW GAME', sub: 'the story, from the first night',
+      run: () => this.startStory(),
+    });
+    items.push({
+      label: 'GRAVEYARD SHIFT', sub: 'the endless shift, one night after another',
+      run: () => this.beginRun(MODE.HORROR),
+    });
+    items.push({
+      label: 'CASUAL SHIFT', sub: 'just the store. nobody is coming for you.',
+      run: () => this.beginRun(MODE.CASUAL),
+    });
+    items.push({
+      label: 'HOW TO WORK THE COUNTER',
+      run: () => { this.state = ST.HOWTO; this.ui.showPanel(howToHtml()); },
+    });
+    items.push({
+      label: 'OPTIONS',
+      run: () => {
         this.state = ST.OPTIONS; this.optSel = 0;
         this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(0);
       },
-    ];
+    });
+    return items;
+  }
+
+  /** Rebuild the menu and paint it. Called on every return to the title,
+      so CONTINUE appears the moment a campaign exists and vanishes when it
+      is finished. */
+  refreshTitleMenu() {
+    this._titleMenu = this.menuActions();
+    this.ui.setTitleMenu(this._titleMenu);
+    if (this.menuSel >= this._titleMenu.length) this.menuSel = 0;
+    this.ui.titleSelect(this.menuSel);
   }
 
   beginRun(mode) {
     this.mode = mode;
+    this.campaign = null;          // HORROR and CASUAL do not persist
     this.nightNo = 1;
     this.seed = (Math.random() * 0xffffffff) >>> 0;
     /* What the run knows that a single night does not. An arrest buys a few
@@ -504,6 +570,111 @@ export class Game {
        say so. After that visit he stays away until there is a reason. */
     this.run = { calmUntil: 0, standDownNight: 0, arrests: 0 };
     this.startNight(1);
+  }
+
+  /* ============================================================
+     STORY MODE
+     A finite, saved run. beginStory / continueStory set up the runtime
+     from a campaign record; advanceNight and completeCampaign carry it
+     forward and write it down. The record itself lives in campaign.js;
+     these methods are the seam between it and the live game.
+     ============================================================ */
+
+  /** Load a campaign's persistent state into the live run fields. */
+  adoptCampaign(c) {
+    this.campaign = c;
+    this.mode = MODE.STORY;
+    this.seed = c.seed >>> 0;
+    this.nightNo = c.currentNight;
+    /* The arrest cooldown is part of the campaign, so it is restored from it
+       rather than reset. `arrests` is the running count the summary shows. */
+    this.run = {
+      calmUntil: c.cooldown.calmUntil,
+      standDownNight: c.cooldown.standDownNight,
+      arrests: c.stats.arrests,
+    };
+  }
+
+  /** Fold the live run's cooldown/arrest state back into the campaign, so a
+      save records what an arrest bought. */
+  syncCampaignFromRun() {
+    const c = this.campaign, R = this.run;
+    if (!c || !R) return;
+    c.cooldown.calmUntil = R.calmUntil;
+    c.cooldown.standDownNight = R.standDownNight;
+    c.stats.arrests = R.arrests;
+  }
+
+  /** NEW GAME from the menu: confirm first if a campaign is already going. */
+  startStory() {
+    if (hasCampaignSave()) { this.showNewGameConfirm(0); return; }
+    this.newStory();
+  }
+
+  /** Actually begin a fresh campaign (past any overwrite confirmation). */
+  newStory() {
+    const seed = (Math.random() * 0xffffffff) >>> 0;
+    this.adoptCampaign(freshCampaign(seed));
+    /* Written before the first night so that a quit during night one still
+       leaves a campaign to continue. */
+    saveCampaign(this.campaign);
+    this.startNight(1);
+  }
+
+  /** CONTINUE: resume the saved campaign at the start of its current night. */
+  continueStory() {
+    const c = loadCampaign();
+    if (!c) { this.newStory(); return; }   // save vanished between menu and here
+    this.adoptCampaign(c);
+    this.startNight(this.campaign.currentNight);
+  }
+
+  /**
+   * The single funnel every "the shift ended, move on" path goes through.
+   *
+   * In HORROR and CASUAL it is what it always was: start the next night. In
+   * STORY it records the night just finished, advances the campaign, writes
+   * it to disk BEFORE the next night begins, and -- if that was the last
+   * night -- ends the campaign instead of starting night thirteen.
+   */
+  advanceNight() {
+    if (this.mode !== MODE.STORY || !this.campaign) {
+      this.startNight(this.nightNo + 1);
+      return;
+    }
+    const c = this.campaign;
+
+    // Record the night just played. Grade/stats may be absent on an arrest
+    // night (which skips the end-of-shift report); guard rather than assume.
+    if (this.grade) {
+      c.history.grades.push(this.grade.letter);
+      c.history.scores.push(this.grade.score);
+    }
+    if (this.stats) {
+      c.stats.customersServed += this.stats.served || 0;
+      c.stats.walkouts += this.stats.stormedOut || 0;
+      c.stats.cashDiscrepancy = round2(c.stats.cashDiscrepancy + (this.stats.cashLoose || 0));
+    }
+    this.syncCampaignFromRun();
+
+    const next = this.nightNo + 1;
+    if (next > STORY_NIGHT_COUNT) {
+      this.completeCampaign();
+      return;
+    }
+    c.currentNight = next;
+    saveCampaign(c);            // BEFORE the night starts, so a quit resumes it
+    this.startNight(next);
+  }
+
+  /** The last configured night is done. Mark it, save it, and show the
+      campaign-complete screen. */
+  completeCampaign() {
+    const c = this.campaign;
+    c.completed = true;
+    c.currentNight = STORY_NIGHT_COUNT;   // stays pointed at the last night
+    saveCampaign(c);
+    this.showStoryComplete();
   }
 
   updateTitle(dt) {
@@ -516,7 +687,8 @@ export class Game {
     this.staticT += dt;
 
     const i = this.input;
-    const items = this.titleItems;
+    if (!this._titleMenu) this.refreshTitleMenu();
+    const items = this._titleMenu;
     const n = items.length;
     if (i.hit('ArrowUp', 'KeyW')) { this.menuSel = (this.menuSel + n - 1) % n; this.quietly(() => { this.sound.init(); this.sound.uiMove(); }); }
     if (i.hit('ArrowDown', 'KeyS')) { this.menuSel = (this.menuSel + 1) % n; this.quietly(() => { this.sound.init(); this.sound.uiMove(); }); }
@@ -526,7 +698,7 @@ export class Game {
       // pad there has been no click or keystroke to unlock audio with. If the
       // browser refuses, that is a silent title screen -- not a dead one.
       this.quietly(() => { this.sound.init(); this.sound.resume(); this.sound.uiSelect(); });
-      items[this.menuSel]();
+      items[this.menuSel].run();
     }
   }
 
@@ -1087,6 +1259,91 @@ export class Game {
     this.ui.panelSelect(this.quitSel);
   }
 
+  /* ---------------- Story Mode: end of the campaign ----------------
+     Shown when the last configured night is done. Not the real ending --
+     a later task writes that -- but a genuine campaign-complete screen with
+     the run's record on it and a way back to the title. Wrapped in .ending
+     so it sits between the cinema bars like the night endings do. */
+  showStoryComplete() {
+    this.state = ST.STORYDONE;
+    this.storyDoneT = 0;
+    this.dropLock();
+    this.ui.hideDialogue(); this.ui.hideNotes(); this.ui.hidePhone();
+    this.ui.setHudVisible(false);
+    this.ui.setObjective('');
+    this.ui.cinema(true);
+    const c = this.campaign || {};
+    const h = c.history || { grades: [], scores: [] };
+    const st = c.stats || {};
+    const nights = (h.grades || []).length;
+    const grades = nights ? h.grades.join('  ') : '\u2014';
+    const row = (k, v) => `<tr><td>${k}</td><td class="n">${v}</td></tr>`;
+    this.ui.showPanel(`<div class="ending"><h2>YOUR EMPLOYMENT RECORD HAS BEEN FILED</h2>
+      <p>${STORY_NIGHT_COUNT} nights on the graveyard shift at Sunset Video. You locked up for the last time and went home.</p>
+      <table>
+        ${row('Nights worked', nights || STORY_NIGHT_COUNT)}
+        ${row('Called in correctly', st.arrests || 0)}
+        ${row('Customers served', st.customersServed || 0)}
+        ${row('Walked out on you', st.walkouts || 0)}
+        ${row('Nightly grades', grades)}
+      </table>
+      <p class="big">STORY COMPLETE</p>
+      <ul><li class="opt sel">Return to title</li></ul>
+      <p class="pad-foot">${this.ui.keyHint('confirm')} title</p></div>`);
+    this.ui.panelSelect(0);
+  }
+
+  updateStoryDone() {
+    this.storyDoneT = (this.storyDoneT || 0) + (1 / 60);
+    // A beat before it will take a press, so a held key from the last night
+    // does not skip straight past it.
+    if (this.storyDoneT > 0.8 && this.confirmOrClick()) {
+      this.quietly(() => this.sound.uiSelect());
+      this.toTitle();
+    }
+  }
+
+  /* ---------------- Story Mode: overwrite confirmation ----------------
+     NEW GAME with a campaign already in progress asks first, in the game's
+     own panel rather than a browser confirm(). */
+  showNewGameConfirm(sel = 0) {
+    this.state = ST.NEWGAME;
+    this.newGameSel = sel;
+    const c = loadCampaign();
+    const n = c ? c.currentNight : 1;
+    this.ui.showPanel(`<h2>START A NEW CAMPAIGN?</h2>
+      <p class="quiet">There is a campaign in progress on night ${n} of ${STORY_NIGHT_COUNT}. Starting a new one erases it. There is only one campaign save.</p>
+      <ul><li class="opt sel">No &mdash; keep my campaign</li><li class="opt">Yes, erase it and start over</li></ul>
+      <p class="pad-foot">${this.ui.keyHint('confirm')} select &nbsp;&middot;&nbsp; ${this.ui.keyHint('back')} back</p>`);
+    this.ui.panelSelect(this.newGameSel);
+  }
+
+  updateNewGameConfirm() {
+    const i = this.input;
+    const N = 2;
+    if (i.hit('ArrowUp', 'KeyW')) { this.newGameSel = (this.newGameSel + N - 1) % N; this.sound.uiMove(); }
+    if (i.hit('ArrowDown', 'KeyS')) { this.newGameSel = (this.newGameSel + 1) % N; this.sound.uiMove(); }
+    this.ui.panelSelect(this.newGameSel);
+    /* Backing out is the same as "no, keep it". */
+    if (this.backHit()) {
+      this.quietly(() => this.sound.uiBack());
+      this.ui.hidePanel();
+      this.state = ST.TITLE; this.refreshTitleMenu();
+      return;
+    }
+    if (!this.confirmHit()) return;
+    this.quietly(() => this.sound.uiSelect());
+    if (this.newGameSel === 0) {
+      this.ui.hidePanel();
+      this.state = ST.TITLE; this.refreshTitleMenu();
+      return;
+    }
+    // Erase and begin fresh.
+    deleteCampaignSave();
+    this.ui.hidePanel();
+    this.newStory();
+  }
+
   updateQuitConfirm() {
     const i = this.input;
     const N = 2;
@@ -1111,7 +1368,9 @@ export class Game {
     this.dlg.node = null; this.phone.node = null; this._heldTalk = null; this.speaking = null;
     this.ui.hidePanel(); this.ui.hideDialogue(); this.ui.hidePhone(); this.ui.hideNotes();
     this.ui.setHudVisible(false); this.ui.cinema(false); this.ui.showTitle(true);
+    this.campaign = null;
     this.state = ST.TITLE; this.menuSel = 0; this.titleT = 0;
+    this.refreshTitleMenu();
   }
 
   resume() {
@@ -2645,7 +2904,7 @@ export class Game {
         if (this.endSel === 1) { this.toTitle(); return; }
         this.ui.hidePanel(); this.ui.cinema(false);
         this.death = null; this.shake = 0;
-        this.startNight(this.nightNo + 1);
+        this.advanceNight();
         return;
       }
       return;
@@ -2657,7 +2916,12 @@ export class Game {
   /** Back to the attract screen, with the world put back how it started. */
   toTitle() {
     this.ui.hidePanel(); this.ui.cinema(false);
+    /* The disk save is the record of a campaign; the in-memory copy is only
+       live during a shift. Dropping it here means a later Continue rebuilds
+       from disk rather than from whatever this run left lying around. */
+    this.campaign = null;
     this.ui.showTitle(true); this.state = ST.TITLE; this.menuSel = 0; this.titleT = 0;
+    this.refreshTitleMenu();
     this.death = null; this.shake = 0;
     this.arrest = null;
     this.sound.boomboxStop();
@@ -2704,7 +2968,7 @@ export class Game {
     this.reportTimer += dt;
     if (this.reportTimer > 1.0 && this.confirmOrClick()) {
       this.ui.hidePanel();
-      this.startNight(this.nightNo + 1);
+      this.advanceNight();
     }
   }
 
@@ -2743,7 +3007,7 @@ export class Game {
     rz.setCamera(M.view, 1.18);
 
     const L = this.state === ST.PLAY || this.state === ST.PAUSE || this.state === ST.QUIT
-      || this.state === ST.ENDING || this.state === ST.REPORT
+      || this.state === ST.ENDING || this.state === ST.REPORT || this.state === ST.STORYDONE
       ? this.lights : 1;
 
     // ---- static world ----

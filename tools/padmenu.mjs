@@ -62,17 +62,24 @@ async function session(id, expectScheme, expectSelect) {
   const label = id.split(' ')[0];
   console.log(`\n  -- ${id} --`);
 
-  /* ---- the title screen ---- */
+  /* ---- the title screen ----
+     The menu is built at runtime (CONTINUE only exists with a save), so
+     the count and the index of OPTIONS are read from the game rather than
+     assumed. */
+  const menu = await ev(() => ({
+    n: window.__game._titleMenu.length,
+    options: window.__game._titleMenu.findIndex((m) => m.label === 'OPTIONS'),
+  }));
   check(`${label}: the left stick moves the title cursor`,
-    await (async () => { const a = (await st()).menu; await flick(1, 1); return (await st()).menu === (a + 1) % 4; })(),
+    await (async () => { const a = (await st()).menu; await flick(1, 1); return (await st()).menu === (a + 1) % menu.n; })(),
     `now on item ${(await st()).menu}`);
   await flick(1, -1);
   check(`${label}: and moves it back up`, (await st()).menu === 0);
   check(`${label}: the pad is recognized as the right family`,
     (await st()).scheme === expectScheme, (await st()).scheme);
 
-  await flick(1, 1); await flick(1, 1); await flick(1, 1);   // down to OPTIONS
-  check(`${label}: stick navigation wraps and holds`, (await st()).menu === 3, `item ${(await st()).menu}`);
+  for (let k = 0; k < menu.options; k++) await flick(1, 1);   // down to OPTIONS
+  check(`${label}: stick navigation lands on OPTIONS`, (await st()).menu === menu.options, `item ${(await st()).menu} of ${menu.n}`);
 
   /* ---- select with the bottom face button ---- */
   await tap(0);
@@ -106,12 +113,14 @@ async function session(id, expectScheme, expectSelect) {
   /* ---- the D-pad still does everything the stick does ---- */
   const before = (await st()).menu;
   await tap(13);
-  check(`${label}: the d-pad still moves the cursor`, (await st()).menu === (before + 1) % 4);
+  check(`${label}: the d-pad still moves the cursor`, (await st()).menu === (before + 1) % menu.n);
   await tap(12);
   check(`${label}: both ways`, (await st()).menu === before);
 
-  /* ---- start a shift and pause it, all on the pad ---- */
-  await ev(() => { window.__game.menuSel = 0; });
+  /* ---- start a shift and pause it, all on the pad ----
+     The endless shift, chosen by name: it is the stateless one, so the
+     test leaves no campaign save behind. */
+  await ev(() => { const g = window.__game; g.menuSel = g._titleMenu.findIndex((m) => m.label === 'GRAVEYARD SHIFT'); });
   await tap(0);
   check(`${label}: it can start a run`, (await st()).state === 'ESTABLISH', (await st()).state);
   await ev(() => { window.__game.estT = 99; });
@@ -587,7 +596,7 @@ async function oddPad() {
     await ev(() => window.__game.optView().padNeedsSetup) === true);
 
   // An unbound button is let through as a confirm rather than doing nothing.
-  await ev(() => { window.__game.menuSel = 3; });
+  await ev(() => { const g = window.__game; g.menuSel = g._titleMenu.findIndex((m) => m.label === 'OPTIONS'); });
   await tap(11);
   check('odd pad: a button the standard table does not know still works a menu',
     (await st()).state === 'OPTIONS', (await st()).state);
@@ -632,7 +641,7 @@ async function oddPad() {
   // Now the bindings should behave like any other pad's.
   await tap(12);
   check('odd pad: the newly bound back button leaves options', (await st()).state === 'TITLE', (await st()).state);
-  await ev(() => { window.__game.menuSel = 0; });
+  await ev(() => { const g = window.__game; g.menuSel = g._titleMenu.findIndex((m) => m.label === 'GRAVEYARD SHIFT'); });
   await tap(11);
   check('odd pad: and select starts a run', (await st()).state === 'ESTABLISH', (await st()).state);
 

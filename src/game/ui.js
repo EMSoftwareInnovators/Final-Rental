@@ -359,6 +359,20 @@ export class UI {
   panelOptions() { return this.el.panelBody.querySelectorAll('li.opt'); }
 
   showTitle(show) { this.el.title.classList.toggle('hidden', !show); }
+  /**
+   * Rebuild the title menu from a list of { label, sub }.
+   *
+   * The menu is not fixed -- CONTINUE only exists when there is a campaign
+   * to continue -- so the markup is generated rather than sitting in the
+   * HTML. Same shape the static version used (an <li> per row, an optional
+   * <span class="sub">), so the stylesheet and titleSelect() need no changes.
+   */
+  setTitleMenu(items) {
+    this.el.titleMenu.innerHTML = items.map((it, n) =>
+      `<li${n === 0 ? ' class="sel"' : ''}>${escape(it.label)}`
+      + (it.sub ? `<span class="sub">${escape(it.sub)}</span>` : '')
+      + '</li>').join('');
+  }
   titleSelect(i) {
     const items = this.el.titleMenu.querySelectorAll('li');
     items.forEach((o, n) => o.classList.toggle('sel', n === i));

@@ -22,7 +22,12 @@ export { KILLER_FIRST_NIGHT, killerChance };
 export const SHIFT_START_HOUR = 21;   // 9:00 PM
 export const SHIFT_HOURS = 3;         // to midnight
 
-export const MODE = { HORROR: 'HORROR', CASUAL: 'CASUAL' };
+/* HORROR is the endless graveyard shift. STORY is the finite campaign --
+   it generates nights exactly like HORROR (it is not CASUAL, so the deputy
+   and the killer are both in play), and everything that makes it a campaign
+   rather than an endless run lives in campaign.js, not here. CASUAL is the
+   same store with nobody coming for you. */
+export const MODE = { HORROR: 'HORROR', STORY: 'STORY', CASUAL: 'CASUAL' };
 
 /* The deputy turns up the night before the threat can. He is the reason
    there is never a night where someone could walk in and you would have
@@ -107,9 +112,14 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
   }
 
   /* A stand-down night is a calm night by definition: he is not going to
-     walk in and tell you it is over while somebody is working the block. */
+     walk in and tell you it is over while somebody is working the block.
+
+     `killerEligible` lets a Story night config force the question either
+     way. Left undefined -- which is every night today -- the ordinary
+     night-based odds decide, so nothing changes for existing content. */
   const quiet = opts.calm || opts.standDown;
-  const plan = quiet
+  const forbidKiller = quiet || opts.killerEligible === false;
+  const plan = forbidKiller
     ? { appears: false, at: Infinity, asCustomer: false }
     : planKiller(rng, n, length, mode);
   const caseFile = makeCaseFile(rng, n, suspect, { standDown: !!opts.standDown });
