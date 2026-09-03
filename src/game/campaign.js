@@ -26,8 +26,12 @@
 
 /* Bump this when the shape below changes in a way an old save cannot be
    read as. loadCampaign() refuses a version it does not understand rather
-   than handing gameplay a half-broken object. */
-export const SAVE_VERSION = 1;
+   than handing gameplay a half-broken object.
+
+   v2 added persistent customer memory (customerStates entries). A v1 save
+   has customerStates:{} already, so it reads forward with nobody remembered
+   yet -- no data is lost, and migrate() below normalizes the bag either way. */
+export const SAVE_VERSION = 2;
 
 /* Its own key. Deliberately nothing to do with 'finalrental.padbinds',
    which the controller settings own -- wiping one must never touch the
@@ -128,6 +132,25 @@ const NIGHTS = {
     coachPolicy: POLICY.FORBIDDEN,
     specialCap: 1,
   },
+
+  /* Nights 5-8 are NOT authored yet -- their killer, deputy, and coach are
+     left NORMAL (procedural). These entries exist only to schedule the
+     returning regulars Stage 3 gives a memory to, through the same
+     required-special system Night 2 uses for Cheryl. The point is continuity:
+     a face you have handled before comes back and remembers how it went. */
+
+  // Night 5 -- Little Ricky's first guaranteed visit (the popcorn).
+  5: { requiredSpecials: ['POPCORN'], specialCap: 2 },
+  // Night 6 -- Cheryl comes back. Her Night 2 history colors how she opens,
+  // and the parking-lot light still isn't fixed, which she notices.
+  6: { requiredSpecials: ['MANAGER'], specialCap: 2 },
+  // Night 7 -- Otis and his homemade coupon, first guaranteed visit.
+  7: { requiredSpecials: ['COUPON'], specialCap: 2 },
+  // Night 8 -- old faces. Ricky and Otis both come back; how each opens
+  // depends on how you left it with them. Cap 3 so one ordinary special can
+  // still turn up beside the two returns without the night becoming nothing
+  // but storyline.
+  8: { requiredSpecials: ['POPCORN', 'COUPON'], specialCap: 3 },
 };
 
 /**
@@ -185,6 +208,123 @@ export function freshCampaign(seed) {
     customerStates: {},
     environmentFlags: {},
   };
+}
+
+/* ============================================================
+   CUSTOMER MEMORY
+
+   Sunset Video remembers its regulars. Not with a friendship meter or a
+   relationship screen -- this is invisible narrative state, a few plain
+   fields per person that later dialogue can read to sound like it happened
+   before.
+
+   All of it lives in campaign.customerStates, keyed by the special's roster
+   id ('MANAGER', 'POPCORN', ...). One campaign, one save; nothing about a
+   customer is kept anywhere else. Gameplay never reaches into the bag
+   directly -- it goes through the five helpers below, which default an unseen
+   customer to a sane blank rather than undefined, and which refuse to crash
+   on a save whose entry got mangled.
+
+   The distinction these keep clean:
+     - persistent history (here) is what happened on previous nights;
+     - runtime encounter state (on the live customer object) is what is
+       happening right now;
+     - scheduling (nightConfig, above) is whether they turn up tonight.
+   Those are three different things and this is only the first.
+   ============================================================ */
+
+/* What a never-before-seen regular looks like. `encounters` counts the
+   Story nights their encounter actually resolved on -- so "is this a first
+   meeting or a return" is a question about state, never about the calendar. */
+function blankCustomerState() {
+  return { met: false, encounters: 0, lastOutcome: null, lastNight: 0, flags: {} };
+}
+
+/* Coerce whatever is in the save (or nothing) into a valid state object.
+   A malformed entry -- someone hand-edited the save, or a future field
+   arrived as the wrong type -- becomes a blank rather than a landmine. */
+function normalizeCustomerState(raw) {
+  const base = blankCustomerState();
+  if (!raw || typeof raw !== 'object') return base;
+  return {
+    met: raw.met === true,
+    encounters: (typeof raw.encounters === 'number' && raw.encounters >= 0)
+      ? Math.floor(raw.encounters) : 0,
+    lastOutcome: (typeof raw.lastOutcome === 'string') ? raw.lastOutcome : null,
+    lastNight: (typeof raw.lastNight === 'number' && raw.lastNight >= 0)
+      ? Math.floor(raw.lastNight) : 0,
+    flags: (raw.flags && typeof raw.flags === 'object') ? { ...raw.flags } : {},
+  };
+}
+
+/** Normalize the whole bag on load. Anything that is not a plain object of
+    entries collapses to empty rather than propagating a bad shape. */
+function normalizeCustomerStates(bag) {
+  const out = {};
+  if (bag && typeof bag === 'object') {
+    for (const id of Object.keys(bag)) out[id] = normalizeCustomerState(bag[id]);
+  }
+  return out;
+}
+
+/**
+ * Read a regular's history. Always returns a valid object -- an unseen
+ * customer (or any lookup against a campaign that has no memory bag, which
+ * is every non-Story run) comes back blank, so callers never branch on
+ * undefined. The returned object is a copy; write through the helpers below.
+ */
+export function getCustomerState(campaign, id) {
+  if (!campaign || !campaign.customerStates || !id) return blankCustomerState();
+  return normalizeCustomerState(campaign.customerStates[id]);
+}
+
+/** Has this regular ever been dealt with before? */
+export function customerMet(campaign, id) {
+  return getCustomerState(campaign, id).encounters > 0;
+}
+
+/**
+ * Record that an encounter with `id` just resolved.
+ *
+ * This is the one write that advances a relationship: it marks them met,
+ * counts the encounter, remembers the broad outcome and the night, and folds
+ * in any per-character flags. It mutates the in-memory campaign only -- the
+ * disk save happens at the night boundary (advanceNight), so an encounter on
+ * a night the player then fails is rolled back with the rest of that night.
+ *
+ * No-ops safely if there is no campaign (non-Story modes never call it, but
+ * belt and braces). Returns the updated state.
+ */
+export function recordCustomerOutcome(campaign, id, outcome, opts = {}) {
+  if (!campaign || !id) return blankCustomerState();
+  if (!campaign.customerStates || typeof campaign.customerStates !== 'object') {
+    campaign.customerStates = {};
+  }
+  const s = normalizeCustomerState(campaign.customerStates[id]);
+  s.met = true;
+  s.encounters += 1;
+  if (typeof outcome === 'string') s.lastOutcome = outcome;
+  if (typeof opts.night === 'number' && opts.night >= 0) s.lastNight = Math.floor(opts.night);
+  if (opts.flags && typeof opts.flags === 'object') s.flags = { ...s.flags, ...opts.flags };
+  campaign.customerStates[id] = s;
+  return s;
+}
+
+/** Set one persistent per-character flag. */
+export function setCustomerFlag(campaign, id, key, value = true) {
+  if (!campaign || !id || !key) return;
+  if (!campaign.customerStates || typeof campaign.customerStates !== 'object') {
+    campaign.customerStates = {};
+  }
+  const s = normalizeCustomerState(campaign.customerStates[id]);
+  s.flags[key] = value;
+  campaign.customerStates[id] = s;
+}
+
+/** Read one persistent per-character flag, or `dflt` if it was never set. */
+export function getCustomerFlag(campaign, id, key, dflt = undefined) {
+  const s = getCustomerState(campaign, id);
+  return (key in s.flags) ? s.flags[key] : dflt;
 }
 
 /* ------------------------------------------------------------
@@ -267,7 +407,10 @@ function migrate(data) {
     return null;
   }
 
-  // (Future: if (data.version < SAVE_VERSION) step it up, field by field.)
+  // v1 -> v2: nothing to translate. v1 already carried customerStates:{}
+  // (Stage 1 shipped the empty bag), so a v1 save simply reads forward with
+  // nobody remembered yet. normalizeCustomerStates below handles the bag for
+  // every version, including a v2 save whose entries got mangled.
 
   // The few fields gameplay actually relies on have to be right. Anything
   // the player-facing code reads directly is checked; the extensible bags
@@ -288,7 +431,10 @@ function migrate(data) {
     cooldown: { ...clean.cooldown, ...(data.cooldown || {}) },
     stats: { ...clean.stats, ...(data.stats || {}) },
     storyFlags: { ...clean.storyFlags, ...(data.storyFlags || {}) },
-    customerStates: { ...clean.customerStates, ...(data.customerStates || {}) },
+    /* Not a plain merge: every entry is normalized, so a save with a bad or
+       missing memory bag comes back with a clean one rather than a shape the
+       dialogue code has to guard against. */
+    customerStates: normalizeCustomerStates(data.customerStates),
     environmentFlags: { ...clean.environmentFlags, ...(data.environmentFlags || {}) },
   };
 }

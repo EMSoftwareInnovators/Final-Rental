@@ -16,12 +16,13 @@ import {
 import { buildActorMeshes, drawActor, ACTOR_HEIGHT, makeAnim, updateAnim } from './actor.js';
 import { createPlayer, updatePlayer, buildCamera, castInteract, canCarry, takeTape, topTape, heldTapeMatrix, heldCashMatrix, forwardOf } from './player.js';
 import { createCustomer, updateCustomer, CS, observeVisible, moodLabel, makeSpecial } from './customer.js';
-import { specialById } from './specials.js';
+import { specialById, readSpecialOutcome, isRemembered } from './specials.js';
 import { createKiller, updateKiller, KP, killerActive, killerInside, killerInView, addIntel } from './killer.js';
 import { makeNight, makeDecoyAppearance, sanitizeInnocent, clockString, gradeNight, MODE } from './night.js';
 import {
   STORY_NIGHT_COUNT, nightConfig, freshCampaign,
   saveCampaign, loadCampaign, hasCampaignSave, deleteCampaignSave,
+  getCustomerState, recordCustomerOutcome,
 } from './campaign.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds } from './ui.js';
@@ -608,6 +609,34 @@ export class Game {
     c.cooldown.calmUntil = R.calmUntil;
     c.cooldown.standDownNight = R.standDownNight;
     c.stats.arrests = R.arrests;
+  }
+
+  /**
+   * A special customer has left the store. If this is a Story campaign and
+   * they are one of the regulars Sunset Video remembers, fold the outcome of
+   * tonight's encounter into the campaign's in-memory customer memory.
+   *
+   * In-memory only: the disk save happens at the night boundary
+   * (advanceNight), so an encounter on a night the player then fails to
+   * finish is discarded with the rest of that night when Continue reloads.
+   *
+   * Guarded three ways so nothing is ever double-counted or written from the
+   * wrong mode: Story + a live campaign, a remembered id, once per customer,
+   * and only if they were actually dealt with (talkedTo, or they resolved
+   * into business/a walk-out).
+   */
+  rememberSpecial(c) {
+    if (this.mode !== MODE.STORY || !this.campaign) return;
+    if (!c || !c.special || !isRemembered(c.special) || c._memoryCommitted) return;
+    const engaged = c.talkedTo || c.checkedOut || c.served || c.gaveTape || c.stormedOut;
+    if (!engaged) return;
+    const res = readSpecialOutcome(c);
+    if (!res) return;
+    c._memoryCommitted = true;
+    recordCustomerOutcome(this.campaign, c.special, res.outcome, {
+      night: this.nightNo,
+      flags: res.flags,
+    });
   }
 
   /** NEW GAME from the menu: confirm first if a campaign is already going. */
@@ -2273,6 +2302,10 @@ export class Game {
        is not re-gated line by line -- which meant asking it after setting
        TALKING always answered "yes, serve them", from anywhere in the store. */
     const servable = !this.cannotServe(c);
+    /* Remember that they were actually dealt with. A regular who spawns and
+       drifts back out without a word never resolved an encounter, so their
+       memory is only committed (in rememberSpecial) once this is set. */
+    if (c.special) c.talkedTo = true;
     c._prevState = c.state;
     c.state = CS.TALKING;
     this.beginDialogue(c, talkTo(c, this.ctx, { atCounter: servable }));
@@ -3312,7 +3345,14 @@ export class Game {
       claimCounterSpot: (c) => g.claimCounterSpot(c),
       lineTail: (c) => g.lineTail(c),
       releaseCounterSpot: (c) => g.releaseCounterSpot(c),
-      despawn: (c) => g.releaseCounterSpot(c),
+      despawn: (c) => { g.releaseCounterSpot(c); g.rememberSpecial(c); },
+
+      /* What the dialogue is allowed to know about a regular's past. Only in
+         Story, and only ever a read: a blank state everywhere else means an
+         endless-shift or Casual encounter behaves exactly as a first meeting,
+         so no memory can leak between modes. */
+      customerHistory: (id) => (g.mode === MODE.STORY && g.campaign)
+        ? getCustomerState(g.campaign, id) : getCustomerState(null, id),
 
       tookFromShelf: (c) => {
         const s = g.sound.spatial(g.player.x, g.player.z, g.player.yaw, c.x, c.z);
@@ -3447,6 +3487,7 @@ export class Game {
       },
       storm: (c) => {
         g.stats.stormedOut++;
+        c.stormedOut = true;
         c.leaving = true; c.rushing = true; c.state = CS.LEAVING; c.path = null;
         g.releaseCounterSpot(c);
         g.sound.chimeBad();
@@ -3874,6 +3915,10 @@ export class Game {
       c.onPhone = false;
       this.sound.phoneHang();
       this.ui.toast(`She puts the receiver down. Gently, which is new.`, 'good');
+      /* The one way she leaves satisfied: the regional manager, on the phone,
+         in her hand. Story memory reads this to know you actually helped
+         her rather than merely survived her. */
+      c.gotManager = true;
       this.ctx.mood(c, +40);
       this.ctx.leave(c);
       this.managerCall = null;

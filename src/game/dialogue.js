@@ -58,6 +58,15 @@ const say = (person, text, choices, extra = {}) => ({
 });
 const reply = (label, fn, opts = {}) => ({ label, fn, ...opts });
 
+/* ---------------- memory helpers ----------------
+   A resolved regular's history, as the campaign remembers it. Always a valid
+   object -- outside Story, or for someone never met, it comes back blank, so
+   `.encounters === 0` reads as "first meeting" everywhere and no branch has
+   to know which mode it is in. Reads only; nothing here writes. */
+function history(ctx, id) {
+  return (ctx && ctx.customerHistory) ? ctx.customerHistory(id) : { met: false, encounters: 0, lastOutcome: null, lastNight: 0, flags: {} };
+}
+
 /* ============================================================
    THE OPENING BRIEFING -- a sheriff's deputy, every night.
    ============================================================ */
@@ -1427,6 +1436,10 @@ function grind(c, ctx, spec) {
       reply(`Good. Keep going.`, () => null),
     ]))),
     reply(rng.pick(spec.firmer), () => {
+      // A threat, remembered: the firmer replies are the ones with the county
+      // and the machine's price in them. Story memory reads this to tell "you
+      // shouted him out" from "you waited him out".
+      c.threatened = true;
       // Leaning harder works, but he digs in first and you get one more round.
       if (rng.chance(0.34)) {
         c.resist = Math.min(spec.resist, c.resist + 1);
@@ -1506,8 +1519,8 @@ export function specialRoot(c, ctx) {
        about it, which somehow makes him harder to shift. A grind, like
        the smell and the smoker: no single line does it, you work him
        down. And unlike them, what he leaves behind is on your floor. */
-    case 'POPCORN':
-      return grind(c, ctx, {
+    case 'POPCORN': {
+      const rickyGrind = () => grind(c, ctx, {
         resist: 8,
         cool: 11,
         beats: [
@@ -1562,6 +1575,22 @@ export function specialRoot(c, ctx) {
           `Going, going.\n\n(he is still laughing at the door)\n\nSorry about your floor. Genuinely. Sort of.`,
         ],
       });
+
+      /* He is back behind your counter, and he remembers you -- warmly if you
+         laughed it off last time, warily if you shouted him out. Either way
+         he is doing it again; the memory only changes the hello. */
+      const h = history(ctx, 'POPCORN');
+      if (h.encounters > 0 && !c._greeted) {
+        c._greeted = true;
+        const back = h.lastOutcome === 'scolded'
+          ? `...oh. It's you.\n\n(he is already behind the counter, hand hovering over the kettle)\n\nYou're the one who went properly mental last time. Called the county and everything.\n\n(a beat)\n\n(he does it anyway)`
+          : `AY! It's you! The one who let me have my moment last time!\n\n(he is, once again, behind your counter, elbow-deep in the kettle)\n\nBest machine in the county, this. You KNOW it is. Couldn't stay away.`;
+        return say(c, back, [
+          reply(`Out from behind my counter. We're doing this again.`, () => rickyGrind()),
+        ]);
+      }
+      return rickyGrind();
+    }
 
     /* ---------------- the smell ----------------
        He does not think he smells. He thinks you have a problem with him,
@@ -1751,6 +1780,7 @@ export function specialRoot(c, ctx) {
           reply(`It's a napkin. You wrote COUPON on a napkin in ballpoint pen.`, () => (n >= 2 ? end() : push(n + 1)), { risk: true }),
           reply(`Tell you what. One free rental. Go and pick it.`, () => {
             ctx.mood(c, +34);
+            c.gaveFreebie = true;
             return goShopping(c, ctx, `See? SEE? The coupon works.`,
               { price: 0, close: `It does not work. Go on.` });
           }, { cost: '-$2.99' }),
@@ -1769,11 +1799,45 @@ export function specialRoot(c, ctx) {
         reply(`Please don't.`, () => { ctx.storm(c); return null; }),
         reply(`Bring it. I'll look at it.`, () => { ctx.mood(c, +12); ctx.leave(c); return null; }),
       ]);
-      return say(c, `Before you scan anything. I've got a coupon.`, [
+      const opener = () => say(c, `Before you scan anything. I've got a coupon.`, [
         reply(`Let me see it.`, () => push(0)),
         reply(`We don't take coupons.`, () => push(1)),
         reply(`...Where did you get that.`, () => push(0)),
       ]);
+
+      /* Otis remembers exactly how far he got with you last time, and it sets
+         his whole opening pitch. Fell for it once -> he comes back bolder,
+         with a bigger homemade instrument. Held the line -> he already knows
+         you're the difficult one and leads with a grievance about policy
+         instead of a coupon. */
+      const h = history(ctx, 'COUPON');
+      if (h.encounters > 0 && !c._greeted) {
+        c._greeted = true;
+        if (h.lastOutcome === 'indulged') {
+          return say(c, `There he is. The reasonable one.\n\nI've upgraded. This is a BOOK of them now -- I did a whole sheet at the library, ten cents a copy. This one's "buy none, get one." I worked it out. It's airtight.`, [
+            reply(`Let me see this book.`, () => push(0)),
+            reply(`That is not how anything works, Otis.`, () => push(2)),
+            reply(`One free rental. Same as last time. Go on.`, () => {
+              ctx.mood(c, +20); c.gaveFreebie = true;
+              return goShopping(c, ctx, `A man of his word. Rare on this block.`,
+                { price: 0, close: `Off you go.` });
+            }, { cost: '-$2.99' }),
+          ]);
+        }
+        if (h.lastOutcome === 'refused' || h.lastOutcome === 'compromised') {
+          return say(c, `Oh. It's you.\n\nThe difficult one. Alright, I'm not even going to get the coupon out. I want to talk about your policy, because your policy is the actual problem here, not me.`, [
+            reply(`We can do the ten percent again.`, () => { ctx.mood(c, +14); return sellHim(); }),
+            reply(`There's no policy that covers a napkin, Otis.`, () => push(2)),
+            reply(`Go on then. Show me tonight's coupon.`, () => push(0)),
+          ]);
+        }
+        // met, but nothing sharp either way: a flicker of recognition only.
+        return say(c, `...I know you. I've been served by you before.\n\nAnyway. I've got a coupon.`, [
+          reply(`Let me see it.`, () => push(0)),
+          reply(`We still don't take coupons.`, () => push(1)),
+        ]);
+      }
+      return opener();
     }
 
     /* ---------------- the sovereign citizen ---------------- */
@@ -1860,7 +1924,7 @@ export function specialRoot(c, ctx) {
     case 'AUDITOR': {
       const g = rng.pick(['HORROR', 'COMEDY', 'ACTION', 'SCIFI', 'DRAMA', 'FAMILY']);
       const done = () => farewell(c, ctx);
-      return say(c, `Dear, your ${GENRE_LABEL[g]} run is not in order. I've been through it twice.`, [
+      const complaint = () => say(c, `Dear, your ${GENRE_LABEL[g]} run is not in order. I've been through it twice.`, [
         reply(`It's alphabetical by title.`, () => say(c,
           `It is alphabetical by SOME title. Whoever did it ignored "THE".`, [
           reply(`...That's a fair point, actually.`, () => { ctx.mood(c, +24); return offer(); }),
@@ -1873,6 +1937,35 @@ export function specialRoot(c, ctx) {
             [reply(`Worth a try.`, () => offer())]);
         }),
       ]);
+
+      /* Verna does her rounds most weeks -- "I'll check again next week, dear"
+         is how she always leaves -- so a return is natural. What it earns you,
+         if you have been decent to her, is the one small atmospheric reward in
+         this whole system: she notices things, and she'll mention what she saw
+         in the lot. It is deliberately vague and might be nothing. It never
+         names a suspect, never matches the bulletin, never points anywhere. */
+      const h = history(ctx, 'AUDITOR');
+      const warm = h.lastOutcome === 'liked';
+      if (h.encounters > 0 && !c._greeted) {
+        c._greeted = true;
+        if (warm && rng.chance(0.5)) {
+          return say(c, rng.pick([
+            `Hello again, dear. Before I start on your shelves —\n\nthere was a man standing out by your bins when I parked. Just standing, in the dark bit. Didn't care for it. Thought you'd want to know. Probably nothing.`,
+            `Oh, it's you. Good.\n\nI'll say this and then leave you to it: somebody was round the side of the building as I came in. By the alley, where there's no light. Didn't move when my headlamps went over him. Might be waiting on the bus. Might not.`,
+          ]), [
+            reply(`Thanks. I'll keep an eye out.`, () => complaint()),
+            reply(`Did you see who it was?`, () => say(c,
+              `No, dear. Too dark, and I wasn't about to go and look, was I. That's your lot that wants a light on it. I've said so to that Vandermeer woman and all.`,
+              [reply(`...Right. Thanks.`, () => complaint())])),
+          ]);
+        }
+        return say(c, warm
+          ? `Oh, hello again, dear. Good. Somebody who listens, for once.\n\nNow. I've been through your shelves, as usual —`
+          : `...You again. Well. Somebody has to mind the shelves, and it plainly isn't you.`,
+          [reply(`Go on, then.`, () => complaint())]);
+      }
+      return complaint();
+
       function offer() {
         return say(c, `I'll take something. Nothing loud.`, [
           reply(`Have a look. I'll be at the register.`,
@@ -2369,6 +2462,7 @@ function managerRoot(c, ctx) {
     reply(`What is this actually about?`, () => why()),
     reply(`I'm going to have to ask you to leave.`, () => {
       ctx.mood(c, -10);
+      c.wasDismissed = true;
       return wall(rng.pick([
         `No, I don't think so. I'm a customer standing in a store.`,
         `You can ask. I'm not going.`,
@@ -2396,7 +2490,11 @@ function managerRoot(c, ctx) {
   };
 
   if (c.karenAsked === 1) {
-    return say(c, rng.pick([
+    /* The normal opening -- the same three-choice node she has always led
+       with. On a return visit it comes after a beat of recognition rather
+       than instead of it: she knows the face, the parking lot is still dark,
+       and how she says hello depends on how the last time ended. */
+    const firstAsk = () => say(c, rng.pick([
       `Good evening. I'd like to speak to your manager, please.`,
       `Are you the manager? ...No. No, you're not, are you. Who is?`,
       `Before you say anything: this is not a complaint about you.\n\nI'd like your manager.`,
@@ -2407,6 +2505,25 @@ function managerRoot(c, ctx) {
       reply(`It's nearly midnight, ma'am.`, () => wall(
         `It is. And I'm still here, which should tell you something.`)),
     ]);
+
+    const h = history(ctx, 'MANAGER');
+    if (h.encounters > 0 && !c._greeted) {
+      c._greeted = true;
+      /* She references the unresolved lighting either way -- the seed for a
+         future stage where it might actually get fixed. What changes is the
+         warmth, or the lack of it. */
+      const back = h.lastOutcome === 'helped'
+        ? `Oh -- good. It's you.\n\nYou're the one who actually got somebody on the telephone last time, instead of standing there apologizing. I remember. I make a point of remembering.\n\nThe lot's still dark, before you ask. Nothing's been done. But at least you did something, which is more than the last three of them.`
+        : (h.lastOutcome === 'dismissed'
+          ? `...You.\n\nYes. I remember you. You tried to have me removed from a store I have shopped at for nine years. That went in the letter, incidentally.\n\nAnd the lot is still dark, so nothing you did that night helped anybody, did it.`
+          : `I've been in before. You may remember; I certainly do.\n\nThe light on the back of this building is still out. Weeks now. I did wonder if anything would come of it.`);
+      return say(c, back, [
+        reply(h.lastOutcome === 'dismissed' ? `Let's not do this again.` : `Let's see if we can sort it this time.`,
+          () => firstAsk()),
+        reply(`What is it tonight?`, () => why()),
+      ]);
+    }
+    return firstAsk();
   }
   return wall(rng.pick([
     `(she has not moved)`,

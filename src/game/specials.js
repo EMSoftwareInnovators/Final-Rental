@@ -779,6 +779,81 @@ export function specialRoster() {
 
 export function specialById(id) { return specialRoster().find((s) => s.id === id) || null; }
 
+/* ============================================================
+   MEMORY -- which regulars Sunset Video remembers, and how to read the
+   outcome of an encounter off the live customer once it has resolved.
+
+   Kept here, beside the roster, so "who is a character with a memory" is one
+   list and the outcome logic sits next to the people it describes rather
+   than in a switch in game.js. The persistence itself lives in campaign.js;
+   this only interprets a finished encounter.
+   ============================================================ */
+
+/** The regulars a Story campaign keeps a history for. */
+export const REMEMBERED = new Set(['MANAGER', 'POPCORN', 'COUPON', 'AUDITOR']);
+
+export function isRemembered(id) { return !!id && REMEMBERED.has(id); }
+
+/* Outcomes we treat as "the player was on their good side" -- used to gate
+   the warmer return lines (and Verna's one atmospheric aside). */
+const POSITIVE = new Set(['helped', 'indulged', 'liked', 'compromised']);
+export function outcomeIsPositive(outcome) { return POSITIVE.has(outcome); }
+
+/**
+ * Read the broad outcome of a resolved special encounter from the live
+ * customer object, plus any per-character flags worth keeping.
+ *
+ * Pure: it only reads runtime state the encounter already set -- mood,
+ * whether they did business, whether they stormed out, and a few explicit
+ * signals the dialogue tagged on the way through (gotManager, gaveFreebie,
+ * threatened). Returns null for a customer we do not remember.
+ *
+ * The labels are deliberately broad. "How did it go with Cheryl" only needs
+ * to distinguish helped / dismissed / neither for the return dialogue to
+ * sound like it remembers; the flags carry the one extra bit each character
+ * actually uses.
+ */
+export function readSpecialOutcome(c) {
+  if (!c || !REMEMBERED.has(c.special)) return null;
+  const business = !!(c.served || c.checkedOut || c.gaveTape);
+  const stormed = !!c.stormedOut;
+  const calm = !!c.resolvedAnger || (typeof c.mood === 'number' && c.mood >= 60);
+  const sour = stormed || (typeof c.mood === 'number' && c.mood < 30);
+  const flags = {};
+  let outcome;
+  switch (c.special) {
+    case 'MANAGER':
+      // She leaves satisfied exactly one way: the regional manager, on the
+      // phone, in her hand. Anything else is how badly it went.
+      if (c.gotManager) { outcome = 'helped'; flags.gotManager = true; }
+      else if (sour || c.wasDismissed) outcome = 'dismissed';
+      else outcome = 'neutral';
+      break;
+    case 'COUPON':
+      // Did you fall for the homemade coupon, split the difference, or hold
+      // the line? He remembers which, and it changes what he tries next.
+      if (c.gaveFreebie) { outcome = 'indulged'; flags.gaveFreebie = true; }
+      else if (business) outcome = 'compromised';
+      else if (sour) outcome = 'refused';
+      else outcome = 'neutral';
+      break;
+    case 'POPCORN':
+      // He is going to remember whether you laughed it off or threatened him.
+      if (c.threatened) { outcome = 'scolded'; flags.scolded = true; }
+      else outcome = 'indulged';
+      break;
+    case 'AUDITOR':
+      // The one whose good side is quietly worth being on.
+      if (sour) outcome = 'snubbed';
+      else if (business || calm) outcome = 'liked';
+      else outcome = 'neutral';
+      break;
+    default:
+      outcome = business ? 'helped' : (sour ? 'dismissed' : 'neutral');
+  }
+  return { outcome, flags, positive: POSITIVE.has(outcome) };
+}
+
 /**
  * Who turns up tonight.
  *

@@ -62,7 +62,7 @@ const started = await ev(() => {
 check('NEW GAME begins a Story campaign on night 1',
   started.mode === 'STORY' && started.night === 1 && started.hasCampaign, JSON.stringify({ mode: started.mode, night: started.night }));
 check('and it is on disk before the first night is even played',
-  started.saved && started.onDisk && started.onDisk.currentNight === 1 && started.onDisk.version === 1,
+  started.saved && started.onDisk && started.onDisk.currentNight === 1 && started.onDisk.version === 2,
   `currentNight ${started.onDisk && started.onDisk.currentNight}, version ${started.onDisk && started.onDisk.version}`);
 check('the seed is fixed for the whole run',
   typeof started.onDisk.seed === 'number', String(started.onDisk && started.onDisk.seed));
@@ -430,6 +430,301 @@ check('Graveyard night 4 keeps the killer a probability, not a certainty',
 check('Graveyard is not capped to one special or robbed of its coach',
   modes.gvMaxSpecials >= 2 && modes.gvCoach > 0, `most specials ${modes.gvMaxSpecials}, coaches ${modes.gvCoach}`);
 check('Casual stays safe from the killer', modes.casAppears === 0, `${modes.casAppears}/200`);
+
+/* ================================================================
+   STAGE 3 -- persistent customer memory.
+
+   The store remembers its regulars. These check the memory API in isolation,
+   the outcome-reader that interprets a finished encounter, the live commit
+   through the real Game on despawn, that it survives a night boundary and
+   rolls back a failed one, that Graveyard and Casual never touch it, and that
+   an old save reads forward.
+   ================================================================ */
+
+/* ---------- the memory API, in isolation ---------- */
+const api = await ev(() => {
+  const C = window.__campaign;
+  const cam = C.freshCampaign(1);
+  const out = {};
+  const blank = C.getCustomerState(cam, 'MANAGER');
+  out.blank = blank.met === false && blank.encounters === 0 && blank.lastOutcome === null
+    && blank.lastNight === 0 && blank.flags && typeof blank.flags === 'object';
+  C.recordCustomerOutcome(cam, 'MANAGER', 'helped', { night: 2, flags: { gotManager: true } });
+  const s1 = C.getCustomerState(cam, 'MANAGER');
+  out.recorded = s1.met === true && s1.encounters === 1 && s1.lastOutcome === 'helped'
+    && s1.lastNight === 2 && s1.flags.gotManager === true;
+  C.recordCustomerOutcome(cam, 'MANAGER', 'dismissed', { night: 6 });
+  const s2 = C.getCustomerState(cam, 'MANAGER');
+  out.incremented = s2.encounters === 2 && s2.lastOutcome === 'dismissed' && s2.lastNight === 6
+    && s2.flags.gotManager === true;           // earlier flags survive a later outcome
+  C.setCustomerFlag(cam, 'POPCORN', 'seen', true);
+  out.flag = C.getCustomerFlag(cam, 'POPCORN', 'seen') === true
+    && C.getCustomerFlag(cam, 'POPCORN', 'missing', 'dflt') === 'dflt';
+  out.metHelper = C.customerMet(cam, 'MANAGER') === true && C.customerMet(cam, 'AUDITOR') === false;
+  return out;
+});
+check('an unseen regular reads back as a blank default', api.blank);
+check('recording an outcome marks them met, counts it, and keeps the flags', api.recorded);
+check('a later encounter increments the count and merges flags, not clobbers', api.incremented);
+check('per-character flags set, read, and default correctly', api.flag);
+check('customerMet reflects whether anyone has an encounter on record', api.metHelper);
+
+/* ---------- malformed entries fail safe ---------- */
+const safe = await ev(() => {
+  const C = window.__campaign;
+  const cam = C.freshCampaign(1);
+  cam.customerStates.MANAGER = 'not an object';
+  cam.customerStates.POPCORN = { encounters: -5, flags: 'nope', met: 'yes', lastNight: 'x' };
+  const a = C.getCustomerState(cam, 'MANAGER');
+  const b = C.getCustomerState(cam, 'POPCORN');
+  return {
+    a: a.encounters === 0 && a.met === false && typeof a.flags === 'object',
+    b: b.encounters === 0 && b.met === false && b.lastNight === 0 && typeof b.flags === 'object',
+  };
+});
+check('a mangled customer entry normalizes to a blank rather than crashing',
+  safe.a && safe.b, JSON.stringify(safe));
+
+/* ---------- the outcome reader maps runtime state to a broad label ---------- */
+const outcomes = await ev(() => {
+  const S = window.__specials;
+  const r = (c) => { const o = S.readSpecialOutcome(c); return o && o.outcome; };
+  return {
+    mgrHelped: r({ special: 'MANAGER', gotManager: true }),
+    mgrStormed: r({ special: 'MANAGER', stormedOut: true }),
+    mgrDismissed: r({ special: 'MANAGER', wasDismissed: true, mood: 20 }),
+    couponIndulged: r({ special: 'COUPON', gaveFreebie: true }),
+    couponCompromised: r({ special: 'COUPON', checkedOut: true, mood: 70 }),
+    couponRefused: r({ special: 'COUPON', stormedOut: true }),
+    ricky: r({ special: 'POPCORN', mood: 60 }),
+    rickyScolded: r({ special: 'POPCORN', threatened: true }),
+    vernaLiked: r({ special: 'AUDITOR', resolvedAnger: true, mood: 80 }),
+    vernaSnubbed: r({ special: 'AUDITOR', stormedOut: true }),
+    untracked: S.readSpecialOutcome({ special: 'BOOMBOX' }),
+    freebieFlag: S.readSpecialOutcome({ special: 'COUPON', gaveFreebie: true }).flags.gaveFreebie,
+  };
+});
+check('Cheryl: got the phone -> helped, otherwise dismissed',
+  outcomes.mgrHelped === 'helped' && outcomes.mgrStormed === 'dismissed' && outcomes.mgrDismissed === 'dismissed',
+  JSON.stringify(outcomes));
+check('Otis: freebie -> indulged, paid something -> compromised, walkout -> refused',
+  outcomes.couponIndulged === 'indulged' && outcomes.couponCompromised === 'compromised'
+  && outcomes.couponRefused === 'refused');
+check('Ricky: laughed off -> indulged, threatened -> scolded',
+  outcomes.ricky === 'indulged' && outcomes.rickyScolded === 'scolded');
+check('Verna: kept sweet -> liked, snapped at -> snubbed',
+  outcomes.vernaLiked === 'liked' && outcomes.vernaSnubbed === 'snubbed');
+check('a customer nobody remembers yields no outcome, and flags come through',
+  outcomes.untracked === null && outcomes.freebieFlag === true);
+
+/* ---------- the live commit: a resolved special is remembered on despawn --- */
+const commit = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory(); g.nightNo = 2;
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100 });
+  const first = C.getCustomerState(g.campaign, 'MANAGER');
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100, _memoryCommitted: true });
+  const second = C.getCustomerState(g.campaign, 'MANAGER');
+  g.ctx.despawn({ special: 'COUPON' });   // never dealt with
+  const otis = C.getCustomerState(g.campaign, 'COUPON');
+  return {
+    encounters: first.encounters, outcome: first.lastOutcome, night: first.lastNight,
+    noDouble: second.encounters === 1, idleUnseen: otis.encounters === 0,
+  };
+});
+check('a resolved special is remembered in the live campaign on despawn',
+  commit.encounters === 1 && commit.outcome === 'helped' && commit.night === 2, JSON.stringify(commit));
+check('the commit is once-per-customer, never double-counted', commit.noDouble);
+check('a regular who drifts out without being dealt with is not remembered', commit.idleUnseen);
+
+/* ---------- it survives a night boundary, and comes back on Continue ------- */
+const survives = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory(); g.nightNo = 2;
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100 });
+  g.grade = { letter: 'B', score: 1200 }; g.stats = { served: 3, stormedOut: 0, cashLoose: 0 };
+  g.advanceNight();                         // saves BEFORE night 3
+  const disk = JSON.parse(localStorage.getItem('finalrental.campaign'));
+  g.toTitle(); g.continueStory();           // reload from disk
+  const reloaded = C.getCustomerState(g.campaign, 'MANAGER');
+  return {
+    onDisk: disk.customerStates && disk.customerStates.MANAGER && disk.customerStates.MANAGER.encounters,
+    reloaded: reloaded.encounters, outcome: reloaded.lastOutcome,
+  };
+});
+check('a remembered encounter is written to disk when the night advances',
+  survives.onDisk === 1, `disk encounters ${survives.onDisk}`);
+check('and it comes back through Continue', survives.reloaded === 1 && survives.outcome === 'helped');
+
+/* ---------- retry rollback: a failed night forgets its encounters --------- */
+const rollback = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory();
+  g.campaign.currentNight = 5; g.nightNo = 5; C.saveCampaign(g.campaign);   // clean night-5 boundary
+  const before = C.getCustomerState(g.campaign, 'POPCORN').encounters;
+  g.ctx.despawn({ special: 'POPCORN', talkedTo: true, mood: 60 });          // mid-shift, in memory only
+  const midShift = C.getCustomerState(g.campaign, 'POPCORN').encounters;
+  g.toTitle();                              // died / quit: drops the in-memory copy
+  g.continueStory();                        // reloads the disk save (start of night 5)
+  const afterRetry = C.getCustomerState(g.campaign, 'POPCORN').encounters;
+  return { before, midShift, afterRetry, night: g.nightNo };
+});
+check('an encounter mutates the in-memory campaign during the shift',
+  rollback.before === 0 && rollback.midShift === 1, JSON.stringify(rollback));
+check('but a failed night rolls back on Continue -- the encounter is forgotten',
+  rollback.afterRetry === 0 && rollback.night === 5, JSON.stringify(rollback));
+
+/* ---------- mode isolation: memory is Story-only, both ways ---------- */
+const iso = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  // Graveyard: no campaign, despawn is a memory no-op and must not crash; and
+  // customerHistory reads blank even though we will put a real save on disk.
+  g.beginRun(window.__night.MODE.HORROR);
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100 });
+  const gvWroteSave = C.hasCampaignSave();
+  const gvHistoryBlank = g.ctx.customerHistory('MANAGER').encounters === 0;
+  // A real Story campaign with Cheryl remembered, saved to disk.
+  C.deleteCampaignSave();
+  g.newStory(); g.nightNo = 2;
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100 });
+  g.grade = { letter: 'A', score: 1 }; g.stats = { served: 1, stormedOut: 0, cashLoose: 0 };
+  g.advanceNight();                         // Cheryl now on disk
+  // Leave for a Casual shift and "serve" Cheryl again: must not touch the save.
+  g.beginRun(window.__night.MODE.CASUAL);
+  const casHistoryBlank = g.ctx.customerHistory('MANAGER').encounters === 0;
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100 });
+  const disk = C.loadCampaign();
+  return {
+    gvWroteSave, gvHistoryBlank, casHistoryBlank,
+    storyEncounters: disk.customerStates.MANAGER ? disk.customerStates.MANAGER.encounters : 0,
+  };
+});
+check('a Graveyard encounter writes no campaign and no save',
+  iso.gvWroteSave === false, JSON.stringify(iso));
+check('Story memory never leaks into Graveyard or Casual dialogue',
+  iso.gvHistoryBlank && iso.casHistoryBlank);
+check('a Casual encounter leaves the Story campaign on disk untouched (still 1)',
+  iso.storyEncounters === 1, `disk encounters ${iso.storyEncounters}`);
+
+/* ---------- save compatibility: an old save reads forward ---------- */
+const compat = await ev(() => {
+  const C = window.__campaign;
+  const v1 = {
+    version: 1, mode: 'STORY', seed: 123, currentNight: 3, started: true, completed: false,
+    history: { grades: ['A'], scores: [100] }, cooldown: { calmUntil: 0, standDownNight: 0 },
+    stats: { arrests: 0, customersServed: 5, walkouts: 0, cashDiscrepancy: 0 },
+    storyFlags: {}, customerStates: {}, environmentFlags: {},
+  };
+  localStorage.setItem('finalrental.campaign', JSON.stringify(v1));
+  const loaded = C.loadCampaign();
+  const blank = loaded && C.getCustomerState(loaded, 'MANAGER');
+  const v2bad = { ...v1, version: 2, customerStates: 'not an object' };
+  localStorage.setItem('finalrental.campaign', JSON.stringify(v2bad));
+  const loaded2 = C.loadCampaign();
+  return {
+    v1loads: !!loaded && loaded.currentNight === 3 && loaded.version === 2,
+    v1blank: !!blank && blank.encounters === 0,
+    v1keeps: !!loaded && loaded.history.grades[0] === 'A' && loaded.stats.customersServed === 5,
+    v2badloads: !!loaded2 && typeof loaded2.customerStates === 'object'
+      && Object.keys(loaded2.customerStates).length === 0,
+  };
+});
+check('a Stage 1/2 save (v1, empty memory) loads and upgrades to v2',
+  compat.v1loads && compat.v1blank && compat.v1keeps, JSON.stringify(compat));
+check('a v2 save with a broken memory bag loads with a clean one', compat.v2badloads);
+
+/* ---------- scheduling: Nights 5-8 guarantee the returning regulars ------- */
+const sched = await ev(() => {
+  const S = window.__story, C = window.__campaign;
+  const scan = (n) => {
+    const cfg = C.nightConfig(n);
+    const req = cfg.requiredSpecials.slice().sort();
+    let hasReq = 0, overCap = 0, maxSp = 0, deputies = 0, killers = 0;
+    const SEEDS = 200;
+    for (let i = 0; i < SEEDS; i++) {
+      const nt = S.night(20000 + i, n);
+      const sp = S.specials(nt);
+      maxSp = Math.max(maxSp, sp.length);
+      if (cfg.specialCap != null && sp.length > cfg.specialCap) overCap++;
+      if (req.every((id) => sp.includes(id))) hasReq++;
+      if (nt.deputy) deputies++;
+      if (nt.plan.appears) killers++;
+    }
+    return { req, cap: cfg.specialCap, hasReq, overCap, maxSp, deputies, killers, seeds: SEEDS };
+  };
+  return { n5: scan(5), n6: scan(6), n7: scan(7), n8: scan(8) };
+});
+check('Night 5 guarantees Little Ricky every seed, capped at two',
+  sched.n5.hasReq === 200 && sched.n5.overCap === 0 && sched.n5.req.join() === 'POPCORN' && sched.n5.cap === 2,
+  JSON.stringify(sched.n5));
+check('Night 6 guarantees Cheryl\'s return, capped at two',
+  sched.n6.hasReq === 200 && sched.n6.overCap === 0 && sched.n6.req.join() === 'MANAGER' && sched.n6.cap === 2);
+check('Night 7 guarantees Otis, capped at two',
+  sched.n7.hasReq === 200 && sched.n7.overCap === 0 && sched.n7.req.join() === 'COUPON' && sched.n7.cap === 2);
+check('Night 8 guarantees both returns together, capped at three',
+  sched.n8.hasReq === 200 && sched.n8.overCap === 0
+  && sched.n8.req.join() === 'COUPON,POPCORN' && sched.n8.cap === 3, JSON.stringify(sched.n8));
+check('Nights 5-8 leave the killer procedural (neither forbidden nor forced)',
+  sched.n5.killers > 0 && sched.n5.killers < 200 && sched.n6.killers > 0 && sched.n6.killers < 200,
+  `n5 ${sched.n5.killers}/200, n6 ${sched.n6.killers}/200`);
+
+/* ---------- determinism: memory cannot move the schedule ---------- */
+const detMem = await ev(() => {
+  const S = window.__story;
+  const fp = (nt) => JSON.stringify(nt.schedule.map((e) => [e.t, e.decoy, e.special || null]));
+  const out = {};
+  for (const n of [5, 6, 7, 8]) out[n] = fp(S.night(77, n)) === fp(S.night(77, n));
+  return out;
+});
+check('the same seed rebuilds each Night 5-8 schedule identically',
+  [5, 6, 7, 8].every((n) => detMem[n]), JSON.stringify(detMem));
+
+/* ---------- the point of all of it: memory changes what they SAY --------- */
+/* Data in customerStates is not the deliverable; the player noticing is. This
+   builds the real opening node of each regular's encounter, in Story, with a
+   chosen history, and confirms the words on screen actually differ. */
+const dlgText = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  g.newStory();                            // STORY: live campaign, rng + ctx
+  const openText = (special, outcome, night) => {
+    if (g.campaign.customerStates) delete g.campaign.customerStates[special];
+    if (outcome) C.recordCustomerOutcome(g.campaign, special, outcome, { night: night || 2 });
+    const c = { special, name: special, mood: 100, hasMoney: true };
+    const node = D.specialRoot(c, g.ctx);
+    return (node && node.text) || '';
+  };
+  return {
+    mgrFirst: openText('MANAGER', null),
+    mgrHelped: openText('MANAGER', 'helped'),
+    mgrDismissed: openText('MANAGER', 'dismissed'),
+    otisFirst: openText('COUPON', null),
+    otisIndulged: openText('COUPON', 'indulged'),
+    otisRefused: openText('COUPON', 'refused'),
+    rickyFirst: openText('POPCORN', null),
+    rickyScolded: openText('POPCORN', 'scolded'),
+    rickyIndulged: openText('POPCORN', 'indulged'),
+    vernaFirst: openText('AUDITOR', null),
+    vernaLiked: openText('AUDITOR', 'liked'),
+  };
+});
+const filled = (s) => typeof s === 'string' && s.length > 0;
+check('Cheryl greets a first-timer and a returning player differently',
+  filled(dlgText.mgrFirst) && filled(dlgText.mgrHelped) && dlgText.mgrFirst !== dlgText.mgrHelped);
+check('and a helped history reads differently from a dismissed one (both react)',
+  dlgText.mgrHelped !== dlgText.mgrDismissed
+  && dlgText.mgrHelped !== dlgText.mgrFirst && dlgText.mgrDismissed !== dlgText.mgrFirst);
+check('Otis opens differently once he has a history, by which way it went',
+  filled(dlgText.otisFirst) && dlgText.otisFirst !== dlgText.otisIndulged
+  && dlgText.otisIndulged !== dlgText.otisRefused);
+check('Ricky recognizes the player, warily or warmly by prior handling',
+  filled(dlgText.rickyFirst) && dlgText.rickyFirst !== dlgText.rickyScolded
+  && dlgText.rickyScolded !== dlgText.rickyIndulged);
+check('Verna knows a returning regular',
+  filled(dlgText.vernaFirst) && dlgText.vernaFirst !== dlgText.vernaLiked);
 
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
