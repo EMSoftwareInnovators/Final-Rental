@@ -30,8 +30,13 @@
 
    v2 added persistent customer memory (customerStates entries). A v1 save
    has customerStates:{} already, so it reads forward with nobody remembered
-   yet -- no data is lost, and migrate() below normalizes the bag either way. */
-export const SAVE_VERSION = 2;
+   yet -- no data is lost, and migrate() below normalizes the bag either way.
+
+   v3 added the investigation: a compact `cases` list of successful Story
+   arrests, and real use of storyFlags. A v2 save has neither; migrate() folds
+   in an empty cases list and leaves storyFlags as it found it, so nothing is
+   lost and the game simply reads "no arrests on record yet". */
+export const SAVE_VERSION = 3;
 
 /* Its own key. Deliberately nothing to do with 'finalrental.padbinds',
    which the controller settings own -- wiping one must never touch the
@@ -207,6 +212,13 @@ export function freshCampaign(seed) {
     storyFlags: {},
     customerStates: {},
     environmentFlags: {},
+
+    /* The case file the county is building, from the player's side of it: one
+       compact row per successful Story arrest. Not the runtime killer -- a
+       handful of plain traits the deputy can talk about later ("last one was
+       six-two; this one isn't"), plus the tape that keeps turning up. Capped,
+       so a long campaign cannot grow the save without bound. */
+    cases: [],
   };
 }
 
@@ -392,7 +404,7 @@ export function setEnvironmentFlag(campaign, key, value = true) {
  * of the game would not know the difference. Idempotent -- setting a flag that
  * is already true is a no-op -- and it consumes no RNG.
  */
-export function applyStoryConsequences(campaign) {
+export function applyStoryConsequences(campaign, completedNight = 0) {
   if (!campaign) return;
 
   /* The landlord finally responds. Cheryl's encounter IS the dark-lot
@@ -409,6 +421,182 @@ export function applyStoryConsequences(campaign) {
     setEnvironmentFlag(campaign, 'popcornNoticePosted', true);
     setEnvironmentFlag(campaign, 'popcornStainLeft', true);
   }
+
+  /* The investigation. All of it keys off real arrest history, never the
+     calendar -- "has the player actually caught someone" -- so a run that
+     reached the same night by a different route reads differently, and a
+     failed night that never banked its arrest never sets any of it. */
+  const arrests = (campaign.stats && campaign.stats.arrests) | 0;
+  if (arrests >= 1) {
+    // The paper runs it. The clipping goes up behind the counter -- the
+    // comfortable proof that it was handled, which a later bulletin will make
+    // uncomfortable.
+    setStoryFlag(campaign, 'firstArrestMade', true);
+    setEnvironmentFlag(campaign, 'arrestClippingPosted', true);
+  }
+  /* The second case is "open" once the player has actually worked a night at
+     or past the escalation point with an arrest already behind them -- i.e.
+     they have met the threat that should not have still been out there. */
+  if (arrests >= 1 && completedNight >= SECOND_THREAT_NIGHT) {
+    setStoryFlag(campaign, 'secondCaseOpened', true);
+  }
+}
+
+/* ============================================================
+   THE INVESTIGATION
+
+   Story Mode's long game. Stage 5 lays the first half: the player catches
+   someone, the town relaxes, and then the thing they thought was finished
+   walks back in. None of the answer lives here -- only the bookkeeping that
+   lets the deputy, a bulletin, and a newspaper clipping quietly disagree with
+   each other.
+
+   Three plain-data pieces, all in the one save:
+     storyFlags   what the campaign believes has happened (booleans, mostly).
+     cases        a compact list of the player's successful arrests.
+     stats.arrests the count the cooldown already kept.
+
+   Everything reads STATE, not the night number, so retries and later
+   branching behave.
+   ============================================================ */
+
+/* The night the second threat is authored to break the post-arrest quiet.
+   A number, here, so the day it moves nothing else has to be told. */
+export const SECOND_THREAT_NIGHT = 8;
+
+/* The tape that keeps turning up. An obscure horror title already on the
+   shelves (catalog.js) -- the deputy will tell the player the arrested man had
+   asked after it, and later that the new one has too. It is a rental
+   preference, which is the whole point: unsettling, and completely mundane. */
+export const INVESTIGATION_TAPE = 'THE LAST CUSTOMER';
+
+/* At most this many arrest rows are kept. The mystery needs the last one or
+   two, not a ledger. */
+const MAX_CASES = 6;
+
+/* Only plain primitives survive in a flag bag -- same rule as the environment
+   bag, for the same reason. */
+function normalizeStoryFlags(bag) {
+  const out = {};
+  if (bag && typeof bag === 'object') {
+    for (const k of Object.keys(bag)) {
+      const v = bag[k];
+      const t = typeof v;
+      if (t === 'boolean' || t === 'number' || t === 'string' || v === null) out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** One arrest row, coerced to a compact, safe shape. Anything odd becomes a
+    blank field rather than a landmine three nights later. */
+function normalizeCase(raw) {
+  const r = (raw && typeof raw === 'object') ? raw : {};
+  const s = (v) => (typeof v === 'string' ? v : '');
+  const p = (raw && typeof raw.profile === 'object') ? raw.profile : {};
+  return {
+    night: (typeof r.night === 'number' && r.night >= 0) ? Math.floor(r.night) : 0,
+    result: s(r.result) || 'arrested',
+    name: s(r.name),
+    alias: s(r.alias),
+    signatureTape: s(r.signatureTape),
+    profile: {
+      gender: s(p.gender), height: s(p.height), build: s(p.build),
+      hair: s(p.hair), jacket: s(p.jacket),
+    },
+  };
+}
+
+/** Normalize the whole list on load; drop anything that is not a row. */
+function normalizeCases(list) {
+  if (!Array.isArray(list)) return [];
+  return list.slice(-MAX_CASES).map(normalizeCase);
+}
+
+/** Read one story flag, or `dflt` (false) if never set. Blank for any
+    campaign with no bag -- which is every non-Story run. */
+export function getStoryFlag(campaign, key, dflt = false) {
+  if (!campaign || !campaign.storyFlags || !key) return dflt;
+  const v = campaign.storyFlags[key];
+  return (v === undefined) ? dflt : v;
+}
+
+/** A shorter read alias, for call sites that just want the truthiness. */
+export function storyFlag(campaign, key) { return getStoryFlag(campaign, key, false); }
+
+/** Set one story flag on the in-memory campaign. Persisted only at the next
+    boundary save, like everything else here. */
+export function setStoryFlag(campaign, key, value = true) {
+  if (!campaign || !key) return;
+  if (!campaign.storyFlags || typeof campaign.storyFlags !== 'object') campaign.storyFlags = {};
+  campaign.storyFlags[key] = value;
+}
+
+/**
+ * Record a successful Story arrest. Compact plain data only -- a few traits
+ * and the tape -- never the runtime killer. In-memory; the boundary save
+ * persists it, so an arrest on a night the player then fails rolls back with
+ * the night. De-duplicated by night so a re-played night cannot stack rows.
+ */
+export function recordCase(campaign, caseData) {
+  if (!campaign) return;
+  if (!Array.isArray(campaign.cases)) campaign.cases = [];
+  const row = normalizeCase(caseData);
+  if (campaign.cases.some((c) => c.night === row.night)) return;   // once per night
+  campaign.cases.push(row);
+  if (campaign.cases.length > MAX_CASES) campaign.cases = campaign.cases.slice(-MAX_CASES);
+}
+
+/**
+ * The compact investigation picture the dialogue reads. Story only -- a
+ * campaign with no history (or none at all, i.e. Graveyard/Casual) comes back
+ * "nothing has happened", so a deputy line can never reference an arrest that
+ * did not occur.
+ *
+ * `secondThreat` is decided by the caller (the night resolver knows whether
+ * tonight is the authored escalation); this only reports what is on record.
+ */
+export function investigationState(campaign) {
+  const arrests = (campaign && campaign.stats && campaign.stats.arrests) | 0;
+  const cases = (campaign && Array.isArray(campaign.cases)) ? campaign.cases : [];
+  const last = cases.length ? cases[cases.length - 1] : null;
+  return {
+    priorArrests: arrests,
+    caughtSomeone: arrests >= 1,
+    cases: cases.slice(),
+    lastCase: last,
+    signatureTape: INVESTIGATION_TAPE,
+    secondCaseOpened: storyFlag(campaign, 'secondCaseOpened') === true,
+  };
+}
+
+/**
+ * State-aware night policy on top of the static nightConfig. The one place a
+ * Story night's threat can depend on what the player has already done rather
+ * than on the calendar.
+ *
+ * Today it authors exactly one beat: the second threat. On the escalation
+ * night, IF the player has already caught someone, the killer is forced and
+ * the post-arrest quiet is deliberately overridden -- this is the night the
+ * quiet ends. With no prior arrest there is nothing to contradict, so it
+ * returns nothing and the night stays as the base config and cooldown left it.
+ *
+ * Returns overrides only; an empty object means "no change". Never forces an
+ * `appears`-stub: forcing the killer here runs through the same FORCED policy
+ * that builds a full plan.
+ */
+export function investigationPolicy(campaign, n) {
+  if (!campaign) return {};
+  const arrests = (campaign.stats && campaign.stats.arrests) | 0;
+  if (n === SECOND_THREAT_NIGHT && arrests >= 1) {
+    return {
+      killerPolicy: POLICY.FORCED,
+      calmOverride: false,        // the quiet is over
+      standDownOverride: false,
+      secondThreat: true,
+    };
+  }
+  return {};
 }
 
 /* ------------------------------------------------------------
@@ -514,7 +702,9 @@ function migrate(data) {
     history: { ...clean.history, ...(data.history || {}) },
     cooldown: { ...clean.cooldown, ...(data.cooldown || {}) },
     stats: { ...clean.stats, ...(data.stats || {}) },
-    storyFlags: { ...clean.storyFlags, ...(data.storyFlags || {}) },
+    /* Story flags: only plain facts survive, same as the environment bag. A v2
+       save simply had few of them; nothing is lost. */
+    storyFlags: normalizeStoryFlags(data.storyFlags),
     /* Not a plain merge: every entry is normalized, so a save with a bad or
        missing memory bag comes back with a clean one rather than a shape the
        dialogue code has to guard against. */
@@ -522,5 +712,8 @@ function migrate(data) {
     /* Same treatment: only plain facts survive, so a save whose environment
        bag was hand-edited or carries a stray object cannot crash a shift. */
     environmentFlags: normalizeEnvironmentFlags(data.environmentFlags),
+    /* The arrest list (v3+). A v2 save has none, and reads back as an empty
+       file; a mangled list normalizes row by row rather than crashing. */
+    cases: normalizeCases(data.cases),
   };
 }

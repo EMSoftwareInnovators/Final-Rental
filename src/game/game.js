@@ -24,6 +24,7 @@ import {
   saveCampaign, loadCampaign, hasCampaignSave, deleteCampaignSave,
   getCustomerState, recordCustomerOutcome,
   environmentFlag, applyStoryConsequences,
+  recordCase, investigationState, investigationPolicy, INVESTIGATION_TAPE,
 } from './campaign.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds } from './ui.js';
@@ -201,7 +202,11 @@ export class Game {
     /* Which persistent environmental pieces this shift shows. All off until a
        Story night applies its campaign's facts; the endless modes never turn
        any of it on. */
-    this.env = { rearFloodlight: false, popcornNotice: false, popcornStain: false };
+    this.env = { rearFloodlight: false, popcornNotice: false, popcornStain: false, arrestClipping: false };
+    /* The investigation picture this shift runs under: prior arrests, the case
+       file, whether tonight is the authored second threat. Null outside Story;
+       the deputy dialogue reads it through ctx.investigation(). */
+    this.investigation = null;
     this.distress = 0; this.tension = 0;
     this.staticFrame = 0; this.staticT = 0;
     this.shake = 0;
@@ -285,16 +290,28 @@ export class Game {
        precedence inside makeNight. Graveyard and Casual pass no config, so
        none of this reaches them -- they generate exactly as before. */
     const cfg = this.mode === MODE.STORY ? nightConfig(n) : null;
+    /* On top of the static config, a state-aware layer that can author the one
+       beat a night's threat should depend on history rather than the calendar:
+       the second killer, forced only if the player has already caught someone,
+       overriding the post-arrest quiet because that is the night it ends. An
+       empty object every other night, so nothing changes. */
+    const inv = this.mode === MODE.STORY ? investigationPolicy(this.campaign, n) : {};
     this.night = makeNight(this.seed, n, this.mode, {
-      calm: n <= R.calmUntil,
-      standDown: n === R.standDownNight,
-      killerPolicy: cfg ? cfg.killerPolicy : undefined,
+      calm: inv.calmOverride != null ? inv.calmOverride : (n <= R.calmUntil),
+      standDown: inv.standDownOverride != null ? inv.standDownOverride : (n === R.standDownNight),
+      killerPolicy: inv.killerPolicy || (cfg ? cfg.killerPolicy : undefined),
       deputyPolicy: cfg ? cfg.deputyPolicy : undefined,
       coachPolicy: cfg ? cfg.coachPolicy : undefined,
       requiredSpecials: cfg ? cfg.requiredSpecials : undefined,
       specialCap: cfg ? cfg.specialCap : undefined,
     });
     this.rng = this.night.rng;
+    /* The investigation picture the deputy will brief against tonight: what is
+       on record (state), plus whether the resolver made tonight the second
+       threat. Story only. */
+    this.investigation = (this.mode === MODE.STORY && this.campaign)
+      ? Object.assign(investigationState(this.campaign), { secondThreat: !!inv.secondThreat })
+      : null;
     /* What the store itself remembers. Read the campaign's environmental facts
        and decide which persistent pieces this shift shows. Story only; every
        other mode gets the original store. Data only -- no meshes are made
@@ -666,6 +683,7 @@ export class Game {
       rearFloodlight: environmentFlag(c, 'rearFloodlightInstalled'),
       popcornNotice: environmentFlag(c, 'popcornNoticePosted'),
       popcornStain: environmentFlag(c, 'popcornStainLeft'),
+      arrestClipping: environmentFlag(c, 'arrestClippingPosted'),
     };
   }
 
@@ -725,8 +743,10 @@ export class Game {
        This runs on the in-memory campaign and is written by the save below, so
        an environmental consequence is earned by finishing the night and rolls
        back with a failed one -- exactly like the grade and the customer memory
-       it reads from. It never touches the night about to start. */
-    applyStoryConsequences(c);
+       it reads from. It never touches the night about to start. The night just
+       finished is passed so investigation consequences that depend on having
+       worked a particular night can key off it. */
+    applyStoryConsequences(c, this.nightNo);
 
     const next = this.nightNo + 1;
     if (next > STORY_NIGHT_COUNT) {
@@ -2949,6 +2969,29 @@ export class Game {
       R.standDownNight = this.nightNo + 1;
       R.calmUntil = this.nightNo + 3 + this.rng.int(3);
       data.calmNights = R.calmUntil - this.nightNo;
+      /* Story keeps a compact file on the arrest -- a few traits and the tape
+         that keeps turning up -- so a later night's deputy can talk about it.
+         In-memory only; the boundary save (if the player takes tomorrow's
+         shift) persists it, and a quit-to-title before then drops it with the
+         rest of the night. recordCase de-duplicates by night, so a re-played
+         night cannot stack a second row. */
+      if (this.mode === MODE.STORY && this.campaign) {
+        const cf = this.night.caseFile || {};
+        const su = this.night.suspect || {};
+        const ts = (t) => (t && (t.bulletin || t.label || t.name || t.id)) || '';
+        recordCase(this.campaign, {
+          night: this.nightNo,
+          result: 'arrested',
+          name: cf.name || '',
+          alias: cf.alias || '',
+          signatureTape: INVESTIGATION_TAPE,
+          profile: {
+            gender: su.gender || '',
+            height: ts(su.height), build: ts(su.build),
+            hair: ts(su.hair), jacket: ts(su.jacket),
+          },
+        });
+      }
     }
     if (kind === 'FIRED') { this.sound.siren(); this.sound.chimeBad(); }
     // ATTACKED runs its own soundtrack out of updateDeath()
@@ -3111,6 +3154,10 @@ export class Game {
     if (this.env.popcornStain) {
       setTranslate(M.m, 0, 0, 0);
       rz.drawMesh(this.world.stainMesh, M.m, { shade: L });
+    }
+    if (this.env.arrestClipping) {
+      setTranslate(M.m, 0, 0, 0);
+      rz.drawMesh(this.world.clippingMesh, M.m, { shade: L });
     }
     this._floodShade = floodShade;
 
@@ -3429,6 +3476,11 @@ export class Game {
          is in behaves as "not yet" in Graveyard and Casual. */
       environmentFlag: (key) => (g.mode === MODE.STORY && g.campaign)
         ? environmentFlag(g.campaign, key) : false,
+
+      /* The investigation picture for the deputy's briefing: prior arrests, the
+         case file, whether tonight is the authored second threat. Null outside
+         Story, so the endless modes keep their original night-based deputy. */
+      investigation: () => g.investigation,
 
       tookFromShelf: (c) => {
         const s = g.sound.spatial(g.player.x, g.player.z, g.player.yaw, c.x, c.z);

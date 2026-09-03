@@ -746,6 +746,32 @@ export function buildTextures() {
     noise(g, w, h, 7);
   });
 
+  /* The newspaper clipping that goes up behind the counter after the first
+     arrest (Stage 5). Newsprint, a bold two-line headline and a subhead, and a
+     body of gray squiggle nobody is meant to read. It says a man was caught
+     and nothing else -- no tape, no detail -- which is the point: it is the
+     comfortable version, and a later bulletin makes it a liar. */
+  T.arrestClipping = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#d9d4c4', w, h);            // aged newsprint
+    g.fillStyle = '#8a8578'; g.fillRect(0, 0, w, 8);            // masthead strip
+    g.fillStyle = '#141210'; g.textAlign = 'center';
+    g.font = 'bold 6px "Times New Roman",Georgia,serif';
+    g.fillText('THE DELANEY LEDGER', w / 2, 6);
+    g.font = 'bold 9px "Times New Roman",Georgia,serif';
+    g.fillText('MAN HELD IN', w / 2, 20);
+    g.fillText('LATE ATTACKS', w / 2, 30);
+    g.font = 'italic 6px "Times New Roman",Georgia,serif';
+    g.fillText("Sheriff: 'we have him'", w / 2, 40);
+    // decorative body: two columns of unreadable gray lines
+    g.fillStyle = '#5a564c';
+    for (let c = 0; c < 2; c++) {
+      const x0 = 5 + c * 30;
+      for (let i = 0; i < 9; i++) g.fillRect(x0, 45 + i * 2, 24 - (i === 8 ? 10 : 0), 1);
+    }
+    g.strokeStyle = '#141210'; g.strokeRect(1.5, 9.5, w - 3, h - 11);
+    noise(g, w, h, 8);
+  });
+
   /* A butter/grease stain the mop never quite lifted. Transparent apart from
      the blotch, so it blends onto the carpet as a dark patch rather than a
      square. Irregular on purpose -- a real spill is never a clean ellipse. */

@@ -428,10 +428,11 @@ export function buildWorld(T) {
     tapeTex: tape,
     tapeMesh: buildTapeMesh(tape),
     solids: buildSolids(),
-    /* Persistent environmental pieces (Stage 4). Prebuilt, drawn on demand. */
+    /* Persistent environmental pieces (Stage 4-5). Prebuilt, drawn on demand. */
     floodMesh: buildFloodlight(T),
     noticeMesh: buildNotice(T),
     stainMesh: buildStain(T),
+    clippingMesh: buildClipping(T),
     T,
   };
 }
@@ -950,6 +951,18 @@ function buildStain(T) {
   const cx = 10.6, cz = 4.4, R = 0.5, y = 0.016;
   b.quad([cx - R, y, cz + R], [cx + R, y, cz + R], [cx + R, y, cz - R], [cx - R, y, cz - R],
     T.greaseStain, [0, 0, 64, 64], F_BLEND | F_DOUBLE);
+  return b.build();
+}
+
+/* The arrest clipping (Stage 5), taped to the clerk's side of the counter
+   beside the popcorn notice -- so it is squarely in front of the player at
+   the register, and behind them while the deputy briefs a NEW bulletin at the
+   window. That is the whole staging: SUSPECT HELD, in the same eyeline as a
+   description of somebody who is plainly still out there. */
+function buildClipping(T) {
+  const b = new MeshBuilder();
+  b.light = lightAt;
+  b.plate(9.85, 0.50, COUNTER.z1 + 0.013, 0.44, 0.46, 0, T.arrestClipping, [0, 0, 64, 64], 0);
   return b.build();
 }
 

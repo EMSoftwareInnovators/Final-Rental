@@ -62,7 +62,7 @@ const started = await ev(() => {
 check('NEW GAME begins a Story campaign on night 1',
   started.mode === 'STORY' && started.night === 1 && started.hasCampaign, JSON.stringify({ mode: started.mode, night: started.night }));
 check('and it is on disk before the first night is even played',
-  started.saved && started.onDisk && started.onDisk.currentNight === 1 && started.onDisk.version === 2,
+  started.saved && started.onDisk && started.onDisk.currentNight === 1 && started.onDisk.version === 3,
   `currentNight ${started.onDisk && started.onDisk.currentNight}, version ${started.onDisk && started.onDisk.version}`);
 check('the seed is fixed for the whole run',
   typeof started.onDisk.seed === 'number', String(started.onDisk && started.onDisk.seed));
@@ -626,14 +626,14 @@ const compat = await ev(() => {
   localStorage.setItem('finalrental.campaign', JSON.stringify(v2bad));
   const loaded2 = C.loadCampaign();
   return {
-    v1loads: !!loaded && loaded.currentNight === 3 && loaded.version === 2,
+    v1loads: !!loaded && loaded.currentNight === 3 && loaded.version === 3,
     v1blank: !!blank && blank.encounters === 0,
     v1keeps: !!loaded && loaded.history.grades[0] === 'A' && loaded.stats.customersServed === 5,
     v2badloads: !!loaded2 && typeof loaded2.customerStates === 'object'
       && Object.keys(loaded2.customerStates).length === 0,
   };
 });
-check('a Stage 1/2 save (v1, empty memory) loads and upgrades to v2',
+check('a Stage 1/2 save (v1, empty memory) loads and upgrades forward',
   compat.v1loads && compat.v1blank && compat.v1keeps, JSON.stringify(compat));
 check('a v2 save with a broken memory bag loads with a clean one', compat.v2badloads);
 
@@ -1017,6 +1017,313 @@ const envDet = await ev(() => {
 });
 check('installing environmental changes does not alter the night for the same seed',
   envDet.same);
+
+/* ================================================================
+   STAGE 5 -- the investigation begins.
+
+   The first half of the mystery: the player catches someone, the town
+   relaxes, a clipping goes up, and then a real second threat walks in while
+   that clipping still says SUSPECT HELD. These check the story-flag/case API,
+   the arrest record, the conditional second-threat night, the deputy's
+   evolving briefing, the newspaper prop, the repeated-tape clue, save
+   migration, mode isolation, and that none of it moves the shift or leaks.
+   ================================================================ */
+
+/* ---------- story flags + case history in isolation ---------- */
+const invApi = await ev(() => {
+  const C = window.__campaign;
+  const cam = C.freshCampaign(1);
+  const out = {};
+  out.flagDefault = C.getStoryFlag(cam, 'firstArrestMade') === false
+    && C.storyFlag(cam, 'nope') === false
+    && C.getStoryFlag(cam, 'x', 'd') === 'd';
+  C.setStoryFlag(cam, 'firstArrestMade', true);
+  out.flagSet = C.storyFlag(cam, 'firstArrestMade') === true;
+  // fresh has no cases and no arrests
+  out.freshCases = Array.isArray(cam.cases) && cam.cases.length === 0;
+  const inv0 = C.investigationState(cam);
+  out.inv0 = inv0.priorArrests === 0 && inv0.caughtSomeone === false && inv0.lastCase === null
+    && inv0.signatureTape === C.INVESTIGATION_TAPE;
+  // record two arrests on different nights; a repeat of a night is ignored
+  C.recordCase(cam, { night: 4, result: 'arrested', name: 'A', profile: { height: 'tall' }, signatureTape: C.INVESTIGATION_TAPE });
+  C.recordCase(cam, { night: 4, result: 'arrested', name: 'A-again' });   // same night -> ignored
+  cam.stats.arrests = 1;
+  const inv1 = C.investigationState(cam);
+  out.oneCase = cam.cases.length === 1 && inv1.caughtSomeone === true && inv1.priorArrests === 1
+    && inv1.lastCase && inv1.lastCase.name === 'A';
+  return out;
+});
+check('a story flag defaults false, sets, and reads back', invApi.flagDefault && invApi.flagSet);
+check('a fresh campaign has an empty case file and no arrests', invApi.freshCases && invApi.inv0);
+check('recording an arrest adds one row and de-duplicates by night', invApi.oneCase);
+
+/* ---------- malformed story/case data normalizes ---------- */
+const invSafe = await ev(() => {
+  const C = window.__campaign;
+  const base = C.freshCampaign(5);
+  base.currentNight = 8; base.stats.arrests = 1;
+  const bad = {
+    ...base, version: 3,
+    storyFlags: { firstArrestMade: true, junk: { a: 1 }, arr: [1] },
+    cases: [{ night: 4, name: 'ok', profile: { height: 'tall', junk: {} } }, 'not a row', 42, { night: 'x' }],
+  };
+  localStorage.setItem('finalrental.campaign', JSON.stringify(bad));
+  const loaded = C.loadCampaign();
+  return {
+    flagsClean: loaded.storyFlags.firstArrestMade === true && !('junk' in loaded.storyFlags) && !('arr' in loaded.storyFlags),
+    casesClean: Array.isArray(loaded.cases) && loaded.cases.length === 4
+      && loaded.cases[0].name === 'ok' && loaded.cases[0].night === 4
+      && loaded.cases[3].night === 0,   // {night:'x'} coerced
+    stillReads: C.storyFlag(loaded, 'firstArrestMade') === true,
+  };
+});
+check('a mangled story-flag bag loads clean (objects/arrays dropped)', invSafe.flagsClean, JSON.stringify(invSafe));
+check('a mangled case list normalizes row by row rather than crashing', invSafe.casesClean);
+check('and the surviving flag still reads', invSafe.stillReads);
+
+/* ---------- save v2 -> v3 loads forward ---------- */
+const v2compat = await ev(() => {
+  const C = window.__campaign;
+  const v2 = {
+    version: 2, mode: 'STORY', seed: 7, currentNight: 5, started: true, completed: false,
+    history: { grades: ['B'], scores: [1] }, cooldown: { calmUntil: 0, standDownNight: 0 },
+    stats: { arrests: 1, customersServed: 3, walkouts: 0, cashDiscrepancy: 0 },
+    storyFlags: {}, customerStates: {}, environmentFlags: {},   // no `cases` at all
+  };
+  localStorage.setItem('finalrental.campaign', JSON.stringify(v2));
+  const loaded = C.loadCampaign();
+  return {
+    loads: !!loaded && loaded.version === 3 && loaded.currentNight === 5,
+    cases: Array.isArray(loaded.cases) && loaded.cases.length === 0,
+    arrestsKept: loaded.stats.arrests === 1,
+  };
+});
+check('a Stage 4 (v2) save loads and upgrades to v3 with an empty case file',
+  v2compat.loads && v2compat.cases && v2compat.arrestsKept, JSON.stringify(v2compat));
+
+/* ---------- consequences: arrest -> flag + clipping; second case ---------- */
+const invCons = await ev(() => {
+  const C = window.__campaign;
+  const flags = (arrests, completed) => {
+    const cam = C.freshCampaign(1);
+    cam.stats.arrests = arrests;
+    C.applyStoryConsequences(cam, completed);
+    return { story: cam.storyFlags, env: cam.environmentFlags };
+  };
+  return { none: flags(0, 5), after: flags(1, 5), escalated: flags(1, 8) };
+});
+check('no arrest means no clipping and no investigation flags',
+  Object.keys(invCons.none.story).length === 0 && !invCons.none.env.arrestClippingPosted,
+  JSON.stringify(invCons.none));
+check('a banked arrest posts the clipping and marks the first arrest',
+  invCons.after.story.firstArrestMade === true && invCons.after.env.arrestClippingPosted === true);
+check('working the escalation night with an arrest opens the second case',
+  invCons.escalated.story.secondCaseOpened === true);
+
+/* ---------- the second-threat night: conditional, and a full plan --------- */
+const secondThreat = await ev(() => {
+  const C = window.__campaign, N = window.__night;
+  const buildN8 = (seed, arrests, calmBase) => {
+    const cam = C.freshCampaign(1); cam.stats.arrests = arrests;
+    const cfg = C.nightConfig(8), inv = C.investigationPolicy(cam, 8);
+    return N.makeNight(seed, 8, 'STORY', {
+      calm: inv.calmOverride != null ? inv.calmOverride : calmBase,
+      standDown: false,
+      killerPolicy: inv.killerPolicy || cfg.killerPolicy,
+      deputyPolicy: cfg.deputyPolicy, coachPolicy: cfg.coachPolicy,
+      requiredSpecials: cfg.requiredSpecials, specialCap: cfg.specialCap,
+    });
+  };
+  let withArrest = 0, without = 0, visitsT = 0, visitsF = 0, stub = 0, fullPlan = 0;
+  for (let i = 0; i < 300; i++) {
+    // cooldown WOULD keep tonight quiet -- the second-threat override breaks it.
+    const a = buildN8(1000 + i, 1, true);
+    if (a.plan.appears) withArrest++;
+    if (a.plan.appears) { if (a.plan.visits) visitsT++; else visitsF++; }
+    // a forced killer must be a real plan, never the {appears,at,asCustomer} stub
+    if (typeof a.plan.prowlFor === 'number' && typeof a.plan.visitAt === 'number') fullPlan++;
+    else stub++;
+    // no arrest, no cooldown -> an ordinary probability
+    const b = buildN8(2000 + i, 0, false);
+    if (b.plan.appears) without++;
+  }
+  return { withArrest, without, visitsT, visitsF, stub, fullPlan, seeds: 300 };
+});
+check('Night 8 forces the killer for every seed once an arrest is on record, overriding the quiet',
+  secondThreat.withArrest === 300, `${secondThreat.withArrest}/300`);
+check('and it is a full killer plan, never an appears-stub',
+  secondThreat.fullPlan === 300 && secondThreat.stub === 0, JSON.stringify({ full: secondThreat.fullPlan, stub: secondThreat.stub }));
+check('the forced killer\'s staging stays procedural (visits still varies)',
+  secondThreat.visitsT > 0 && secondThreat.visitsF > 0, `polite ${secondThreat.visitsT}, straight ${secondThreat.visitsF}`);
+check('with no arrest on record, Night 8 is an ordinary probability, not forced',
+  secondThreat.without > 0 && secondThreat.without < 300, `${secondThreat.without}/300`);
+
+/* ---------- the arrest is recorded through the real game, and rolls back --- */
+const arrestFlow = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory(); g.nightNo = 4; g.startNight(4);
+  // stand in for a caught killer: the ending's CAUGHT branch records the case.
+  g.rng = g.night.rng;
+  g.ending('CAUGHT', {});
+  const midCase = g.campaign.cases.length;
+  const midArrests = g.run.arrests;
+  const cool = { calm: g.run.calmUntil, stand: g.run.standDownNight };
+  // Bank the night: sync + save happen in advanceNight.
+  g.grade = { letter: 'A', score: 1 }; g.stats = { served: 1, stormedOut: 0, cashLoose: 0 };
+  g.advanceNight();
+  const onDisk = JSON.parse(localStorage.getItem('finalrental.campaign'));
+  return {
+    midCase, midArrests,
+    cooldownSet: cool.calm > 4 && cool.stand === 5,
+    diskCases: onDisk.cases.length, diskArrests: onDisk.stats.arrests,
+    clip: onDisk.environmentFlags.arrestClippingPosted === true,
+    tape: onDisk.cases[0] && onDisk.cases[0].signatureTape,
+  };
+});
+check('a Story arrest records a case and bumps the arrest count in memory',
+  arrestFlow.midCase === 1 && arrestFlow.midArrests === 1);
+check('and the existing arrest cooldown is untouched (quiet nights + stand-down)',
+  arrestFlow.cooldownSet, JSON.stringify(arrestFlow));
+check('finishing the night banks the case and posts the clipping to disk',
+  arrestFlow.diskCases === 1 && arrestFlow.diskArrests === 1 && arrestFlow.clip
+  && arrestFlow.tape === 'THE LAST CUSTOMER', JSON.stringify(arrestFlow));
+
+const arrestRollback = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory(); g.nightNo = 4; g.startNight(4);
+  C.saveCampaign(g.campaign);              // a clean Night 4 boundary, no arrest
+  g.rng = g.night.rng;
+  g.ending('CAUGHT', {});                   // arrest in memory only
+  const midCase = g.campaign.cases.length;
+  g.toTitle();                              // died/quit before banking
+  g.continueStory();
+  return { midCase, afterRetry: g.campaign.cases.length, arrests: g.campaign.stats.arrests };
+});
+check('an arrest not banked rolls back on Continue -- no case, no arrest',
+  arrestRollback.midCase === 1 && arrestRollback.afterRetry === 0 && arrestRollback.arrests === 0,
+  JSON.stringify(arrestRollback));
+
+/* ---------- the newspaper clipping ---------- */
+const clipping = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory(); g.startNight(1);
+  const before = g.env.arrestClipping;
+  // arrest on Night 4, banked.
+  g.nightNo = 4; g.startNight(4); g.rng = g.night.rng; g.ending('CAUGHT', {});
+  g.grade = { letter: 'A', score: 1 }; g.stats = { served: 1, stormedOut: 0, cashLoose: 0 };
+  g.advanceNight();                         // -> night 5, clipping posted
+  const n5 = g.env.arrestClipping;
+  const mesh = g.world.clippingMesh;
+  g.startNight(6); g.startNight(6);         // later + a retry: no duplication
+  const n6 = g.env.arrestClipping;
+  return { before, n5, n6, sameMesh: g.world.clippingMesh === mesh, hasMesh: !!mesh };
+});
+check('the clipping is absent before any arrest', clipping.before === false);
+check('it appears the night after the arrest is banked, and persists',
+  clipping.n5 === true && clipping.n6 === true, JSON.stringify(clipping));
+check('and it is a single prebuilt mesh, never duplicated', clipping.sameMesh && clipping.hasMesh);
+
+/* ---------- the deputy's briefing evolves with the investigation ---------- */
+const deputyDlg = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  // Collect the reachable briefing text, following every reply a few levels
+  // deep. fn()s mutate harmless closure/ctx state; errors are ignored.
+  const allText = (root) => {
+    const out = [];
+    const walk = (node, depth) => {
+      if (!node || depth > 10 || out.length > 80) return;
+      if (node.text) out.push(node.text);
+      for (const c of (node.choices || [])) {
+        let next = null; try { next = c.fn ? c.fn() : null; } catch (e) { /* ignore */ }
+        walk(next, depth + 1);
+      }
+    };
+    walk(root, 0);
+    return out.join('\n');
+  };
+  const brief = () => allText(D.buildOfficerIntro({ name: 'Deputy' }, g.night.bulletin, g.night.caseFile, g.ctx));
+
+  // No arrest yet: a Story Night 8 must not reference an arrest at all.
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 8; g.startNight(8);
+  const noArrest = brief();
+
+  // With an arrest on record: Night 8 is the second-threat briefing.
+  g.campaign.stats.arrests = 1;
+  C.recordCase(g.campaign, { night: 4, result: 'arrested', name: 'Earl', profile: { height: 'tall' }, signatureTape: C.INVESTIGATION_TAPE });
+  g.startNight(8);
+  const secondCase = brief();
+  return {
+    noArrestClean: !/copycat|we took a man|caught a man|Elkhart/i.test(noArrest),
+    secondMentionsArrest: /Elkhart|we took a man|caught A man/i.test(secondCase),
+    secondCopycat: /copycat/i.test(secondCase),
+    secondTape: secondCase.includes('THE LAST CUSTOMER'),
+    secondContradiction: /never in the paper|never gave it out|didn't read it/i.test(secondCase),
+  };
+});
+check('with no arrest on record the deputy never references one', deputyDlg.noArrestClean);
+check('after an arrest, the second-threat briefing acknowledges it', deputyDlg.secondMentionsArrest);
+check('it offers the copycat theory as the first comfortable answer', deputyDlg.secondCopycat);
+check('it surfaces the repeated tape and the "not in the paper" contradiction',
+  deputyDlg.secondTape && deputyDlg.secondContradiction, JSON.stringify(deputyDlg));
+
+/* ---------- the repeated clue is a STORY clue, not a gameplay one ---------- */
+const clueSeparation = await ev(() => {
+  const C = window.__campaign, N = window.__night;
+  // Across many Night 8 shifts, the signature tape must never appear on the
+  // gameplay bulletin (the description the player matches customers against).
+  let inBulletin = 0;
+  for (let i = 0; i < 200; i++) {
+    const nt = N.makeNight(3000 + i, 8, 'STORY', { killerPolicy: 'forced', calm: false });
+    if ((nt.bulletin.description || '').includes(C.INVESTIGATION_TAPE)) inBulletin++;
+    if ((nt.caseFile.name || '').includes(C.INVESTIGATION_TAPE)) inBulletin++;
+  }
+  return { inBulletin, tape: C.INVESTIGATION_TAPE };
+});
+check('the repeated tape never leaks into the gameplay bulletin', clueSeparation.inBulletin === 0);
+
+/* ---------- determinism: the investigation moves nothing for a fixed state - */
+const invDet = await ev(() => {
+  const C = window.__campaign, N = window.__night;
+  const fp = () => {
+    const cam = C.freshCampaign(9); cam.stats.arrests = 1;
+    const inv = C.investigationPolicy(cam, 8), cfg = C.nightConfig(8);
+    const nt = N.makeNight(42, 8, 'STORY', {
+      calm: inv.calmOverride != null ? inv.calmOverride : false, standDown: false,
+      killerPolicy: inv.killerPolicy || cfg.killerPolicy,
+      requiredSpecials: cfg.requiredSpecials, specialCap: cfg.specialCap,
+    });
+    return JSON.stringify({
+      suspect: nt.caseFile.name, appears: nt.plan.appears, visitAt: nt.plan.visitAt,
+      schedule: nt.schedule.map((e) => [e.t, e.decoy, e.special || null]),
+    });
+  };
+  return { same: fp() === fp() };
+});
+check('the same seed + same investigation state rebuilds Night 8 identically', invDet.same);
+
+/* ---------- mode isolation ---------- */
+const invIso = await ev(() => {
+  const g = window.__game, C = window.__campaign, N = window.__night;
+  C.deleteCampaignSave();
+  // Graveyard: no investigation object, and the deputy keeps night-based logic.
+  g.beginRun(N.MODE.HORROR); g.startNight(8);
+  const gvInv = g.investigation;                       // should be null
+  const gvCtx = g.ctx.investigation();                 // should be null
+  // A CAUGHT arrest in Graveyard writes no campaign case (there is no campaign).
+  g.rng = g.night.rng; g.ending('CAUGHT', {});
+  const gvNoCampaign = g.campaign === null;
+  // Casual: safe, no investigation.
+  g.beginRun(N.MODE.CASUAL); g.startNight(3);
+  const casInv = g.investigation;
+  return { gvInvNull: gvInv === null, gvCtxNull: gvCtx === null, gvNoCampaign, casInvNull: casInv === null };
+});
+check('Graveyard runs with no investigation state and keeps its night-based deputy',
+  invIso.gvInvNull && invIso.gvCtxNull, JSON.stringify(invIso));
+check('a Graveyard arrest writes no Story case (there is no campaign)', invIso.gvNoCampaign);
+check('Casual carries no investigation state', invIso.casInvNull);
 
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {

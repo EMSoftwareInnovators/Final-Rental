@@ -77,6 +77,13 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
   const extras = bulletin.extra.slice();
   const C = caseFile || {};
   const A = C.angle || {};
+  /* Story's investigation picture, or null in the endless modes -- where the
+     deputy keeps his original, night-driven behavior untouched. In Story,
+     whether he references a prior arrest is decided by whether one is actually
+     on record (state), never by the night number, so he can never bring up an
+     arrest that did not happen. */
+  const inv = ctx.investigation ? ctx.investigation() : null;
+  const caughtBefore = inv ? inv.caughtSomeone : C.caughtLast;
 
   /* ---- the night he comes to say it is finished ---- */
   if (C.standDown) {
@@ -198,13 +205,55 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
     ]);
   };
 
+  /* ---- the second threat ----
+     The authored escalation: a fresh, real killer AFTER the player already
+     caught someone and the town relaxed. The deputy is not panicking -- he is
+     a careful man with a contradiction he cannot put down. He offers the
+     comfortable theory (a copycat; it was in the papers) and then, himself,
+     names the one detail that makes it uncomfortable: the tape that keeps
+     coming up was never something the press had. He does not solve it. Nobody
+     does, tonight. */
+  const tape = (inv && inv.signatureTape) || 'a particular tape';
+  const contradiction = () => say(officer,
+    `Here's the part I keep turning over.\n\nThe one we took — he'd been in your store, before any of it. Asked the counter after a tape. ${tape}. Odd thing to want; I only know because it got written on the back of a rental slip and kept.\n\nThis new one's been asking after the same tape. A business down the road, two nights ago. By name.\n\nAnd clerk — that was never in the paper. We never gave it out. So whoever is out there tonight didn't read it anywhere.`, [
+    reply(`Then how does he know it?`, () => say(officer,
+      `I don't know. That's the honest answer, and I'd sooner hand you that than a tidy one.\n\nMaybe it's nothing. Maybe two bad men like the same rotten movie. But I wanted you hearing it from me, so you are not the only soul in this county who noticed.`,
+      [reply(`...Understood.`, () => outro())])),
+    reply(`It's a coincidence.`, () => say(officer,
+      `Could be. I have built a whole career on things being a coincidence, right up until the morning they were not.\n\nWatch your door tonight. Same as ever — but watch it.`,
+      [reply(`I will.`, () => outro())])),
+  ]);
+  const copycat = () => say(officer,
+    `That's the easy answer, and it might be the right one. It was all over the county paper. Somebody reads a thing like that, somebody already turned wrong, and decides he'd like a go himself. It happens. We look for a copycat first, because most nights that is exactly what it is.`, [
+    reply(`But you don't sound sure.`, () => contradiction()),
+    reply(`Alright — what am I looking for?`, () => contradiction()),
+  ]);
+  const secondThreat = () => say(officer,
+    `We took a man. He confessed, he's held over in Elkhart, and for about a week I let myself believe that was the end of it. You'll have seen the paper.\n\nAnd now I am stood at your counter with a fresh description. Same hour, same kind of store. Somebody who is very much not in a cell in Elkhart.`, [
+    reply(`Wait. Didn't we catch him?`, () => say(officer,
+      `We caught A man. Not this one — different height, different build, different everything, and he is not going anywhere. This is someone else. I need you sharp about it, not comfortable.`, [
+      reply(`So who is it, then?`, () => copycat()),
+      reply(`Give me the description.`, () => detail()),
+    ])),
+    reply(`A copycat?`, () => copycat()),
+    reply(`Just give me tonight's description.`, () => detail()),
+  ]);
+
+  if (inv && inv.secondThreat) {
+    return say(officer,
+      `${C.greeting}\n\nI wish I was here to tell you what I told you last week.`, [
+      reply(`Which was?`, () => secondThreat()),
+      reply(`You're not, though. Are you.`, () => secondThreat()),
+    ]);
+  }
+
   const alias = C.alias ? ` The papers are calling it ${C.alias}.` : '';
-  const opener = C.caughtLast
-    ? `${C.greeting}\n\nWe've got a new description out on somebody working this side of the river. New one. Not the one from last night — and there's more of it than there was.`
+  const opener = caughtBefore
+    ? `${C.greeting}\n\nWe've got a new description out on somebody working this side of the river. New one. Not the one from before — and there's more of it than there was.`
     : `${C.greeting}\n\nWe've got a description out on somebody working this side of the river. I'm hitting every business still lit up.${alias}`;
 
   return say(officer, opener, [
-    ...(C.caughtLast ? [reply(`Hold on. You caught somebody last night.`, () => theOtherOne())] : []),
+    ...(caughtBefore ? [reply(`Hold on. You caught somebody already.`, () => theOtherOne())] : []),
     ...(C.grew ? [reply(`More of it how?`, () => whyMore())] : []),
     reply(`Go ahead.`, () => detail()),
     reply(`Is this about the ones on the news?`, () => say(officer,
@@ -2539,6 +2588,14 @@ function managerRoot(c, ctx) {
         back = lit
           ? `I've been in before. You may remember; I certainly do.\n\nSomebody's put a light in the lot at last. About time. I'd like to think being a nuisance about it helped.`
           : `I've been in before. You may remember; I certainly do.\n\nThe light on the back of this building is still out. Weeks now. I did wonder if anything would come of it.`;
+      }
+      /* One mundane brush with the investigation, and only if there has
+         actually been an arrest. She knows what any local would: that they
+         caught someone. She is a woman who worries about a dark parking lot,
+         so she is not comforted -- ordinary skepticism, not a premonition. */
+      const inv = ctx.investigation && ctx.investigation();
+      if (inv && inv.caughtSomeone) {
+        back += `\n\nAnd yes, I heard they caught the man. Everyone heard. I'll believe it's over when it's stayed over a while.`;
       }
       return say(c, back, [
         reply(h.lastOutcome === 'dismissed' ? `Let's not do this again.` : `Let's see if we can sort it this time.`,
