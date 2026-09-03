@@ -1474,6 +1474,238 @@ check('Graveyard Night 7 keeps the coach a probability, not the Story-forced eve
 check('Casual Night 7 keeps its ordinary coach probability too (not Story-forced)',
   coachIso.cas > 0 && coachIso.cas < 300, `${coachIso.cas}/300`);
 
+/* ================================================================
+   STAGE 7 -- Act III begins (Nights 9-10).
+
+   The coincidence stops being believable, without anyone being told who did
+   it or how. Two authored nights: the comparison (no killer, the deputy lays
+   the files side by side) and the schedule night (a real threat, plus the new
+   note that someone is phoning to find out who closes). Verified at three
+   levels: the config shape, the pure compareCases helper, and the real game
+   driven through all three arrest histories so no briefing invents an arrest
+   that did not happen.
+   ================================================================ */
+
+/* ---------- Night 9/10 config shape across many seeds ---------- */
+const sched3 = await ev(() => {
+  const S = window.__story, C = window.__campaign;
+  const scan = (n) => {
+    const cfg = C.nightConfig(n);
+    const req = cfg.requiredSpecials.slice().sort();
+    let hasReq = 0, overCap = 0, maxSp = 0, deputies = 0, killers = 0, coaches = 0, auditor = 0;
+    const regCount = { POPCORN: 0, COUPON: 0, MANAGER: 0 };
+    const SEEDS = 200;
+    for (let i = 0; i < SEEDS; i++) {
+      const nt = S.night(30000 + i, n);
+      const sp = S.specials(nt);
+      maxSp = Math.max(maxSp, sp.length);
+      if (cfg.specialCap != null && sp.length > cfg.specialCap) overCap++;
+      if (req.length && req.every((id) => sp.includes(id))) hasReq++;
+      if (sp.includes('AUDITOR')) auditor++;
+      for (const k of Object.keys(regCount)) if (sp.includes(k)) regCount[k]++;
+      if (nt.deputy) deputies++;
+      if (nt.plan.appears) killers++;
+      if (nt.busAt !== Infinity) coaches++;
+    }
+    return { req, cap: cfg.specialCap, hasReq, overCap, maxSp, deputies, killers, coaches, auditor, regCount, seeds: SEEDS };
+  };
+  return { n9: scan(9), n10: scan(10) };
+});
+check('Night 9 -- the comparison: Verna guaranteed, cap 2, NO killer, deputy forced, NO coach',
+  sched3.n9.auditor === 200 && sched3.n9.req.join() === 'AUDITOR' && sched3.n9.cap === 2
+  && sched3.n9.overCap === 0 && sched3.n9.killers === 0 && sched3.n9.deputies === 200
+  && sched3.n9.coaches === 0, JSON.stringify(sched3.n9));
+check('Night 10 -- someone knows: killer + deputy forced, NO coach, cap 2, no guaranteed regular',
+  sched3.n10.req.length === 0 && sched3.n10.cap === 2 && sched3.n10.overCap === 0
+  && sched3.n10.killers === 200 && sched3.n10.deputies === 200 && sched3.n10.coaches === 0
+  && sched3.n10.regCount.POPCORN < 200 && sched3.n10.regCount.COUPON < 200
+  && sched3.n10.regCount.MANAGER < 200, JSON.stringify(sched3.n10));
+
+/* ---------- determinism: Nights 9-10 rebuild identically ---------- */
+const det3 = await ev(() => {
+  const S = window.__story;
+  const fp = (nt) => JSON.stringify(nt.schedule.map((e) => [e.t, e.decoy, e.special || null]));
+  const out = {};
+  for (const n of [9, 10]) out[n] = fp(S.night(88, n)) === fp(S.night(88, n));
+  return out;
+});
+check('the same seed rebuilds each Night 9-10 schedule identically',
+  det3[9] && det3[10], JSON.stringify(det3));
+
+/* ---------- compareCases: pure, deterministic, safe on thin records ---------- */
+const cmp = await ev(() => {
+  const C = window.__campaign;
+  const a = { profile: { gender: 'a man', height: 'tall', build: 'heavy', hair: 'dark', jacket: 'a green coat' } };
+  const b = { profile: { gender: 'a man', height: 'short', build: 'heavy', hair: 'fair', jacket: 'a denim jacket' } };
+  const r1 = C.compareCases(a, b);
+  const det = JSON.stringify(r1) === JSON.stringify(C.compareCases(a, b));
+  const missing = C.compareCases({ profile: { height: 'tall' } }, { profile: { build: 'heavy' } });
+  const empty = C.compareCases({}, null);
+  const blankTrait = C.compareCases({ profile: { height: '' } }, { profile: { height: 'tall' } });
+  // case/space-insensitive: 'Heavy ' and 'heavy' are the same trait
+  const loose = C.compareCases({ profile: { build: 'Heavy ' } }, { profile: { build: 'heavy' } });
+  let threw = false;
+  try { const f = Object.freeze({ profile: Object.freeze({ height: 'tall' }) }); C.compareCases(f, f); } catch (e) { threw = true; }
+  return { r1, det, missing, empty, blankTrait, loose, threw };
+});
+check('compareCases: names real differences, dismisses shared traits, deterministic',
+  cmp.det && cmp.r1.different.slice().sort().join() === 'hair,height,jacket'
+  && cmp.r1.same.slice().sort().join() === 'build,gender', JSON.stringify(cmp.r1));
+check('compareCases: a trait missing or blank on either side is never a difference',
+  cmp.missing.same.length === 0 && cmp.missing.different.length === 0
+  && cmp.empty.same.length === 0 && cmp.empty.different.length === 0
+  && cmp.blankTrait.same.length === 0 && cmp.blankTrait.different.length === 0, JSON.stringify(cmp));
+check('compareCases: comparison is case/whitespace-insensitive', cmp.loose.same.join() === 'build');
+check('compareCases: pure -- no mutation, no throw on frozen input', cmp.threw === false);
+
+/* ---------- the schedule clue: flag + memo lifecycle ---------- */
+const schedClue = await ev(() => {
+  const g = window.__game, C = window.__campaign, N = window.__night;
+  const fresh = C.freshCampaign(5);
+  const startFalse = C.storyFlag(fresh, 'scheduleInquiryRaised') === false
+    && C.environmentFlag(fresh, 'schedulePrivacyNoticePosted') === false;
+  // Not raised just by finishing Night 8 (Act II's end); it needs an Act III night.
+  const c8 = C.freshCampaign(5); C.applyStoryConsequences(c8, 8);
+  const notAt8 = C.storyFlag(c8, 'scheduleInquiryRaised') === false
+    && C.environmentFlag(c8, 'schedulePrivacyNoticePosted') === false;
+  // Raised once Act II is behind and Night 9 is worked -- both flag and memo.
+  const c9 = C.freshCampaign(5); C.applyStoryConsequences(c9, 8); C.applyStoryConsequences(c9, 9);
+  const setAt9 = C.storyFlag(c9, 'scheduleInquiryRaised') === true
+    && C.environmentFlag(c9, 'schedulePrivacyNoticePosted') === true;
+  C.applyStoryConsequences(c9, 9);            // idempotent
+  const idem = C.storyFlag(c9, 'scheduleInquiryRaised') === true;
+  // The no-arrest path reaches it too (keyed off actTwoComplete, not arrests).
+  const cNo = C.freshCampaign(6); C.applyStoryConsequences(cNo, 8); C.applyStoryConsequences(cNo, 9);
+  const bothPaths = C.storyFlag(cNo, 'scheduleInquiryRaised') === true;
+  // The memo is not in the scene during Night 9; it goes up for Night 10.
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 9; g.startNight(9);
+  const memoAbsentN9 = g.env.scheduleMemo === false;
+  C.setEnvironmentFlag(g.campaign, 'schedulePrivacyNoticePosted', true);
+  g.nightNo = 10; g.startNight(10);
+  const memoPresentN10 = g.env.scheduleMemo === true && !!g.world.memoMesh;
+  // Isolation: the endless modes never show it.
+  g.beginRun(N.MODE.HORROR); g.startNight(10); const gvMemo = g.env.scheduleMemo;
+  g.beginRun(N.MODE.CASUAL); g.startNight(10); const casMemo = g.env.scheduleMemo;
+  // Rollback: dying on Night 9 never banks the flag.
+  C.deleteCampaignSave(); g.newStory();
+  g.campaign.currentNight = 9; g.nightNo = 9; C.setStoryFlag(g.campaign, 'actTwoComplete', true);
+  C.saveCampaign(g.campaign); g.startNight(9); g.toTitle(); g.continueStory();
+  const afterFail = C.storyFlag(g.campaign, 'scheduleInquiryRaised');
+  return { startFalse, notAt8, setAt9, idem, bothPaths, memoAbsentN9, memoPresentN10, gvMemo, casMemo, afterFail };
+});
+check('schedule inquiry: starts false, and finishing Night 8 alone does not raise it',
+  schedClue.startFalse && schedClue.notAt8, JSON.stringify(schedClue));
+check('schedule inquiry: raised once an Act III night is worked, on either path, idempotently',
+  schedClue.setAt9 && schedClue.idem && schedClue.bothPaths);
+check('schedule memo: absent during Night 9, in the scene from Night 10 once posted',
+  schedClue.memoAbsentN9 && schedClue.memoPresentN10);
+check('schedule memo: never appears in Graveyard or Casual',
+  schedClue.gvMemo === false && schedClue.casMemo === false);
+check('schedule inquiry: a failed Night 9 does not bank the flag (rolls back)',
+  schedClue.afterFail === false, `afterFail ${schedClue.afterFail}`);
+
+/* ---------- Night 9 briefing: the comparison, path-aware ---------- */
+const act3 = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  const allText = (root) => {
+    const out = [];
+    const walk = (node, depth) => {
+      if (!node || depth > 10 || out.length > 90) return;
+      if (node.text) out.push(node.text);
+      for (const c of (node.choices || [])) { let n = null; try { n = c.fn ? c.fn() : null; } catch (e) { /**/ } walk(n, depth + 1); }
+    };
+    walk(root, 0); return out.join('\n');
+  };
+  const brief = () => allText(D.buildOfficerIntro({ name: 'Deputy' }, g.night.bulletin, g.night.caseFile, g.ctx));
+  const setup = (arrests, rows) => {
+    C.deleteCampaignSave(); g.newStory();
+    g.campaign.stats.arrests = arrests; g.run.arrests = arrests;
+    g.campaign.cases = rows.slice();
+    g.nightNo = 9; g.startNight(9);
+    return { brief: brief(), killer: g.night.plan.appears, deputy: g.night.deputy, comparison: g.investigation.caseComparison };
+  };
+  const rows = [
+    { night: 4, result: 'arrested', name: 'Earl', alias: 'the Late Show', signatureTape: C.INVESTIGATION_TAPE, profile: { gender: 'a man', height: 'over six feet', build: 'heavy-set', hair: 'dark', jacket: 'a green army coat' } },
+    { night: 8, result: 'arrested', name: 'Roy', alias: 'the Late Show', signatureTape: C.INVESTIGATION_TAPE, profile: { gender: 'a man', height: 'short', build: 'heavy-set', hair: 'fair', jacket: 'a denim jacket' } },
+  ];
+  const A = setup(2, rows);
+  const B = setup(1, [rows[0]]);
+  const Z = setup(0, []);
+  // Night 10 schedule beat, real game (killer forced).
+  C.deleteCampaignSave(); g.newStory(); g.campaign.stats.arrests = 1; g.run.arrests = 1;
+  C.setStoryFlag(g.campaign, 'scheduleInquiryRaised', true);
+  g.nightNo = 10; g.startNight(10);
+  const N10 = {
+    brief: brief(), desc: g.night.bulletin.description,
+    killer: g.night.plan.appears, fullPlan: typeof g.night.plan.prowlFor === 'number',
+    deputy: g.night.deputy, coach: g.night.busAt !== Infinity, schedule: g.investigation.scheduleInquiry,
+  };
+  return { A, B, Z, N10 };
+});
+check('Night 9: no killer, deputy present, the comparison beat is live (all paths)',
+  !act3.A.killer && !act3.B.killer && !act3.Z.killer
+  && act3.A.deputy && act3.B.deputy && act3.Z.deputy
+  && act3.A.comparison && act3.B.comparison && act3.Z.comparison);
+check('Night 9 (2 arrests): two real files compared, and THE LAST CUSTOMER deepened',
+  /two different men/i.test(act3.A.brief) && /Different /.test(act3.A.brief)
+  && act3.A.brief.includes('THE LAST CUSTOMER') && /still don't know how both/i.test(act3.A.brief)
+  && /copycat/i.test(act3.A.brief), act3.A.brief.slice(0, 60));
+check('Night 9 (1 arrest): the one caught held against tonight, no second detainee invented',
+  /one man in a cell|one you helped us take/i.test(act3.B.brief)
+  && act3.B.brief.includes('THE LAST CUSTOMER') && /copycat/i.test(act3.B.brief)
+  && !/two different men/i.test(act3.B.brief), act3.B.brief.slice(0, 60));
+check('Night 9 (0 arrests): invents NO detainee of the player\'s, copycat stays alive',
+  !/you helped|put my hands on both|one you helped us take/i.test(act3.Z.brief)
+  && /copycat/i.test(act3.Z.brief) && /up the county|other towns/i.test(act3.Z.brief)
+  && act3.Z.brief.includes('THE LAST CUSTOMER'), act3.Z.brief.slice(0, 60));
+check('Night 10: forced full-plan killer + deputy, no coach, schedule beat leads to a real bulletin',
+  act3.N10.killer && act3.N10.fullPlan && act3.N10.deputy && !act3.N10.coach && act3.N10.schedule
+  && /closing|late shift|who works/i.test(act3.N10.brief)
+  && /calling the stores|phone/i.test(act3.N10.brief)
+  && /don't like it|don't care for it|don't like the shape/i.test(act3.N10.brief)
+  && act3.N10.brief.includes(act3.N10.desc), JSON.stringify({ k: act3.N10.killer, s: act3.N10.schedule }));
+
+/* ---------- Verna's Night 9 aside: local, nosy, and knowing nothing ---------- */
+const vernaN9 = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 9; g.startNight(9);
+  const c = { special: 'AUDITOR', name: 'Verna', mood: 100, hasMoney: true };
+  const node = D.specialRoot(c, g.ctx);
+  const text = (node && node.text) || '';
+  let all = text;
+  for (const ch of (node && node.choices || [])) { try { const n = ch.fn && ch.fn(); if (n && n.text) all += '\n' + n.text; } catch (e) { /**/ } }
+  return { text, all };
+});
+check('Night 9: Verna leads with town talk -- the paper, the checkout line, her own nerves',
+  /paper|checkout|church|lock my car|talk/i.test(vernaN9.text), vernaN9.text.slice(0, 60));
+check('Night 9: Verna knows nothing the police know (no tape, schedule, case traits, or suspicions)',
+  !/THE LAST CUSTOMER|schedule|closing shift|copycat|Elkhart/i.test(vernaN9.all), vernaN9.all.slice(0, 80));
+
+/* ---------- "last night" is not said about a man taken nights ago ---------- */
+const timing = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  const allText = (root) => {
+    const out = [];
+    const walk = (node, depth) => {
+      if (!node || depth > 10 || out.length > 90) return;
+      if (node.text) out.push(node.text);
+      for (const c of (node.choices || [])) { let n = null; try { n = c.fn ? c.fn() : null; } catch (e) { /**/ } walk(n, depth + 1); }
+    };
+    walk(root, 0); return out.join('\n');
+  };
+  // Night 6 reaches the generic opener; an arrest two nights back (Night 4).
+  C.deleteCampaignSave(); g.newStory();
+  g.campaign.stats.arrests = 1; g.run.arrests = 1;
+  g.campaign.cooldown.calmUntil = 0; g.run.calmUntil = 0;
+  C.recordCase(g.campaign, { night: 4, result: 'arrested', name: 'Earl', signatureTape: C.INVESTIGATION_TAPE, profile: { height: 'tall' } });
+  g.nightNo = 6; g.startNight(6);
+  const brief6 = allText(D.buildOfficerIntro({ name: 'Deputy' }, g.night.bulletin, g.night.caseFile, g.ctx));
+  return { brief6 };
+});
+check('Story: a prior arrest a couple of nights back reads "the other night", not "last night"',
+  /the other night/i.test(timing.brief6) && !/took a man last night/i.test(timing.brief6),
+  timing.brief6.match(/We took a man[^.]*\./i) ? timing.brief6.match(/We took a man[^.]*\./i)[0] : '(no priorArrest line)');
+
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
   window.__campaign.deleteCampaignSave();

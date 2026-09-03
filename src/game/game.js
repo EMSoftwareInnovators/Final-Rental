@@ -202,7 +202,7 @@ export class Game {
     /* Which persistent environmental pieces this shift shows. All off until a
        Story night applies its campaign's facts; the endless modes never turn
        any of it on. */
-    this.env = { rearFloodlight: false, popcornNotice: false, popcornStain: false, arrestClipping: false };
+    this.env = { rearFloodlight: false, popcornNotice: false, popcornStain: false, arrestClipping: false, scheduleMemo: false };
     /* The investigation picture this shift runs under: prior arrests, the case
        file, whether tonight is the authored second threat. Null outside Story;
        the deputy dialogue reads it through ctx.investigation(). */
@@ -310,7 +310,12 @@ export class Game {
        on record (state), plus whether the resolver made tonight the second
        threat. Story only. */
     this.investigation = (this.mode === MODE.STORY && this.campaign)
-      ? Object.assign(investigationState(this.campaign), { secondThreat: !!inv.secondThreat })
+      ? Object.assign(investigationState(this.campaign), {
+        night: n,
+        secondThreat: !!inv.secondThreat,
+        caseComparison: !!inv.caseComparison,   // Night 9: the deputy's side-by-side
+        scheduleInquiry: !!inv.scheduleInquiry, // Night 10: someone's asking who closes
+      })
       : null;
     /* What the store itself remembers. Read the campaign's environmental facts
        and decide which persistent pieces this shift shows. Story only; every
@@ -684,6 +689,7 @@ export class Game {
       popcornNotice: environmentFlag(c, 'popcornNoticePosted'),
       popcornStain: environmentFlag(c, 'popcornStainLeft'),
       arrestClipping: environmentFlag(c, 'arrestClippingPosted'),
+      scheduleMemo: environmentFlag(c, 'schedulePrivacyNoticePosted'),
     };
   }
 
@@ -2986,7 +2992,12 @@ export class Game {
           alias: cf.alias || '',
           signatureTape: INVESTIGATION_TAPE,
           profile: {
-            gender: su.gender || '',
+            /* Every trait stored the same way -- through ts() -- so a later
+               comparison reads one string form on both sides. gender is an
+               appearance object like the rest, not a bare string, so it goes
+               through ts() too (it used to be stored raw and normalized away to
+               empty, which quietly dropped it from every comparison). */
+            gender: ts(su.gender),
             height: ts(su.height), build: ts(su.build),
             hair: ts(su.hair), jacket: ts(su.jacket),
           },
@@ -3158,6 +3169,10 @@ export class Game {
     if (this.env.arrestClipping) {
       setTranslate(M.m, 0, 0, 0);
       rz.drawMesh(this.world.clippingMesh, M.m, { shade: L });
+    }
+    if (this.env.scheduleMemo) {
+      setTranslate(M.m, 0, 0, 0);
+      rz.drawMesh(this.world.memoMesh, M.m, { shade: L });
     }
     this._floodShade = floodShade;
 

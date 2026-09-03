@@ -433,6 +433,7 @@ export function buildWorld(T) {
     noticeMesh: buildNotice(T),
     stainMesh: buildStain(T),
     clippingMesh: buildClipping(T),
+    memoMesh: buildScheduleMemo(T),
     T,
   };
 }
@@ -963,6 +964,17 @@ function buildClipping(T) {
   const b = new MeshBuilder();
   b.light = lightAt;
   b.plate(9.85, 0.50, COUNTER.z1 + 0.013, 0.44, 0.46, 0, T.arrestClipping, [0, 0, 64, 64], 0);
+  return b.build();
+}
+
+/* The schedule-privacy memo (Stage 7). Taped to the clerk's side of the
+   counter in the gap between the arrest clipping and the popcorn notice -- so
+   it joins the little wall of things that have gone up over the campaign, in
+   the player's eyeline at the register and by the phone they answer. */
+function buildScheduleMemo(T) {
+  const b = new MeshBuilder();
+  b.light = lightAt;
+  b.plate(10.43, 0.51, COUNTER.z1 + 0.013, 0.40, 0.44, 0, T.scheduleMemo, [0, 0, 64, 64], 0);
   return b.build();
 }
 

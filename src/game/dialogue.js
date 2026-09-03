@@ -11,6 +11,7 @@ import { line } from './personality.js';
 import { traitBulletin } from './appearance.js';
 import { TAPE_TALK, SEEN_IT } from './chatter.js';
 import { GENRE_LABEL, GENRES, tapeLabel, lateFee, mediaWord } from './tapes.js';
+import { compareCases } from './campaign.js';
 
 const money = (v) => `$${v.toFixed(2)}`;
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -85,6 +86,47 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
   const inv = ctx.investigation ? ctx.investigation() : null;
   const caughtBefore = inv ? inv.caughtSomeone : C.caughtLast;
 
+  /* Story only: how long ago the arrest the deputy keeps referencing actually
+     was, so on a night several shifts later he does not say "last night" about
+     a man taken a week ago. Graveyard/Casual (inv null) fall straight back to
+     the original night-driven wording, so their behavior is byte-for-byte
+     unchanged. */
+  const agoPhrase = (() => {
+    if (!inv || !inv.lastCase || !inv.night) return 'last night';
+    const d = inv.night - (inv.lastCase.night | 0);
+    if (d <= 1) return 'last night';
+    if (d === 2) return 'the other night';
+    if (d <= 4) return 'a few nights back';
+    return 'last week';
+  })();
+
+  /* Turn a case's stored trait strings, or tonight's suspect, into the same
+     shape compareCases reads -- both sides extracted identically so equal
+     traits compare equal. traitStr mirrors the ts() used when a case is
+     recorded (game.js). */
+  const traitStr = (t) => (t && (t.bulletin || t.label || t.name || t.id)) || '';
+  const suspectProfile = (app) => ({
+    gender: traitStr(app.gender), height: traitStr(app.height), build: traitStr(app.build),
+    hair: traitStr(app.hair), jacket: traitStr(app.jacket),
+  });
+  const TRAIT_WORD = { gender: 'sex', height: 'height', build: 'build', hair: 'hair', jacket: 'jacket' };
+  const listTraits = (keys) => {
+    const words = keys.map((k) => TRAIT_WORD[k] || k);
+    if (words.length <= 1) return words[0] || '';
+    if (words.length === 2) return `${words[0]} and ${words[1]}`;
+    return `${words.slice(0, -1).join(', ')}, and ${words[words.length - 1]}`;
+  };
+  /* Render a compareCases result as the deputy would say it. The "same" traits
+     are deliberately dismissed -- a shared jacket clears nobody -- so a match
+     never reads as a lead. */
+  const diffSentence = (cmp) => {
+    const parts = [];
+    if (cmp.different.length) parts.push(`Different ${listTraits(cmp.different)}.`);
+    if (cmp.same.length) parts.push(`Same ${listTraits(cmp.same)} — which is half the county, so it tells you nothing.`);
+    if (!parts.length) parts.push(`Not enough on either sheet to line them up trait for trait — and that's its own kind of answer.`);
+    return parts.join(' ');
+  };
+
   /* ---- the night he comes to say it is finished ---- */
   if (C.standDown) {
     return say(officer, `${C.greeting}\n\n${C.allClear}`, [
@@ -156,8 +198,14 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
      A player who is paying attention will notice that the person they put
      in a cruiser on Tuesday is not the person at the glass on Wednesday,
      and the deputy is the only one in the building who can account for it. */
+  /* In Story the arrest may be several shifts back, so "last night" would be a
+     lie: use agoPhrase and a timing-correct line in place of C.priorArrest.
+     Graveyard/Casual (inv null) keep C.priorArrest and its original wording. */
+  const priorArrestLine = (inv && inv.lastCase)
+    ? `We took a man ${agoPhrase}. He's held over, and he is not the one I'm describing tonight.`
+    : C.priorArrest;
   const theOtherOne = () => say(officer,
-    `${C.priorArrest}\n\n${C.differentMan}`, [
+    `${priorArrestLine}\n\n${C.differentMan}`, [
     reply(`So it isn't the same person.`, () => say(officer,
       `${A.why || `No. It is not.`}`, [
       reply(`How many of them are there?`, () => howMany()),
@@ -166,7 +214,7 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
         `The description is what we have got tonight, and there is more of it than there was last night. Tomorrow there will be more again.`,
         [reply(`Go on, then.`, () => detail())])),
     ])),
-    reply(`What did last night's one tell you?`, () => whyMore()),
+    reply(`What did the one from ${agoPhrase} tell you?`, () => whyMore()),
     reply(`Just give me tonight's.`, () => detail()),
   ]);
 
@@ -244,6 +292,125 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
       `${C.greeting}\n\nI wish I was here to tell you what I told you last week.`, [
       reply(`Which was?`, () => secondThreat()),
       reply(`You're not, though. Are you.`, () => secondThreat()),
+    ]);
+  }
+
+  /* ---- Act III, Night 9: the comparison ----
+     No killer on the floor tonight, so this ends in nobody at the glass. The
+     deputy came on purpose, to make the player see the thing he can't stop
+     seeing: the descriptions do not converge, and the tape that keeps turning
+     up has no line anyone can draw between the people it turns up with. It is
+     path-aware off REAL arrest history -- two files to lay side by side, one, or
+     none -- and it never invents a detainee the player did not help take. The
+     copycat theory stays on the table, shakily, exactly as the county holds it. */
+  if (inv && inv.caseComparison) {
+    const cases = (inv.cases || []).slice();
+    const tape = inv.signatureTape || 'that tape';
+    const twoFiles = cases.length >= 2;
+    const oneFile = cases.length === 1;
+
+    /* The description exists tonight the same as any night (the decoys need
+       it), even with no one coming to match it. Offered, never forced -- his
+       habit and the player's, side by side. */
+    const closeNine = () => say(officer,
+      `I'll leave you tonight's description all the same. Read it or don't — nobody's coming to hold it against. Habit. You keep yours, I keep mine.`, [
+      reply(`Read it out.`, () => detail()),
+      reply(`I've got enough to think about. Goodnight.`, () => outro()),
+    ]);
+
+    /* Deepen THE LAST CUSTOMER without multiplying it: Night 8 said the tape
+       was never in the paper; tonight the county has actually looked, and still
+       cannot explain how the people it connects all knew to ask for it. */
+    const tapeBeatA = () => say(officer,
+      `It's the one thing they had in common, and the one thing I can't put in a report without sounding like I've come loose.\n\nBoth of them asked after ${tape}. Before any of it. We checked — and we still don't know how both of them knew to. It was never in the paper. Two strangers, one tape, and not a line between them I can find.`, [
+      reply(`So it's a copycat with the same taste in movies.`, () => say(officer,
+        `That's the copycat version, and the one I can sign my name to. One read about the other, decided he'd have a go, and the tape sat on top of it as a coincidence.\n\nI can defend every word of that. I just can't make myself believe it.`,
+        [reply(`...Understood.`, () => closeNine())])),
+      reply(`You don't think it's a copycat.`, () => say(officer,
+        `I think I don't know, and I'd sooner hand you that than something tidy.\n\nNobody's coming tonight — the man on my sheet is one we haven't placed, not a threat at your glass. I wanted you seeing it the way I see it, so you're not the only soul in this county who's noticed.`,
+        [reply(`I've got it.`, () => closeNine())])),
+    ]);
+    const compareTwo = () => {
+      const a = cases[cases.length - 2], b = cases[cases.length - 1];
+      const cmp = compareCases(a, b);
+      return say(officer,
+        `Here's what I lay out on the desk at four in the morning.\n\n${diffSentence(cmp)}\n\nTwo different men. You helped me put my hands on both of them, and they are not the same person by any measure I can write down.`, [
+        reply(`Then it was two different men. People copy things.`, () => tapeBeatA()),
+        reply(`That's what's eating you.`, () => tapeBeatA()),
+      ]);
+    };
+
+    /* One arrest: hold that one real file against tonight's fresh description
+       (also real). No second detainee is invented; the comparison is between a
+       man in a cell and a man on a page. */
+    const tapeBeatB = () => say(officer,
+      `A copycat, most likely. Somebody reads a thing like that and decides he'd like a turn; it happens more than you'd want to know.\n\nThe piece I can't file is the tape. The man we took had asked after ${tape} before any of it — and it's turned up again, in a statement down the road, by name. Never in the paper, so nobody read it there. Probably nothing. I've built a career on things being nothing.`, [
+      reply(`Right up until they weren't.`, () => say(officer,
+        `Just so. Keep your door where you can see it.`, [reply(`I will.`, () => closeNine())])),
+      reply(`...Understood.`, () => closeNine()),
+    ]);
+    const compareOne = () => {
+      const a = cases[0];
+      const cmp = compareCases(a, { profile: suspectProfile(bulletin.app) });
+      return say(officer,
+        `One man in a cell out of all of this — the one you helped us take. I keep his sheet in the truck.\n\nAnd here's tonight's, fresh off a statement. ${diffSentence(cmp)}\n\nIt isn't him. He isn't going anywhere, so it was never going to be him. Which means it's someone else, and I can't tell you who.`, [
+        reply(`A copycat, then.`, () => tapeBeatB()),
+        reply(`One caught, and they keep coming.`, () => tapeBeatB()),
+      ]);
+    };
+
+    /* No arrests: the county's own cases, and nothing of the player's to point
+       at. He talks about descriptions that never line up -- and does NOT imply
+       the player has caught anyone, because they have not. */
+    const compareNone = () => say(officer,
+      `We've taken people over this. Not here — up the county, other towns. And every time I think I've got my man, the next description won't line up with the last. Different height, different build, a different coat. Like it's a different fella every time.\n\nWhich the sheriff will tell you is precisely what a copycat looks like. One in the paper, and the rest chasing the name.`, [
+      reply(`You don't sound like you buy it.`, () => say(officer,
+        `There's a detail I can't fit. A tape — ${tape} — keeps coming up. One asks the counter after it, then another two towns over, by name. It was never printed anywhere. I can't tell you how they all knew it.\n\nNobody's due at your door tonight. But I wanted you hearing it from me.`,
+        [reply(`...Understood.`, () => closeNine())])),
+      reply(`So what do I do with that?`, () => say(officer,
+        `Nothing tonight. Lock up at midnight because it's midnight. But keep your eyes open the rest of the week — I don't care for the shape of it.`,
+        [reply(`Alright.`, () => closeNine())])),
+    ]);
+
+    const enter = twoFiles ? compareTwo : (oneFile ? compareOne : compareNone);
+    return say(officer,
+      `${C.greeting}\n\nNo bulletin to run past you tonight, not really. I came to show you something instead. Have you got a minute?`, [
+      reply(`Go on.`, () => enter()),
+      reply(`Is it bad?`, () => say(officer,
+        `It isn't a body, if that's your worry. Might be worse than a body. Have a look.`,
+        [reply(`...Alright.`, () => enter())])),
+    ]);
+  }
+
+  /* ---- Act III, Night 10: someone knows when you're here ----
+     A real threat again, so this one ends in the ordinary bulletin. But the
+     deputy leads with the information, not the description: somebody has been
+     ringing the stores asking who works the closing shift. He does not know
+     it's connected and says so; he doesn't like it and says that too. Kept
+     path-agnostic on purpose -- the schedule question stands the same whoever
+     the player has or hasn't caught, and an arrest count claimed here would be
+     the one false note. */
+  if (inv && inv.scheduleInquiry) {
+    const advice = () => say(officer,
+      `You don't tell a soul your schedule. Not down that phone, not to a face that asks nice. You don't tell anyone you're on your own in here.\n\nAnd keep that door where you can see it — because tonight, unlike the last time I stood here, there IS a description, and I need you sharp about it.`, [
+      reply(`Then give me the description.`, () => detail()),
+      reply(`Anything else first?`, () => (extras.length ? askNode() : detail())),
+    ]);
+    const schedule = () => say(officer,
+      `Somebody's been calling the stores. Not to rent — to ask. Who works the late shift, which nights. Your manager took one and wouldn't give a name; the fella hung up.\n\nEvery one of these attacks went to whoever was closing. Alone. And now there's a voice on the phone finding out who that is, store by store.`, [
+      reply(`You think it's connected.`, () => say(officer,
+        `We don't know that it is. Could be a survey, could be a crank, could be nothing at all.\n\nBut I don't like it, and I'll say so plain, because you're the one behind this counter and I'm not.`,
+        [reply(`So what do I do?`, () => advice())])),
+      reply(`It could be anything.`, () => say(officer,
+        `It could. I've talked myself out of worse and been glad of it.\n\nI can't manage it tonight, though. Here's what I'd do if it were my counter.`,
+        [reply(`Go on.`, () => advice())])),
+    ]);
+    return say(officer,
+      `${C.greeting}\n\nTwo things tonight, and I want you hearing the first one properly before the second. It isn't about a face.`, [
+      reply(`What's it about, then?`, () => schedule()),
+      reply(`Just give me the bulletin.`, () => say(officer,
+        `You'll get it. Give me thirty seconds first — this matters more than the bulletin does, and I don't say that in a hurry.`,
+        [reply(`...Alright.`, () => schedule())])),
     ]);
   }
 
@@ -2024,6 +2191,28 @@ export function specialRoot(c, ctx) {
           ? `Oh, hello again, dear. Good. Somebody who listens, for once.\n\nNow. I've been through your shelves, as usual —`
           : `...You again. Well. Somebody has to mind the shelves, and it plainly isn't you.`,
           [reply(`Go on, then.`, () => complaint())]);
+      }
+
+      /* Act III: the town's unease has reached the checkout line, and Verna is
+         the checkout line. On a first turn up during Act III (Night 9) she
+         leads with gossip -- the paper, the women at church, her own new habit
+         of locking the car. All of it public knowledge and her own nerves: she
+         knows nothing the police know, names nobody, points nowhere, and never
+         touches the tape, the schedule calls, or any case detail. */
+      const invA = ctx.investigation ? ctx.investigation() : null;
+      if (invA && (invA.caseComparison || invA.scheduleInquiry) && !c._greeted) {
+        c._greeted = true;
+        return say(c, rng.pick([
+          `Before you say a word, dear — is it as bad as the paper makes out? The whole checkout line at the Kroger's talking about your end of the street, and I'll tell you, I never used to lock my car and now I lock my car.`,
+          `Your shelves can wait a minute. First — you're all right in here of a night, are you? Only there's such talk. The paper, the women at the church. I don't put stock in half of it. The other half keeps me up.`,
+        ]), [
+          reply(`It's just talk. We're fine.`, () => say(c,
+            `That's what I told Marjorie. "It's just talk." And then I locked my car.\n\nAnyhow. Your shelves, dear — a disgrace, and that at least I can do something about.`,
+            [reply(`Go on, then.`, () => complaint())])),
+          reply(`Best to be careful either way.`, () => say(c,
+            `A sensible answer, and you're a sensible sort — which is more than I can say for whoever put your horror in order.\n\nRight. Let's have a look.`,
+            [reply(`Please.`, () => complaint())])),
+        ]);
       }
       return complaint();
 

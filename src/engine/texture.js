@@ -772,6 +772,31 @@ export function buildTextures() {
     noise(g, w, h, 8);
   });
 
+  /* The schedule-privacy memo (Stage 7 / Act III). A photocopy the manager
+     taped by the phone after the calls started coming in -- somebody ringing
+     around asking who works the late shift. Same copier-paper look as the
+     popcorn notice, but the hand underneath is nervous, not exasperated: a
+     word underlined twice. It says only "don't give it out," never who asked or
+     why -- the point is a store reacting to a thing it doesn't understand. */
+  T.scheduleMemo = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#ece5d0', w, h);            // copier paper, a touch fresher than the popcorn one
+    g.fillStyle = 'rgba(206,196,166,0.55)';  // tape at the corners
+    g.fillRect(3, 0, 15, 7); g.fillRect(w - 18, 0, 15, 7);
+    g.fillStyle = '#1b1812'; g.textAlign = 'center';
+    g.font = 'bold 7px "Courier New",monospace';
+    g.fillText('DO NOT GIVE OUT', w / 2, 14);
+    g.fillText('STAFF SCHEDULES', w / 2, 24);
+    g.fillText('OVER THE PHONE', w / 2, 34);
+    g.strokeStyle = '#1b1812'; g.strokeRect(3.5, 5.5, w - 7, h - 10);
+    g.fillStyle = '#1c1a70';             // ballpoint blue, hand-underlined twice
+    g.font = 'italic 8px "Comic Sans MS","Segoe Script",cursive';
+    g.fillText('no names.', w / 2, 48);
+    g.strokeStyle = '#1c1a70'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(20, 52); g.lineTo(44, 52); g.stroke();
+    g.beginPath(); g.moveTo(21, 55); g.lineTo(43, 55); g.stroke();
+    noise(g, w, h, 7);
+  });
+
   /* A butter/grease stain the mop never quite lifted. Transparent apart from
      the blotch, so it blends onto the carpet as a dark patch rather than a
      square. Irregular on purpose -- a real spill is never a clean ellipse. */

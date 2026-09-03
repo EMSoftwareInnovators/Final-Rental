@@ -193,6 +193,41 @@ const NIGHTS = {
     requiredSpecials: ['POPCORN', 'COUPON'],
     specialCap: 2,
   },
+
+  /* Act III. The coincidence stops being believable. Nobody is told who did
+     it, how, or why here -- these two nights only make the "maybe copycats"
+     comfort impossible to keep holding. The threat and the deputy are authored
+     at the campaign level; what the deputy SAYS is state-aware (dialogue.js),
+     so the same night reads differently by how many people the player has
+     actually helped take off the street. */
+
+  // Night 9 -- the comparison. A quiet night on the floor (no killer) and a
+  // deputy who came on purpose: he lays the case files side by side. With two
+  // arrests behind the player he can show they were two different men who did
+  // the identical thing; with one, he can only hold that one against tonight's
+  // fresh description; with none, he has the county's cases and no detainee of
+  // the player's to point at. Verna (the AUDITOR) is guaranteed -- a local,
+  // nosy voice for the town's unease that knows nothing the police know. Coach
+  // forbidden, cap two so the comparison and Verna have the floor.
+  9: {
+    killerPolicy: POLICY.FORBIDDEN,
+    deputyPolicy: POLICY.FORCED,
+    coachPolicy: POLICY.FORBIDDEN,
+    requiredSpecials: ['AUDITOR'],
+    specialCap: 2,
+  },
+  // Night 10 -- someone knows when you're here. A real threat again (killer and
+  // deputy FORCED), but the new note is the information: somebody has been
+  // phoning the stores asking who works the closing shift. The deputy leads
+  // with that, not with a body. No guaranteed regular -- the store should feel
+  // exposed, not populated -- and the coach stays away. Cap held at two so a
+  // procedural special or two can still turn up without burying the killer.
+  10: {
+    killerPolicy: POLICY.FORCED,
+    deputyPolicy: POLICY.FORCED,
+    coachPolicy: POLICY.FORBIDDEN,
+    specialCap: 2,
+  },
 };
 
 /**
@@ -486,6 +521,19 @@ export function applyStoryConsequences(campaign, completedNight = 0) {
   if (completedNight >= SECOND_THREAT_NIGHT) {
     setStoryFlag(campaign, 'actTwoComplete', true);
   }
+
+  /* Act III's one new clue: somebody has been calling the stores asking who
+     works the closing shift. It surfaces once Act II is behind the player and
+     an Act III night has actually been worked -- the structural marker, not a
+     bare night number, so both the arrest and no-arrest paths reach it the same
+     way. The store's reaction is a photocopied memo the manager tapes by the
+     phone; that environmental fact goes up for the NEXT shift, exactly like the
+     clipping and the floodlight. Deliberately not proof of anything -- an
+     unsettling coincidence the deputy cannot yet connect. */
+  if (getStoryFlag(campaign, 'actTwoComplete') === true && completedNight >= 9) {
+    setStoryFlag(campaign, 'scheduleInquiryRaised', true);
+    setEnvironmentFlag(campaign, 'schedulePrivacyNoticePosted', true);
+  }
 }
 
 /* ============================================================
@@ -519,6 +567,41 @@ export const INVESTIGATION_TAPE = 'THE LAST CUSTOMER';
 /* At most this many arrest rows are kept. The mystery needs the last one or
    two, not a ledger. */
 const MAX_CASES = 6;
+
+/* The physical traits a case carries, in the order the deputy would read them
+   out. compareCases walks exactly these. */
+const CASE_TRAITS = ['gender', 'height', 'build', 'hair', 'jacket'];
+
+/**
+ * Compare two case-shaped records by their stored physical traits.
+ *
+ * Pure and defensive by design: it takes plain data (anything with a `.profile`
+ * bag of string traits -- a stored case, or a case-shaped view of tonight's
+ * suspect), reads only that, mutates nothing, and consumes no RNG. A trait that
+ * is blank or missing on EITHER side is "not comparable" and lands in neither
+ * list -- so a thin record can never manufacture a difference, and the caller
+ * can trust that `different` means the county actually has both descriptions
+ * and they actually disagree.
+ *
+ * Returns `{ same, different }`, each an array of trait keys (from CASE_TRAITS)
+ * that were present on both records and matched / did not match. Comparison is
+ * case-insensitive and trims, so 'Tall' and 'tall ' are the same trait.
+ */
+export function compareCases(a, b) {
+  const prof = (x) => (x && typeof x === 'object' && x.profile && typeof x.profile === 'object') ? x.profile : {};
+  const pa = prof(a);
+  const pb = prof(b);
+  const same = [];
+  const different = [];
+  for (const k of CASE_TRAITS) {
+    const va = typeof pa[k] === 'string' ? pa[k].trim() : '';
+    const vb = typeof pb[k] === 'string' ? pb[k].trim() : '';
+    if (!va || !vb) continue;                       // missing either side -> skip
+    if (va.toLowerCase() === vb.toLowerCase()) same.push(k);
+    else different.push(k);
+  }
+  return { same, different };
+}
 
 /* Only plain primitives survive in a flag bag -- same rule as the environment
    bag, for the same reason. */
@@ -641,6 +724,21 @@ export function investigationPolicy(campaign, n) {
       standDownOverride: false,
       secondThreat: true,
     };
+  }
+
+  /* Act III's two authored briefings. Both are narrative-only markers the
+     deputy reads (dialogue.js) -- the killer, deputy, and coach for these nights
+     come from the static config, so nothing here touches killerPolicy. What
+     they DO override is the arrest cooldown: an arrest a few nights back can
+     leave calm/stand-down still owed on Night 9 or 10, and neither authored
+     night is a quiet one. Night 9 is the deputy's comparison (no killer, so the
+     override cannot conjure a threat); Night 10's forced killer must not be
+     suppressed by a leftover calm. */
+  if (n === 9) {
+    return { caseComparison: true, calmOverride: false, standDownOverride: false };
+  }
+  if (n === 10) {
+    return { scheduleInquiry: true, calmOverride: false, standDownOverride: false };
   }
   return {};
 }
