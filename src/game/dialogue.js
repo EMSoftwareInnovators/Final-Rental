@@ -1946,16 +1946,28 @@ export function specialRoot(c, ctx) {
          names a suspect, never matches the bulletin, never points anywhere. */
       const h = history(ctx, 'AUDITOR');
       const warm = h.lastOutcome === 'liked';
+      const lit = ctx.environmentFlag && ctx.environmentFlag('rearFloodlightInstalled');
       if (h.encounters > 0 && !c._greeted) {
         c._greeted = true;
         if (warm && rng.chance(0.5)) {
-          return say(c, rng.pick([
-            `Hello again, dear. Before I start on your shelves —\n\nthere was a man standing out by your bins when I parked. Just standing, in the dark bit. Didn't care for it. Thought you'd want to know. Probably nothing.`,
-            `Oh, it's you. Good.\n\nI'll say this and then leave you to it: somebody was round the side of the building as I came in. By the alley, where there's no light. Didn't move when my headlamps went over him. Might be waiting on the bus. Might not.`,
-          ]), [
+          /* Her one atmospheric aside. Before the light it leans on the dark;
+             after it, she can actually see out there -- so the observation
+             stands, but the darkness does not, and she gives the new light a
+             grudging nod. Either way it names nobody and points nowhere. */
+          const aside = lit
+            ? rng.pick([
+              `Hello again, dear. That light they put in the lot -- well, now I can see, and I'll tell you what I saw: a man, standing out past the bins, not doing a thing. Bold as you like now there's a light on him. Thought you'd want to know. Probably nothing.`,
+              `Oh, it's you. Good. And they've lit the lot at last -- about time.\n\nMind you, first thing it showed me was somebody round the side of the building who didn't much like being lit up. Off he went. Might be nobody. I still don't care for it.`,
+            ])
+            : rng.pick([
+              `Hello again, dear. Before I start on your shelves —\n\nthere was a man standing out by your bins when I parked. Just standing, in the dark bit. Didn't care for it. Thought you'd want to know. Probably nothing.`,
+              `Oh, it's you. Good.\n\nI'll say this and then leave you to it: somebody was round the side of the building as I came in. By the alley, where there's no light. Didn't move when my headlights went over him. Might be waiting on the bus. Might not.`,
+            ]);
+          return say(c, aside, [
             reply(`Thanks. I'll keep an eye out.`, () => complaint()),
-            reply(`Did you see who it was?`, () => say(c,
-              `No, dear. Too dark, and I wasn't about to go and look, was I. That's your lot that wants a light on it. I've said so to that Vandermeer woman and all.`,
+            reply(`Did you see who it was?`, () => say(c, lit
+              ? `Not to know him, dear. Gone the moment the light caught him. But there IS a light now, so that's something -- you tell that Vandermeer woman she got her way.`
+              : `No, dear. Too dark, and I wasn't about to go and look, was I. That's your lot that wants a light on it. I've said so to that Vandermeer woman and all.`,
               [reply(`...Right. Thanks.`, () => complaint())])),
           ]);
         }
@@ -2509,14 +2521,25 @@ function managerRoot(c, ctx) {
     const h = history(ctx, 'MANAGER');
     if (h.encounters > 0 && !c._greeted) {
       c._greeted = true;
-      /* She references the unresolved lighting either way -- the seed for a
-         future stage where it might actually get fixed. What changes is the
-         warmth, or the lack of it. */
-      const back = h.lastOutcome === 'helped'
-        ? `Oh -- good. It's you.\n\nYou're the one who actually got somebody on the telephone last time, instead of standing there apologizing. I remember. I make a point of remembering.\n\nThe lot's still dark, before you ask. Nothing's been done. But at least you did something, which is more than the last three of them.`
-        : (h.lastOutcome === 'dismissed'
-          ? `...You.\n\nYes. I remember you. You tried to have me removed from a store I have shopped at for nine years. That went in the letter, incidentally.\n\nAnd the lot is still dark, so nothing you did that night helped anybody, did it.`
-          : `I've been in before. You may remember; I certainly do.\n\nThe light on the back of this building is still out. Weeks now. I did wonder if anything would come of it.`);
+      /* Two things color how she opens: how the last time went (memory) and
+         whether the lot got its light (environment). She never claims it is
+         still dark once it plainly is not -- and if it is in, she reads the
+         credit for it exactly the way you would expect her to. */
+      const lit = ctx.environmentFlag && ctx.environmentFlag('rearFloodlightInstalled');
+      let back;
+      if (h.lastOutcome === 'helped') {
+        back = lit
+          ? `Oh -- good. It's you.\n\nAnd they finally put a light in out there. I saw it coming across the lot; you can actually SEE now. You're the one who got somebody on the telephone about it, so I'll say this once: it made a difference. I make a point of remembering that too.`
+          : `Oh -- good. It's you.\n\nYou're the one who actually got somebody on the telephone last time, instead of standing there apologizing. I remember. I make a point of remembering.\n\nThe lot's still dark, before you ask. Nothing's been done. But at least you did something, which is more than the last three of them.`;
+      } else if (h.lastOutcome === 'dismissed') {
+        back = lit
+          ? `...You.\n\nYes. I remember you. You tried to have me removed from a store I've shopped at for nine years. That went in the letter.\n\nThere's a light in the lot now, I notice. No thanks to you -- I went over your head. It's remarkable what gets done once you stop asking the boy at the counter.`
+          : `...You.\n\nYes. I remember you. You tried to have me removed from a store I have shopped at for nine years. That went in the letter, incidentally.\n\nAnd the lot is still dark, so nothing you did that night helped anybody, did it.`;
+      } else {
+        back = lit
+          ? `I've been in before. You may remember; I certainly do.\n\nSomebody's put a light in the lot at last. About time. I'd like to think being a nuisance about it helped.`
+          : `I've been in before. You may remember; I certainly do.\n\nThe light on the back of this building is still out. Weeks now. I did wonder if anything would come of it.`;
+      }
       return say(c, back, [
         reply(h.lastOutcome === 'dismissed' ? `Let's not do this again.` : `Let's see if we can sort it this time.`,
           () => firstAsk()),

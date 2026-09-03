@@ -327,6 +327,90 @@ export function getCustomerFlag(campaign, id, key, dflt = undefined) {
   return (key in s.flags) ? s.flags[key] : dflt;
 }
 
+/* ============================================================
+   ENVIRONMENT MEMORY
+
+   The people remember; so, now, does the building. environmentFlags is a flat
+   bag of plain facts about what has become true of the store -- a floodlight
+   went in, a notice got taped up, a stain never came out. Data only: never a
+   light, a mesh, a texture, or a node. The campaign says "the floodlight is
+   installed"; night startup reads that and builds one; the renderer draws it.
+
+   Deliberately neutral -- a flag can mean a repair OR new damage OR a notice --
+   so the store can get worse as easily as better in a later stage. Values are
+   whatever survives JSON (usually just booleans); everything defaults to a
+   sane blank so an old save, or any non-Story run, reads "nothing has changed".
+   ============================================================ */
+
+/* Only plain JSON primitives belong in the bag. A value that is an object,
+   array, or function (a mesh or callback that should never have been put here)
+   is dropped on load rather than trusted. */
+function normalizeEnvironmentFlags(bag) {
+  const out = {};
+  if (bag && typeof bag === 'object') {
+    for (const k of Object.keys(bag)) {
+      const v = bag[k];
+      const t = typeof v;
+      if (t === 'boolean' || t === 'number' || t === 'string' || v === null) out[k] = v;
+    }
+  }
+  return out;
+}
+
+/** Read one environmental fact, or `dflt` (false) if it was never set. Blank
+    for any campaign with no bag -- which is every non-Story run. */
+export function getEnvironmentFlag(campaign, key, dflt = false) {
+  if (!campaign || !campaign.environmentFlags || !key) return dflt;
+  const v = campaign.environmentFlags[key];
+  return (v === undefined) ? dflt : v;
+}
+
+/** A shorter read alias, for call sites that just want the truthiness. */
+export function environmentFlag(campaign, key) {
+  return getEnvironmentFlag(campaign, key, false);
+}
+
+/** Set one environmental fact on the in-memory campaign. Persisted only when
+    the campaign is next saved (a night boundary), like everything else here. */
+export function setEnvironmentFlag(campaign, key, value = true) {
+  if (!campaign || !key) return;
+  if (!campaign.environmentFlags || typeof campaign.environmentFlags !== 'object') {
+    campaign.environmentFlags = {};
+  }
+  campaign.environmentFlags[key] = value;
+}
+
+/**
+ * The Story consequence layer: turn what has happened in the campaign into
+ * facts about the store. Called at a night boundary, on the in-memory
+ * campaign, BEFORE the save -- so a consequence earned by finishing a night
+ * is written with that night and rolls back with a failed one.
+ *
+ * It reads campaign STATE, never the calendar: the floodlight answers Cheryl
+ * having complained twice (her encounter is the complaint), not "night >= 7".
+ * A later branch could set the same flag from a different cause and the rest
+ * of the game would not know the difference. Idempotent -- setting a flag that
+ * is already true is a no-op -- and it consumes no RNG.
+ */
+export function applyStoryConsequences(campaign) {
+  if (!campaign) return;
+
+  /* The landlord finally responds. Cheryl's encounter IS the dark-lot
+     complaint; two of them (Night 2, then her Night 6 return) is enough that
+     something gets done between shifts. State, not night number. */
+  if (getCustomerState(campaign, 'MANAGER').encounters >= 2) {
+    setEnvironmentFlag(campaign, 'rearFloodlightInstalled', true);
+  }
+
+  /* The popcorn incident leaves two marks: a corporate notice taped up where
+     the clerk will see it, and a butter stain the mop never quite got. Both
+     follow from having actually dealt with Little Ricky once. */
+  if (getCustomerState(campaign, 'POPCORN').encounters >= 1) {
+    setEnvironmentFlag(campaign, 'popcornNoticePosted', true);
+    setEnvironmentFlag(campaign, 'popcornStainLeft', true);
+  }
+}
+
 /* ------------------------------------------------------------
    Storage. The four functions gameplay is allowed to know about.
    Everything here fails soft: a missing or broken save is a fresh start,
@@ -435,6 +519,8 @@ function migrate(data) {
        missing memory bag comes back with a clean one rather than a shape the
        dialogue code has to guard against. */
     customerStates: normalizeCustomerStates(data.customerStates),
-    environmentFlags: { ...clean.environmentFlags, ...(data.environmentFlags || {}) },
+    /* Same treatment: only plain facts survive, so a save whose environment
+       bag was hand-edited or carries a stray object cannot crash a shift. */
+    environmentFlags: normalizeEnvironmentFlags(data.environmentFlags),
   };
 }

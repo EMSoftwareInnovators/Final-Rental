@@ -10,7 +10,7 @@
        four gondolas running front-to-back, two wall runs at the back
    ============================================================ */
 import { MeshBuilder } from '../engine/mesh.js';
-import { F_DOUBLE, F_EMIT, F_BLEND } from '../engine/raster.js';
+import { F_DOUBLE, F_EMIT, F_BLEND, F_ADD } from '../engine/raster.js';
 import { makeTex } from '../engine/texture.js';
 import { GENRES, GENRE_LABEL } from './tapes.js';
 
@@ -79,6 +79,20 @@ export function outdoorLightAt(x, y, z) {
     s += a * a * 0.62;
   }
   return Math.min(1.25, s);
+}
+
+/* The rear-lot floodlight the landlord finally puts up (Stage 4). It is a
+   fact of the campaign, not of this file -- world just knows how to build one
+   and how much light it throws. `x,y,z` locate the fixture on the storefront;
+   `gx,gz` are the center of the pool it casts on the lot, and `r,i` its reach
+   and strength. Off unless the campaign says otherwise -- game.js only adds
+   floodlightAt() to an outdoor actor's shade when the flag is installed. */
+export const REAR_FLOODLIGHT = { x: 8.5, y: 2.98, z: -0.2, gx: 8.5, gz: -3.5, r: 5.2, i: 1.15 };
+export function floodlightAt(x, y, z) {
+  const F = REAR_FLOODLIGHT;
+  let a = 1 - Math.hypot(x - F.gx, z - F.gz) / F.r;
+  if (a <= 0) return 0;
+  return F.i * a * a;
 }
 
 /* Shelf runs. Each is one genre and one interaction target. */
@@ -414,6 +428,10 @@ export function buildWorld(T) {
     tapeTex: tape,
     tapeMesh: buildTapeMesh(tape),
     solids: buildSolids(),
+    /* Persistent environmental pieces (Stage 4). Prebuilt, drawn on demand. */
+    floodMesh: buildFloodlight(T),
+    noticeMesh: buildNotice(T),
+    stainMesh: buildStain(T),
     T,
   };
 }
@@ -875,6 +893,64 @@ function outside(mb, T) {
     });
   }
   mb.light = dim;
+}
+
+/* ============================================================
+   STAGE 4: persistent environmental pieces. Each is its own small mesh,
+   built once at boot and DRAWN by game.js only when the campaign says the
+   corresponding fact is true. Building them unconditionally but drawing them
+   conditionally is what makes them idempotent -- there is exactly one of each,
+   ever, however many times a night is started or retried.
+   ============================================================ */
+
+/* The cheap sodium wall-pack the landlord finally bolts to the storefront,
+   and the pool of light it throws across the lot. The pool is additive, so it
+   can only ever lift the dark -- it never darkens or recolors what is there.
+   Its brightness is handed in per frame (for the cheap-fixture flicker), so
+   the pool's own baked light is a flat 1. */
+function buildFloodlight(T) {
+  const b = new MeshBuilder();
+  const F = REAR_FLOODLIGHT;
+  // bracket + housing, bolted to the storefront just above the glass header
+  b.light = () => 0.5;
+  b.box(F.x - 0.03, F.y - 0.02, -0.22, F.x + 0.03, F.y + 0.02, -0.05,
+    { all: { tex: T.doorFrame, uv: [0, 0, 8, 20] } });          // the arm
+  b.box(F.x - 0.18, F.y - 0.13, -0.40, F.x + 0.18, F.y + 0.09, -0.20,
+    { all: { tex: T.doorFrame, uv: [0, 0, 28, 18] } });         // the housing
+  // the lens, emissive, on the underside, angled down at the lot
+  b.light = () => 1;
+  b.quad(
+    [F.x - 0.15, F.y - 0.13, -0.22], [F.x + 0.15, F.y - 0.13, -0.22],
+    [F.x + 0.15, F.y - 0.05, -0.40], [F.x - 0.15, F.y - 0.05, -0.40],
+    T.floodLens, [0, 0, 32, 32], F_EMIT | F_DOUBLE);
+  // the pool on the asphalt
+  const R = 3.4, gx = F.gx, gz = F.gz, y = 0.02;
+  b.quad([gx - R, y, gz + R], [gx + R, y, gz + R], [gx + R, y, gz - R], [gx - R, y, gz - R],
+    T.floodGlow, [0, 0, 64, 64], F_ADD | F_DOUBLE);
+  return b.build();
+}
+
+/* The corporate notice that goes up behind the counter after the popcorn
+   night. Taped to the CLERK'S side of the service counter -- the face the
+   player looks at across the register all shift -- rather than the customer
+   side, so it is a reminder aimed squarely at whoever let it happen. */
+function buildNotice(T) {
+  const b = new MeshBuilder();
+  b.light = lightAt;
+  b.plate(11.0, 0.52, COUNTER.z1 + 0.013, 0.42, 0.44, 0, T.popNotice, [0, 0, 64, 64], 0);
+  return b.build();
+}
+
+/* The butter stain the mop never lifted, on the carpet behind the counter
+   where the corn spread. Blended, so it darkens the carpet rather than
+   sitting on it as a bright square. */
+function buildStain(T) {
+  const b = new MeshBuilder();
+  b.light = lightAt;
+  const cx = 10.6, cz = 4.4, R = 0.5, y = 0.016;
+  b.quad([cx - R, y, cz + R], [cx + R, y, cz + R], [cx + R, y, cz - R], [cx - R, y, cz - R],
+    T.greaseStain, [0, 0, 64, 64], F_BLEND | F_DOUBLE);
+  return b.build();
 }
 
 /* ---------------- one shelf run ---------------- */

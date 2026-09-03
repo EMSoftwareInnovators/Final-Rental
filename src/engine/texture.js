@@ -698,6 +698,76 @@ export function buildTextures() {
     noise(g, w, h, 9);
   });
 
+  /* -------- Stage 4: persistent environmental changes -------- */
+
+  /* The cheap floodlight's pool of light on the asphalt. Drawn additively, so
+     black adds nothing and the warm center lifts the dark lot out of the
+     murk. A soft radial -- a single sodium wall-pack, not stadium lighting. */
+  T.floodGlow = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#000000', w, h);
+    const gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+    gr.addColorStop(0, '#fff4d6');       // warm, slightly harsh
+    gr.addColorStop(0.34, '#d6c08a');
+    gr.addColorStop(0.68, '#493f2a');
+    gr.addColorStop(1, '#000000');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    noise(g, w, h, 7);
+  });
+
+  /* The lens of the fixture itself -- a small emissive plate, warmer and
+     dingier than the interior fluorescents so it reads as an add-on. */
+  T.floodLens = makeTex(32, 32, (g, w, h) => {
+    fill(g, '#3a3324', w, h);
+    const gr = g.createRadialGradient(w / 2, h / 2, 1, w / 2, h / 2, w / 2);
+    gr.addColorStop(0, '#fff0c8');
+    gr.addColorStop(0.6, '#c9ad70');
+    gr.addColorStop(1, '#5a4d30');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#211d13'; g.lineWidth = 2; g.strokeRect(1, 1, w - 2, h - 2);
+    noise(g, w, h, 8);
+  });
+
+  /* The corporate notice that goes up behind the counter after the popcorn
+     night: a photocopied line, and a manager's ballpoint underneath it. */
+  T.popNotice = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#e9e2cd', w, h);            // copier paper, gone slightly cream
+    g.fillStyle = 'rgba(206,196,166,0.55)';  // tape at the corners
+    g.fillRect(3, 0, 15, 7); g.fillRect(w - 18, 0, 15, 7);
+    g.fillStyle = '#1b1812'; g.textAlign = 'center';
+    g.font = 'bold 8px "Courier New",monospace';
+    g.fillText('EMPLOYEES', w / 2, 15);
+    g.fillText('ONLY BEHIND', w / 2, 25);
+    g.fillText('THE COUNTER', w / 2, 35);
+    g.strokeStyle = '#1b1812'; g.strokeRect(3.5, 5.5, w - 7, h - 10);
+    g.fillStyle = '#25438e';             // ballpoint blue, handwritten
+    g.font = 'italic 9px "Comic Sans MS","Segoe Script",cursive';
+    g.fillText('(yes — the', w / 2, 48);
+    g.fillText('popcorn)', w / 2, 58);
+    noise(g, w, h, 7);
+  });
+
+  /* A butter/grease stain the mop never quite lifted. Transparent apart from
+     the blotch, so it blends onto the carpet as a dark patch rather than a
+     square. Irregular on purpose -- a real spill is never a clean ellipse. */
+  T.greaseStain = makeTex(64, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#241b0e';
+    const blob = (cx, cy, rx, ry, rot) => {
+      g.beginPath(); g.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2); g.fill();
+    };
+    blob(32, 33, 20, 16, 0.3);
+    blob(21, 41, 10, 8, 0);
+    blob(45, 25, 9, 11, 0.4);
+    g.fillStyle = '#181104';             // darker heart
+    blob(31, 32, 11, 9, 0.3);
+    // a speckled, uneven fringe so the edge is not a clean ellipse
+    for (let i = 0; i < 130; i++) {
+      const a = R() * Math.PI * 2, rr = 15 + R() * 11;
+      g.fillStyle = R() < 0.5 ? '#241b0e' : '#2b210f';
+      g.fillRect((32 + Math.cos(a) * rr) | 0, (33 + Math.sin(a) * rr * 0.8) | 0, 2, 2);
+    }
+  });
+
   const POSTERS = [
     { bg: '#1a0507', ink: '#ff3b28', t1: 'THE', t2: 'CRAWL', sub: 'IT KNOWS YOUR NAME' },
     { bg: '#05121a', ink: '#5cf0ff', t1: 'ORBIT', t2: 'ZERO', sub: 'NO ONE CAN HEAR' },

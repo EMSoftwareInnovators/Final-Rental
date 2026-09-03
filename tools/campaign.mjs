@@ -726,6 +726,298 @@ check('Ricky recognizes the player, warily or warmly by prior handling',
 check('Verna knows a returning regular',
   filled(dlgText.vernaFirst) && dlgText.vernaFirst !== dlgText.vernaLiked);
 
+/* ================================================================
+   STAGE 4 -- persistent environmental and store changes.
+
+   The store remembers too. These check the environment API, the story
+   consequence layer that turns campaign state into store facts, that the
+   floodlight arrives at the right night (by state, not the calendar) and
+   survives, that a failed night rolls it back, that there is only ever one of
+   each piece, that Cheryl and Verna read the change, that Graveyard and Casual
+   are untouched, that a new game resets, and that none of it moves the night.
+   ================================================================ */
+
+/* ---------- the environment API, in isolation ---------- */
+const envApi = await ev(() => {
+  const C = window.__campaign;
+  C.deleteCampaignSave();
+  const cam = C.freshCampaign(1);              // a detached campaign, never saved
+  const out = {};
+  out.missing = C.getEnvironmentFlag(cam, 'rearFloodlightInstalled') === false
+    && C.environmentFlag(cam, 'nope') === false
+    && C.getEnvironmentFlag(cam, 'x', 'dflt') === 'dflt';
+  C.setEnvironmentFlag(cam, 'rearFloodlightInstalled', true);
+  out.set = C.environmentFlag(cam, 'rearFloodlightInstalled') === true;
+  out.onlyInMemory = JSON.stringify(cam.environmentFlags) === '{"rearFloodlightInstalled":true}'
+    && localStorage.getItem('finalrental.campaign') === null;   // nothing written to disk
+  // reads against a campaign with no bag (every non-Story run) are blank
+  out.noBag = C.getEnvironmentFlag(null, 'rearFloodlightInstalled') === false
+    && C.environmentFlag({}, 'rearFloodlightInstalled') === false;
+  return out;
+});
+check('an unset environmental flag reads its default (false)', envApi.missing);
+check('setting a flag changes only the in-memory campaign, not the disk', envApi.set && envApi.onlyInMemory);
+check('a campaign with no environment bag reads every flag blank', envApi.noBag);
+
+/* ---------- malformed environment state cannot crash load ---------- */
+const envSafe = await ev(() => {
+  const C = window.__campaign;
+  const bad = {
+    version: 2, mode: 'STORY', seed: 5, currentNight: 4, started: true, completed: false,
+    history: { grades: [], scores: [] }, cooldown: { calmUntil: 0, standDownNight: 0 },
+    stats: { arrests: 0, customersServed: 0, walkouts: 0, cashDiscrepancy: 0 },
+    storyFlags: {}, customerStates: {},
+    // objects, arrays, functions have no business here -- they must be dropped
+    environmentFlags: { rearFloodlightInstalled: true, junk: { a: 1 }, arr: [1, 2], n: 3, s: 'ok' },
+  };
+  localStorage.setItem('finalrental.campaign', JSON.stringify(bad));
+  const loaded = C.loadCampaign();
+  const ef = loaded.environmentFlags;
+  return {
+    kept: ef.rearFloodlightInstalled === true && ef.n === 3 && ef.s === 'ok',
+    dropped: !('junk' in ef) && !('arr' in ef),
+    flagStillReads: C.environmentFlag(loaded, 'rearFloodlightInstalled') === true,
+  };
+});
+check('a plain environmental fact survives load; an object/array is dropped',
+  envSafe.kept && envSafe.dropped, JSON.stringify(envSafe));
+check('and the surviving flag still reads true', envSafe.flagStillReads);
+
+/* ---------- the story consequence layer: state -> store facts ---------- */
+const cons = await ev(() => {
+  const C = window.__campaign;
+  const flags = (encM, encP) => {
+    const cam = C.freshCampaign(1);
+    if (encM) C.recordCustomerOutcome(cam, 'MANAGER', 'helped', { night: 2 });
+    for (let i = 1; i < encM; i++) C.recordCustomerOutcome(cam, 'MANAGER', 'helped', { night: 6 });
+    for (let i = 0; i < encP; i++) C.recordCustomerOutcome(cam, 'POPCORN', 'indulged', { night: 5 });
+    C.applyStoryConsequences(cam);
+    return cam.environmentFlags;
+  };
+  return {
+    none: flags(0, 0),
+    cherylOnce: flags(1, 0),
+    cherylTwice: flags(2, 0),
+    ricky: flags(0, 1),
+  };
+});
+check('a fresh campaign has no environmental changes',
+  Object.keys(cons.none).length === 0, JSON.stringify(cons.none));
+check('one Cheryl complaint is not enough to get the light fixed',
+  !cons.cherylOnce.rearFloodlightInstalled);
+check('the second Cheryl complaint gets the landlord to act (state, not night)',
+  cons.cherylTwice.rearFloodlightInstalled === true);
+check('dealing with Ricky once posts the notice and leaves the stain',
+  cons.ricky.popcornNoticePosted === true && cons.ricky.popcornStainLeft === true);
+
+/* ---------- floodlight progression through the real game ---------- */
+const prog = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory();
+  const out = {};
+  // Night 1: nothing installed.
+  g.startNight(1);
+  out.n1 = g.env.rearFloodlight;
+  // Cheryl on Night 2 (encounter 1). Finish the night: the complaint alone
+  // must NOT install the light.
+  g.nightNo = 2; g.startNight(2);
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100 });
+  g.grade = { letter: 'B', score: 1 }; g.stats = { served: 1, stormedOut: 0, cashLoose: 0 };
+  g.advanceNight();                          // -> night 3, saved
+  out.afterN2 = C.environmentFlag(g.campaign, 'rearFloodlightInstalled');
+  // Jump to her Night 6 return. DURING night 6 the light is still absent.
+  g.campaign.currentNight = 6; g.nightNo = 6; C.saveCampaign(g.campaign);
+  g.startNight(6);
+  out.duringN6 = g.env.rearFloodlight;
+  // Deal with Cheryl again (encounter 2) and finish the night.
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100 });
+  g.grade = { letter: 'B', score: 1 }; g.stats = { served: 1, stormedOut: 0, cashLoose: 0 };
+  g.advanceNight();                          // -> night 7, consequence applied + saved
+  out.installedOnDisk = JSON.parse(localStorage.getItem('finalrental.campaign'))
+    .environmentFlags.rearFloodlightInstalled === true;
+  out.n7env = g.env.rearFloodlight;          // night 7 is now live
+  out.n7hasMesh = !!g.world.floodMesh;
+  // later nights keep it
+  g.startNight(8);
+  out.n8env = g.env.rearFloodlight;
+  return out;
+});
+check('a new Story night 1 has no floodlight', prog.n1 === false);
+check('Cheryl\'s first complaint (Night 2) does not install it', prog.afterN2 === false);
+check('and her Night 6 return still walks into a dark lot', prog.duringN6 === false);
+check('finishing Night 6 installs the light for Night 7 (on disk and live)',
+  prog.installedOnDisk === true && prog.n7env === true && prog.n7hasMesh, JSON.stringify(prog));
+check('and later nights keep it lit', prog.n8env === true);
+
+/* ---------- retry rollback: a failed night un-installs nothing it earned,
+   but a night that never finished never earns it ---------- */
+const envRollback = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory();
+  // A clean Night 6 boundary with Cheryl met once (from Night 2), light absent.
+  C.recordCustomerOutcome(g.campaign, 'MANAGER', 'helped', { night: 2 });
+  g.campaign.currentNight = 6; g.nightNo = 6; C.saveCampaign(g.campaign);
+  const before = C.environmentFlag(g.campaign, 'rearFloodlightInstalled');
+  // During Night 6 deal with Cheryl (encounter 2) -- but the flag is only set
+  // at the advance, so mid-shift it is still absent.
+  g.startNight(6);
+  g.ctx.despawn({ special: 'MANAGER', talkedTo: true, gotManager: true, mood: 100 });
+  const midShift = C.environmentFlag(g.campaign, 'rearFloodlightInstalled');
+  // Die before finishing: toTitle drops the in-memory campaign.
+  g.toTitle();
+  g.continueStory();                         // reload the Night 6 save
+  g.startNight(g.campaign.currentNight);
+  const afterRetry = g.env.rearFloodlight;
+  return { before, midShift, afterRetry, night: g.nightNo };
+});
+check('mid-shift, a consequence has not been committed yet',
+  envRollback.before === false && envRollback.midShift === false);
+check('and a failed Night 6 rebuilds a dark lot -- the light was never earned',
+  envRollback.afterRetry === false && envRollback.night === 6, JSON.stringify(envRollback));
+
+/* ---------- idempotency: one of each piece, however many starts ---------- */
+const idem = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory();
+  C.setEnvironmentFlag(g.campaign, 'rearFloodlightInstalled', true);
+  C.setEnvironmentFlag(g.campaign, 'popcornNoticePosted', true);
+  C.setEnvironmentFlag(g.campaign, 'popcornStainLeft', true);
+  const flood = g.world.floodMesh, notice = g.world.noticeMesh, stain = g.world.stainMesh;
+  g.startNight(7);
+  g.startNight(8);
+  g.startNight(8);                           // a retry of the same night
+  // The meshes are prebuilt once: the references never change, and applying
+  // the environment builds nothing, so there is exactly one of each.
+  return {
+    sameFlood: g.world.floodMesh === flood,
+    sameNotice: g.world.noticeMesh === notice,
+    sameStain: g.world.stainMesh === stain,
+    allOn: g.env.rearFloodlight && g.env.popcornNotice && g.env.popcornStain,
+  };
+});
+check('starting and retrying nights never duplicates an environmental piece',
+  idem.sameFlood && idem.sameNotice && idem.sameStain, JSON.stringify(idem));
+check('and all applied pieces are switched on', idem.allOn);
+
+/* ---------- Cheryl and Verna read the environment ---------- */
+const envDlg = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  g.newStory();
+  const line = (special, outcome, lit) => {
+    g.campaign.customerStates = {};
+    g.campaign.environmentFlags = {};
+    C.recordCustomerOutcome(g.campaign, special, outcome, { night: 2 });
+    if (lit) C.setEnvironmentFlag(g.campaign, 'rearFloodlightInstalled', true);
+    // Verna's aside is a coin-flip; try a few builds so a "lit" line is found.
+    let best = '';
+    for (let i = 0; i < 6; i++) {
+      const c = { special, name: special, mood: 100, hasMoney: true };
+      const t = (D.specialRoot(c, g.ctx) || {}).text || '';
+      best = t;
+      if (special === 'AUDITOR' && /light|lit|lot/i.test(t)) break;
+    }
+    return best;
+  };
+  return {
+    cherylDark: line('MANAGER', 'helped', false),
+    cherylLit: line('MANAGER', 'helped', true),
+    cherylDismDark: line('MANAGER', 'dismissed', false),
+    cherylDismLit: line('MANAGER', 'dismissed', true),
+    vernaDark: line('AUDITOR', 'liked', false),
+    vernaLit: line('AUDITOR', 'liked', true),
+  };
+});
+check('Cheryl says the lot is still dark before the light, and not after',
+  /dark|still out/i.test(envDlg.cherylDark) && !/still (dark|out)/i.test(envDlg.cherylLit)
+  && envDlg.cherylDark !== envDlg.cherylLit, JSON.stringify({ d: envDlg.cherylDark.slice(0, 40), l: envDlg.cherylLit.slice(0, 40) }));
+check('the pre/post distinction holds for a dismissed history too',
+  envDlg.cherylDismDark !== envDlg.cherylDismLit
+  && /light in the lot|light in the/i.test(envDlg.cherylDismLit));
+check('Verna does not claim the lot is dark once it is lit',
+  envDlg.vernaDark !== envDlg.vernaLit, JSON.stringify({ d: envDlg.vernaDark.slice(0, 40), l: envDlg.vernaLit.slice(0, 40) }));
+
+/* ---------- mode isolation: Graveyard and Casual get the original store ---- */
+const envIso = await ev(() => {
+  const g = window.__game, C = window.__campaign, N = window.__night;
+  C.deleteCampaignSave();
+  // A real Story campaign with the light installed, saved to disk.
+  g.newStory();
+  C.setEnvironmentFlag(g.campaign, 'rearFloodlightInstalled', true);
+  C.setEnvironmentFlag(g.campaign, 'popcornNoticePosted', true);
+  C.saveCampaign(g.campaign);
+  // Graveyard: original store, no flags read, and no way to write them.
+  g.beginRun(N.MODE.HORROR);
+  g.startNight(7);
+  const gv = { flood: g.env.rearFloodlight, notice: g.env.popcornNotice,
+    flagRead: g.ctx.environmentFlag('rearFloodlightInstalled') };
+  // advancing a Graveyard night must not run the consequence layer or touch
+  // the story save on disk.
+  g.advanceNight();
+  const diskAfterGv = C.loadCampaign();
+  // Casual: same.
+  g.beginRun(N.MODE.CASUAL);
+  g.startNight(3);
+  const cas = { flood: g.env.rearFloodlight, flagRead: g.ctx.environmentFlag('rearFloodlightInstalled') };
+  return {
+    gvOriginal: !gv.flood && !gv.notice && gv.flagRead === false,
+    casOriginal: !cas.flood && cas.flagRead === false,
+    storyIntact: diskAfterGv && diskAfterGv.environmentFlags.rearFloodlightInstalled === true,
+  };
+});
+check('Graveyard builds the original store and reads no Story environment',
+  envIso.gvOriginal, JSON.stringify(envIso));
+check('Casual builds the original store and reads no Story environment', envIso.casOriginal);
+check('and neither can touch the Story campaign\'s environment on disk', envIso.storyIntact);
+
+/* ---------- a new game resets the store ---------- */
+const envReset = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  // Leave a progressed save with everything installed.
+  const done = C.freshCampaign(9);
+  C.setEnvironmentFlag(done, 'rearFloodlightInstalled', true);
+  C.setEnvironmentFlag(done, 'popcornNoticePosted', true);
+  C.setEnvironmentFlag(done, 'popcornStainLeft', true);
+  done.currentNight = 8;
+  C.saveCampaign(done);
+  // New Game over it: fresh campaign, original store on Night 1.
+  g.newStory();
+  g.startNight(1);
+  return {
+    flags: g.campaign.environmentFlags,
+    env: g.env,
+  };
+});
+check('New Game starts from the original store -- no installed changes',
+  Object.keys(envReset.flags).length === 0
+  && !envReset.env.rearFloodlight && !envReset.env.popcornNotice && !envReset.env.popcornStain,
+  JSON.stringify(envReset));
+
+/* ---------- determinism: environment flags do not move the night ---------- */
+const envDet = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.newStory();
+  const fingerprint = () => JSON.stringify({
+    suspect: g.night.caseFile.name,
+    appears: g.night.plan.appears, visitAt: g.night.plan.visitAt,
+    deputy: g.night.deputy, busAt: g.night.busAt,
+    schedule: g.night.schedule.map((e) => [e.t, e.decoy, e.special || null]),
+  });
+  g.campaign.environmentFlags = {};
+  g.startNight(7);
+  const dark = fingerprint();
+  C.setEnvironmentFlag(g.campaign, 'rearFloodlightInstalled', true);
+  C.setEnvironmentFlag(g.campaign, 'popcornNoticePosted', true);
+  g.startNight(7);
+  const lit = fingerprint();
+  return { same: dark === lit };
+});
+check('installing environmental changes does not alter the night for the same seed',
+  envDet.same);
+
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
   window.__campaign.deleteCampaignSave();

@@ -11,7 +11,7 @@ import { buildTextures } from '../engine/texture.js';
 import { mat, mul, setPosYaw, setRotX, setRotY, setTranslate, invertRigid, clamp, angleTowards } from '../engine/mathx.js';
 import {
   buildWorld, collide, SHELVES, SPOTS, COUNTER, COUNTER_SLOTS, PROPS, lightAt, outdoorLightAt,
-  DOOR_X0, DOOR_X1, D, W, EYE, STORAGE, SDOOR_X0, SDOOR_X1,
+  floodlightAt, DOOR_X0, DOOR_X1, D, W, EYE, STORAGE, SDOOR_X0, SDOOR_X1,
 } from './world.js';
 import { buildActorMeshes, drawActor, ACTOR_HEIGHT, makeAnim, updateAnim } from './actor.js';
 import { createPlayer, updatePlayer, buildCamera, castInteract, canCarry, takeTape, topTape, heldTapeMatrix, heldCashMatrix, forwardOf } from './player.js';
@@ -23,6 +23,7 @@ import {
   STORY_NIGHT_COUNT, nightConfig, freshCampaign,
   saveCampaign, loadCampaign, hasCampaignSave, deleteCampaignSave,
   getCustomerState, recordCustomerOutcome,
+  environmentFlag, applyStoryConsequences,
 } from './campaign.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds } from './ui.js';
@@ -197,6 +198,10 @@ export class Game {
     this.stenchT = 0;
     this.killer = null;
     this.lights = 1; this.flickerAmt = 0; this.flickerT = 4;
+    /* Which persistent environmental pieces this shift shows. All off until a
+       Story night applies its campaign's facts; the endless modes never turn
+       any of it on. */
+    this.env = { rearFloodlight: false, popcornNotice: false, popcornStain: false };
     this.distress = 0; this.tension = 0;
     this.staticFrame = 0; this.staticT = 0;
     this.shake = 0;
@@ -290,6 +295,11 @@ export class Game {
       specialCap: cfg ? cfg.specialCap : undefined,
     });
     this.rng = this.night.rng;
+    /* What the store itself remembers. Read the campaign's environmental facts
+       and decide which persistent pieces this shift shows. Story only; every
+       other mode gets the original store. Data only -- no meshes are made
+       here, the prebuilt ones are simply switched on. */
+    this.applyCampaignEnvironment();
     /* Two clocks.
        `sim` is real time on the store floor: it runs from the moment you
        take the counter and it is what customers and the killer are
@@ -639,6 +649,26 @@ export class Game {
     });
   }
 
+  /**
+   * Translate the campaign's environmental FACTS into which prebuilt pieces
+   * this shift draws. The single seam between "what has become true of the
+   * store" (campaign data) and "what is in the scene" (the meshes) -- the
+   * renderer past here only ever asks this.env, never the campaign or the
+   * night number.
+   *
+   * Story only. Graveyard and Casual pass no campaign, so every flag reads
+   * its blank default and the original store is what they get. Reads only; it
+   * never writes a flag, and it consumes no RNG, so it cannot move the night.
+   */
+  applyCampaignEnvironment() {
+    const c = this.mode === MODE.STORY ? this.campaign : null;
+    this.env = {
+      rearFloodlight: environmentFlag(c, 'rearFloodlightInstalled'),
+      popcornNotice: environmentFlag(c, 'popcornNoticePosted'),
+      popcornStain: environmentFlag(c, 'popcornStainLeft'),
+    };
+  }
+
   /** NEW GAME from the menu: confirm first if a campaign is already going. */
   startStory() {
     if (hasCampaignSave()) { this.showNewGameConfirm(0); return; }
@@ -690,6 +720,13 @@ export class Game {
       c.stats.cashDiscrepancy = round2(c.stats.cashDiscrepancy + (this.stats.cashLoose || 0));
     }
     this.syncCampaignFromRun();
+
+    /* The night is banked; now turn what happened into facts about the store.
+       This runs on the in-memory campaign and is written by the save below, so
+       an environmental consequence is earned by finishing the night and rolls
+       back with a failed one -- exactly like the grade and the customer memory
+       it reads from. It never touches the night about to start. */
+    applyStoryConsequences(c);
 
     const next = this.nightNo + 1;
     if (next > STORY_NIGHT_COUNT) {
@@ -3052,6 +3089,31 @@ export class Game {
     setTranslate(M.m, 0, 0, 0);
     rz.drawMesh(this.world.mesh, M.m, { shade: L });
 
+    /* ---- persistent environmental pieces (Story) ----
+       Prebuilt meshes, switched on by campaign facts in this.env. The
+       floodlight carries a cheap-fixture flicker: mostly steady, with a brief
+       buzzy dip every several seconds. It is a function of wall-clock time
+       only -- never the gameplay RNG -- so it changes nothing about the night.
+       floodShade is reused below to light outdoor actors standing in the pool. */
+    let floodShade = 1;
+    if (this.env.rearFloodlight) {
+      const t = this.time;
+      floodShade = 0.94 + 0.06 * Math.sin(t * 2.3);        // a gentle breathing
+      const ph = (t * 0.11) % 1;                            // ~ every 9 seconds
+      if (ph < 0.05) floodShade *= 0.5 + 0.45 * Math.abs(Math.sin(t * 58));
+      setTranslate(M.m, 0, 0, 0);
+      rz.drawMesh(this.world.floodMesh, M.m, { shade: floodShade });
+    }
+    if (this.env.popcornNotice) {
+      setTranslate(M.m, 0, 0, 0);
+      rz.drawMesh(this.world.noticeMesh, M.m, { shade: L });
+    }
+    if (this.env.popcornStain) {
+      setTranslate(M.m, 0, 0, 0);
+      rz.drawMesh(this.world.stainMesh, M.m, { shade: L });
+    }
+    this._floodShade = floodShade;
+
     // ---- TV playing static ----
     const tv = this.world.tvPos;
     setPosYaw(M.m, tv.x, tv.y, tv.z, tv.yaw);
@@ -3100,9 +3162,17 @@ export class Game {
     this.drawFloorMess();
 
     // ---- people ----
+    /* Somebody standing out in the lot is lit by the street the way they
+       always were -- plus the floodlight, once it is up. That is the whole
+       gameplay effect of it: a figure in the pool is easier to make out. It
+       is uniform light in a place, coupled to nothing about who they are. */
+    const flood = this.env.rearFloodlight;
     for (const c of this.people()) {
       if (c.hidden) continue;
-      const shade = (c.z < 0.05 ? outdoorLightAt(c.x, 1.1, c.z) : lightAt(c.x, 1.1, c.z) * L);
+      const shade = (c.z < 0.05
+        ? Math.min(1.35, outdoorLightAt(c.x, 1.1, c.z)
+          + (flood ? floodlightAt(c.x, 1.1, c.z) * this._floodShade : 0))
+        : lightAt(c.x, 1.1, c.z) * L);
       drawActor(rz, this.actorMeshes, c, shade);
       if (c.tape && !c.gaveTape && !c.checkedOut) this.drawHeldByNpc(c, shade);
     }
@@ -3353,6 +3423,12 @@ export class Game {
          so no memory can leak between modes. */
       customerHistory: (id) => (g.mode === MODE.STORY && g.campaign)
         ? getCustomerState(g.campaign, id) : getCustomerState(null, id),
+
+      /* What the dialogue may know about the state of the store. Story only,
+         a read: false everywhere else, so a line that changes once the light
+         is in behaves as "not yet" in Graveyard and Casual. */
+      environmentFlag: (key) => (g.mode === MODE.STORY && g.campaign)
+        ? environmentFlag(g.campaign, key) : false,
 
       tookFromShelf: (c) => {
         const s = g.sound.spatial(g.player.x, g.player.z, g.player.yaw, c.x, c.z);
