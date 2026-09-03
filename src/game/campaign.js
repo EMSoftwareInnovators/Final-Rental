@@ -138,24 +138,61 @@ const NIGHTS = {
     specialCap: 1,
   },
 
-  /* Nights 5-8 are NOT authored yet -- their killer, deputy, and coach are
-     left NORMAL (procedural). These entries exist only to schedule the
-     returning regulars Stage 3 gives a memory to, through the same
-     required-special system Night 2 uses for Cheryl. The point is continuity:
-     a face you have handled before comes back and remembers how it went. */
+  /* Act II. The nights after the first real threat, paced as a set: relief,
+     something-like-normal, a night the JOB is chaos, and then the floor
+     dropping out again. The threat is authored at the campaign level (which
+     nights can hold a killer, when the coach comes) while everything inside a
+     shift stays procedural. Cooldown and the investigation resolver still have
+     the final say where they apply -- these are the broad shape, not an
+     override of the state-aware systems Stage 5 built. */
 
-  // Night 5 -- Little Ricky's first guaranteed visit (the popcorn).
-  5: { requiredSpecials: ['POPCORN'], specialCap: 2 },
-  // Night 6 -- Cheryl comes back. Her Night 2 history colors how she opens,
-  // and the parking-lot light still isn't fixed, which she notices.
-  6: { requiredSpecials: ['MANAGER'], specialCap: 2 },
-  // Night 7 -- Otis and his homemade coupon, first guaranteed visit.
-  7: { requiredSpecials: ['COUPON'], specialCap: 2 },
-  // Night 8 -- old faces. Ricky and Otis both come back; how each opens
-  // depends on how you left it with them. Cap 3 so one ordinary special can
-  // still turn up beside the two returns without the night becoming nothing
-  // but storyline.
-  8: { requiredSpecials: ['POPCORN', 'COUPON'], specialCap: 3 },
+  // Night 5 -- aftermath. Guaranteed breathing room: no killer, no coach,
+  // whatever you did on Night 4. The deputy is left state-driven (NORMAL), so
+  // an arrest surfaces the stand-down "it's over" visit and an unresolved case
+  // still gets an ordinary warning -- the same night reads differently by
+  // history. Little Ricky and the popcorn are the tonal contrast: you nearly
+  // died last night, and tonight's problem is a man in your kettle.
+  5: {
+    killerPolicy: POLICY.FORBIDDEN,
+    coachPolicy: POLICY.FORBIDDEN,
+    requiredSpecials: ['POPCORN'],
+    specialCap: 2,
+  },
+  // Night 6 -- almost normal. Cheryl returns; the rear lot is still dark
+  // through this shift (the light installs at the 6->7 boundary if earned).
+  // Killer left NORMAL on purpose: a prior arrest's cooldown suppresses it,
+  // but an unresolved case keeps the underlying danger a live probability.
+  6: {
+    coachPolicy: POLICY.FORBIDDEN,
+    requiredSpecials: ['MANAGER'],
+    specialCap: 2,
+  },
+  // Night 7 -- the busy night. The store is safe; the JOB is not. No killer,
+  // no deputy to interrupt, but the coach is FORCED -- a guaranteed rush on top
+  // of Otis and the floodlight the player may just now be noticing. Heavy
+  // pressure, no actual danger. The game teaches that not every bad night is a
+  // killer night, which is what makes the next one land.
+  7: {
+    killerPolicy: POLICY.FORBIDDEN,
+    deputyPolicy: POLICY.FORBIDDEN,
+    coachPolicy: POLICY.FORCED,
+    requiredSpecials: ['COUPON'],
+    specialCap: 2,
+  },
+  // Night 8 -- the second problem. A genuine threat every time (killer and
+  // deputy FORCED), but its MEANING is state-aware: with a prior arrest it is
+  // the Stage 5 second threat -- someone who should not still be out there --
+  // and without one it is simply the unresolved case escalating. Coach
+  // forbidden and cap held at two (Ricky + Otis, no random extras) so the
+  // horror and the two returning regulars have room and the night does not
+  // turn into a receiving line.
+  8: {
+    killerPolicy: POLICY.FORCED,
+    deputyPolicy: POLICY.FORCED,
+    coachPolicy: POLICY.FORBIDDEN,
+    requiredSpecials: ['POPCORN', 'COUPON'],
+    specialCap: 2,
+  },
 };
 
 /**
@@ -439,6 +476,15 @@ export function applyStoryConsequences(campaign, completedNight = 0) {
      they have met the threat that should not have still been out there. */
   if (arrests >= 1 && completedNight >= SECOND_THREAT_NIGHT) {
     setStoryFlag(campaign, 'secondCaseOpened', true);
+  }
+
+  /* Act II is behind the player the night the second problem is worked,
+     whichever way the campaign got there -- with an arrest or without one. A
+     single structural marker, banked at the boundary like the rest and rolled
+     back with a failed night, so Nights 9-12 can ask "is Act II done" without
+     caring how it went. */
+  if (completedNight >= SECOND_THREAT_NIGHT) {
+    setStoryFlag(campaign, 'actTwoComplete', true);
   }
 }
 

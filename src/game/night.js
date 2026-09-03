@@ -191,10 +191,41 @@ export function makeNight(seed, n, mode = MODE.HORROR, opts = {}) {
     specialCap: opts.specialCap,
   });
   // Read the flag, not the index: the rota was sorted by arrival time above,
-  // so the decoys are no longer the first few entries.
+  // so the decoys are no longer the first few entries. `open` is therefore in
+  // arrival-time order.
   const open = [];
   schedule.forEach((e, i) => { if (!e.decoy) open.push(i); });
-  const slots = rng.shuffle(open).slice(0, specials.picks.length);
+  // Shuffle a COPY, so the same RNG is drawn as before but `open` stays in
+  // arrival-time order for the position map below (rng.shuffle mutates).
+  const shuffledOpen = rng.shuffle(open.slice());
+  const reqN = specials.requiredCount || 0;
+  let slots;
+  if (reqN >= 2) {
+    /* Two or more GUARANTEED specials in one night (an authored Story climax
+       like Night 8's Ricky + Otis). Left to a plain shuffle they land in the
+       same minute about one night in seven, which -- on a night that also has
+       a deputy briefing and a killer -- reads as a pile-up. So walk the
+       shuffled slots (for per-seed variety, no extra RNG) and only accept one
+       that is at least `minSep` arrival-slots away from the ones already
+       taken; `open` is time-ordered, so slot distance is arrival-time
+       distance. If the constraint cannot be met, the remaining picks fall back
+       to whatever slots are left. Only ever runs for a night that guarantees
+       2+ specials -- every other mode and night falls through to the slice. */
+    const pos = new Map(open.map((s, i) => [s, i]));
+    const minSep = Math.max(1, Math.floor(open.length / (reqN + 1)));
+    slots = [];
+    const used = new Set();
+    for (const s of shuffledOpen) {
+      if (slots.length >= specials.picks.length) break;
+      if (slots.every((c) => Math.abs(pos.get(c) - pos.get(s)) >= minSep)) { slots.push(s); used.add(s); }
+    }
+    for (const s of shuffledOpen) {                // fill any shortfall
+      if (slots.length >= specials.picks.length) break;
+      if (!used.has(s)) { slots.push(s); used.add(s); }
+    }
+  } else {
+    slots = shuffledOpen.slice(0, specials.picks.length);
+  }
   slots.forEach((slot, i) => { schedule[slot].special = specials.picks[i]; });
 
   /* The bus. Once in a while a coach pulls in off the highway and two dozen

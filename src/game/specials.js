@@ -891,6 +891,9 @@ export function planSpecials(rng, night, count, opts = {}) {
     if (picks.length >= cap) break;
     if (valid.has(id) && !picks.includes(id)) picks.push(id);
   }
+  // How many of the leading picks are guaranteed. Callers that place the picks
+  // into the schedule use this to spread guaranteed encounters apart.
+  const requiredCount = picks.length;
 
   // Random fill: as many as the roll wanted, but no more than the cap leaves
   // room for. So an uncapped night gets `rolled` randoms on top of any
@@ -906,5 +909,5 @@ export function planSpecials(rng, night, count, opts = {}) {
 
   // A swarm only counts as one if it was actually allowed to fill out -- a
   // capped Story night is never a swarm however the dice fell.
-  return { swarm: swarm && cap === Infinity && want > 0, picks };
+  return { swarm: swarm && cap === Infinity && want > 0, picks, requiredCount };
 }

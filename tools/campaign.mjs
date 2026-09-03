@@ -637,13 +637,15 @@ check('a Stage 1/2 save (v1, empty memory) loads and upgrades forward',
   compat.v1loads && compat.v1blank && compat.v1keeps, JSON.stringify(compat));
 check('a v2 save with a broken memory bag loads with a clean one', compat.v2badloads);
 
-/* ---------- scheduling: Nights 5-8 guarantee the returning regulars ------- */
+/* ---------- Act II scheduling: Nights 5-8 as one authored act ------------- */
+/* S.night uses calm=false (no cooldown), so this reads the BASE authored
+   config: forbidden/forced hold, NORMAL shows through as a probability. */
 const sched = await ev(() => {
   const S = window.__story, C = window.__campaign;
   const scan = (n) => {
     const cfg = C.nightConfig(n);
     const req = cfg.requiredSpecials.slice().sort();
-    let hasReq = 0, overCap = 0, maxSp = 0, deputies = 0, killers = 0;
+    let hasReq = 0, overCap = 0, maxSp = 0, deputies = 0, killers = 0, coaches = 0, minGap = 1;
     const SEEDS = 200;
     for (let i = 0; i < SEEDS; i++) {
       const nt = S.night(20000 + i, n);
@@ -653,24 +655,31 @@ const sched = await ev(() => {
       if (req.every((id) => sp.includes(id))) hasReq++;
       if (nt.deputy) deputies++;
       if (nt.plan.appears) killers++;
+      if (nt.busAt !== Infinity) coaches++;
+      // Ricky/Otis spacing on Night 8
+      const r = nt.schedule.find((e) => e.special === 'POPCORN');
+      const o = nt.schedule.find((e) => e.special === 'COUPON');
+      if (r && o) minGap = Math.min(minGap, Math.abs(r.t - o.t) / nt.length);
     }
-    return { req, cap: cfg.specialCap, hasReq, overCap, maxSp, deputies, killers, seeds: SEEDS };
+    return { req, cap: cfg.specialCap, hasReq, overCap, maxSp, deputies, killers, coaches, minGap: +minGap.toFixed(3), seeds: SEEDS };
   };
   return { n5: scan(5), n6: scan(6), n7: scan(7), n8: scan(8) };
 });
-check('Night 5 guarantees Little Ricky every seed, capped at two',
-  sched.n5.hasReq === 200 && sched.n5.overCap === 0 && sched.n5.req.join() === 'POPCORN' && sched.n5.cap === 2,
-  JSON.stringify(sched.n5));
-check('Night 6 guarantees Cheryl\'s return, capped at two',
-  sched.n6.hasReq === 200 && sched.n6.overCap === 0 && sched.n6.req.join() === 'MANAGER' && sched.n6.cap === 2);
-check('Night 7 guarantees Otis, capped at two',
-  sched.n7.hasReq === 200 && sched.n7.overCap === 0 && sched.n7.req.join() === 'COUPON' && sched.n7.cap === 2);
-check('Night 8 guarantees both returns together, capped at three',
-  sched.n8.hasReq === 200 && sched.n8.overCap === 0
-  && sched.n8.req.join() === 'COUPON,POPCORN' && sched.n8.cap === 3, JSON.stringify(sched.n8));
-check('Nights 5-8 leave the killer procedural (neither forbidden nor forced)',
-  sched.n5.killers > 0 && sched.n5.killers < 200 && sched.n6.killers > 0 && sched.n6.killers < 200,
-  `n5 ${sched.n5.killers}/200, n6 ${sched.n6.killers}/200`);
+check('Night 5 -- aftermath: Ricky guaranteed, cap 2, no killer, no coach',
+  sched.n5.hasReq === 200 && sched.n5.cap === 2 && sched.n5.req.join() === 'POPCORN'
+  && sched.n5.killers === 0 && sched.n5.coaches === 0, JSON.stringify(sched.n5));
+check('Night 6 -- almost normal: Cheryl guaranteed, cap 2, no coach, killer a probability',
+  sched.n6.hasReq === 200 && sched.n6.cap === 2 && sched.n6.req.join() === 'MANAGER'
+  && sched.n6.coaches === 0 && sched.n6.killers > 0 && sched.n6.killers < 200, JSON.stringify(sched.n6));
+check('Night 7 -- the busy night: Otis guaranteed, cap 2, NO killer, NO deputy, coach FORCED every seed',
+  sched.n7.hasReq === 200 && sched.n7.cap === 2 && sched.n7.req.join() === 'COUPON'
+  && sched.n7.killers === 0 && sched.n7.deputies === 0 && sched.n7.coaches === 200, JSON.stringify(sched.n7));
+check('Night 8 -- the second problem: Ricky+Otis guaranteed, cap 2, killer + deputy forced, no coach',
+  sched.n8.hasReq === 200 && sched.n8.cap === 2 && sched.n8.overCap === 0
+  && sched.n8.req.join() === 'COUPON,POPCORN'
+  && sched.n8.killers === 200 && sched.n8.deputies === 200 && sched.n8.coaches === 0, JSON.stringify(sched.n8));
+check('Night 8 -- the two guaranteed regulars are spread apart, not piled up',
+  sched.n8.minGap > 0.1, `min gap ${sched.n8.minGap} of the night`);
 
 /* ---------- determinism: memory cannot move the schedule ---------- */
 const detMem = await ev(() => {
@@ -1134,29 +1143,40 @@ const secondThreat = await ev(() => {
       requiredSpecials: cfg.requiredSpecials, specialCap: cfg.specialCap,
     });
   };
-  let withArrest = 0, without = 0, visitsT = 0, visitsF = 0, stub = 0, fullPlan = 0;
+  // The Stage 6 config forces the killer statically, so BOTH paths always have
+  // a threat. The difference the override makes is on the arrest path where the
+  // cooldown WOULD keep tonight quiet: prove that (a) with the override the
+  // killer still appears, and (b) WITHOUT the override the same calm night
+  // would have suppressed it -- i.e. the override is what breaks the quiet.
+  let withArrest = 0, without = 0, visitsT = 0, visitsF = 0, stub = 0, fullPlan = 0, suppressedNoOverride = 0;
   for (let i = 0; i < 300; i++) {
-    // cooldown WOULD keep tonight quiet -- the second-threat override breaks it.
+    // arrest + cooldown-calm, override applied: the quiet is broken.
     const a = buildN8(1000 + i, 1, true);
     if (a.plan.appears) withArrest++;
     if (a.plan.appears) { if (a.plan.visits) visitsT++; else visitsF++; }
-    // a forced killer must be a real plan, never the {appears,at,asCustomer} stub
     if (typeof a.plan.prowlFor === 'number' && typeof a.plan.visitAt === 'number') fullPlan++;
     else stub++;
-    // no arrest, no cooldown -> an ordinary probability
+    // no arrest, no cooldown: the static FORCED config still guarantees a threat.
     const b = buildN8(2000 + i, 0, false);
     if (b.plan.appears) without++;
+    // arrest + cooldown-calm, but WITHOUT the override: cooldown wins, killer gone.
+    const c = N.makeNight(1000 + i, 8, 'STORY', {
+      calm: true, standDown: false, killerPolicy: C.nightConfig(8).killerPolicy,
+      requiredSpecials: C.nightConfig(8).requiredSpecials, specialCap: C.nightConfig(8).specialCap,
+    });
+    if (!c.plan.appears) suppressedNoOverride++;
   }
-  return { withArrest, without, visitsT, visitsF, stub, fullPlan, seeds: 300 };
+  return { withArrest, without, visitsT, visitsF, stub, fullPlan, suppressedNoOverride, seeds: 300 };
 });
-check('Night 8 forces the killer for every seed once an arrest is on record, overriding the quiet',
-  secondThreat.withArrest === 300, `${secondThreat.withArrest}/300`);
+check('Night 8 always contains a threat -- forced for every seed, with an arrest or without',
+  secondThreat.withArrest === 300 && secondThreat.without === 300,
+  `arrest ${secondThreat.withArrest}/300, none ${secondThreat.without}/300`);
 check('and it is a full killer plan, never an appears-stub',
   secondThreat.fullPlan === 300 && secondThreat.stub === 0, JSON.stringify({ full: secondThreat.fullPlan, stub: secondThreat.stub }));
 check('the forced killer\'s staging stays procedural (visits still varies)',
   secondThreat.visitsT > 0 && secondThreat.visitsF > 0, `polite ${secondThreat.visitsT}, straight ${secondThreat.visitsF}`);
-check('with no arrest on record, Night 8 is an ordinary probability, not forced',
-  secondThreat.without > 0 && secondThreat.without < 300, `${secondThreat.without}/300`);
+check('the arrest override is what breaks the quiet: without it, cooldown suppresses the killer',
+  secondThreat.suppressedNoOverride === 300, `${secondThreat.suppressedNoOverride}/300 suppressed`);
 
 /* ---------- the arrest is recorded through the real game, and rolls back --- */
 const arrestFlow = await ev(() => {
@@ -1324,6 +1344,135 @@ check('Graveyard runs with no investigation state and keeps its night-based depu
   invIso.gvInvNull && invIso.gvCtxNull, JSON.stringify(invIso));
 check('a Graveyard arrest writes no Story case (there is no campaign)', invIso.gvNoCampaign);
 check('Casual carries no investigation state', invIso.casInvNull);
+
+/* ================================================================
+   STAGE 6 -- Act II as one authored act (Nights 5-8).
+
+   The config-level shape is covered above (the sched block). These drive the
+   real game through the two campaign histories the act must serve, check the
+   Night 8 climax both ways, the returning regulars' continuity, the act-
+   completion marker and its rollback, and that Story's forced coach never
+   leaks into Graveyard.
+   ================================================================ */
+
+/* ---------- Night 8 through the real game, both histories ---------- */
+const act2n8 = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  const allText = (root) => {
+    const out = [];
+    const walk = (node, depth) => {
+      if (!node || depth > 9 || out.length > 70) return;
+      if (node.text) out.push(node.text);
+      for (const c of (node.choices || [])) { let n = null; try { n = c.fn ? c.fn() : null; } catch (e) { /**/ } walk(n, depth + 1); }
+    };
+    walk(root, 0); return out.join('\n');
+  };
+  const brief = () => allText(D.buildOfficerIntro({ name: 'Deputy' }, g.night.bulletin, g.night.caseFile, g.ctx));
+  const shape = () => ({
+    killer: g.night.plan.appears,
+    fullPlan: typeof g.night.plan.prowlFor === 'number' && typeof g.night.plan.visitAt === 'number',
+    deputy: g.night.deputy,
+    coach: g.night.busAt !== Infinity,
+    ricky: g.night.schedule.filter((e) => e.special === 'POPCORN').length,
+    otis: g.night.schedule.filter((e) => e.special === 'COUPON').length,
+    specials: g.night.schedule.filter((e) => e.special).length,
+    secondThreat: g.investigation.secondThreat,
+    clip: g.env.arrestClipping,
+  });
+
+  // PATH A: a prior arrest, and a real cooldown that WOULD keep Night 8 quiet.
+  C.deleteCampaignSave(); g.newStory();
+  g.campaign.stats.arrests = 1;
+  g.campaign.cooldown.calmUntil = 9; g.campaign.cooldown.standDownNight = 5;
+  g.run.calmUntil = 9; g.run.standDownNight = 5; g.run.arrests = 1;
+  C.recordCase(g.campaign, { night: 4, result: 'arrested', name: 'Earl', profile: { height: 'tall' }, signatureTape: C.INVESTIGATION_TAPE });
+  C.setEnvironmentFlag(g.campaign, 'arrestClippingPosted', true);
+  g.nightNo = 8; g.startNight(8);
+  const A = Object.assign(shape(), { brief: brief() });
+
+  // PATH B: no arrest ever.
+  C.deleteCampaignSave(); g.newStory();
+  g.nightNo = 8; g.startNight(8);
+  const B = Object.assign(shape(), { brief: brief() });
+  return { A, B };
+});
+check('Night 8 (prior arrest): forced full-plan killer, deputy, no coach, Ricky+Otis once each, cap 2',
+  act2n8.A.killer && act2n8.A.fullPlan && act2n8.A.deputy && !act2n8.A.coach
+  && act2n8.A.ricky === 1 && act2n8.A.otis === 1 && act2n8.A.specials === 2, JSON.stringify(act2n8.A));
+check('Night 8 (prior arrest): the second-threat path is live -- override breaks the quiet, clipping is up',
+  act2n8.A.secondThreat === true && act2n8.A.clip === true
+  && /Elkhart|we took a man|caught A man/i.test(act2n8.A.brief)
+  && /copycat/i.test(act2n8.A.brief) && act2n8.A.brief.includes('THE LAST CUSTOMER'));
+check('Night 8 (no arrest): still a forced full-plan killer + deputy, no coach, same cap',
+  act2n8.B.killer && act2n8.B.fullPlan && act2n8.B.deputy && !act2n8.B.coach
+  && act2n8.B.ricky === 1 && act2n8.B.otis === 1 && act2n8.B.specials === 2, JSON.stringify(act2n8.B));
+check('Night 8 (no arrest): NO second-threat, NO clipping, and the briefing invents no arrest',
+  act2n8.B.secondThreat === false && act2n8.B.clip === false
+  && !/copycat|we took a man|Elkhart|THE LAST CUSTOMER/i.test(act2n8.B.brief), JSON.stringify({ st: act2n8.B.secondThreat, clip: act2n8.B.clip }));
+
+/* ---------- returning regulars remember across the act ---------- */
+const act2mem = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  C.deleteCampaignSave(); g.newStory();
+  // As if Ricky was dealt with on Night 5 and Otis on Night 7.
+  C.recordCustomerOutcome(g.campaign, 'POPCORN', 'indulged', { night: 5 });
+  C.recordCustomerOutcome(g.campaign, 'COUPON', 'refused', { night: 7 });
+  g.nightNo = 8; g.startNight(8);
+  const open = (special) => {
+    const c = { special, name: special, mood: 100, hasMoney: true };
+    return (D.specialRoot(c, g.ctx) || {}).text || '';
+  };
+  const rickyReturn = open('POPCORN');
+  const otisReturn = open('COUPON');
+  // first-meeting baselines from a clean campaign
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 8; g.startNight(8);
+  const rickyFirst = open('POPCORN');
+  const otisFirst = open('COUPON');
+  return {
+    rickyRemembers: rickyReturn !== rickyFirst && rickyReturn.length > 0,
+    otisRemembers: otisReturn !== otisFirst && otisReturn.length > 0,
+  };
+});
+check('Night 8: Ricky opens as a return, remembering Night 5', act2mem.rickyRemembers);
+check('Night 8: Otis opens as a return, remembering Night 7', act2mem.otisRemembers);
+
+/* ---------- the Act II completion marker banks and rolls back ---------- */
+const act2flag = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  // Completing Night 8 sets it, either path.
+  const cam = C.freshCampaign(1);
+  C.applyStoryConsequences(cam, 7); const at7 = C.storyFlag(cam, 'actTwoComplete');
+  C.applyStoryConsequences(cam, 8); const at8 = C.storyFlag(cam, 'actTwoComplete');
+  const camNoArrest = C.freshCampaign(2);
+  C.applyStoryConsequences(camNoArrest, 8);
+  const noArrestToo = C.storyFlag(camNoArrest, 'actTwoComplete');
+  // Rollback: fail Night 8 in the real game -> flag never banks.
+  C.deleteCampaignSave(); g.newStory();
+  g.campaign.currentNight = 8; g.nightNo = 8; C.saveCampaign(g.campaign);
+  g.startNight(8);
+  g.toTitle(); g.continueStory();             // died before completing
+  const afterFail = C.storyFlag(g.campaign, 'actTwoComplete');
+  return { at7, at8, noArrestToo, afterFail };
+});
+check('actTwoComplete is set only once Night 8 is worked, on either path',
+  act2flag.at7 === false && act2flag.at8 === true && act2flag.noArrestToo === true);
+check('and a failed Night 8 does not bank it (rolls back with the night)',
+  act2flag.afterFail === false, `afterFail ${act2flag.afterFail}`);
+
+/* ---------- Story's forced coach never leaks into the endless modes ------- */
+const coachIso = await ev(() => {
+  const N = window.__night;
+  let gv = 0, cas = 0;
+  for (let i = 0; i < 300; i++) {
+    if (N.makeNight(40000 + i, 7, 'HORROR', {}).busAt !== Infinity) gv++;
+    if (N.makeNight(41000 + i, 7, 'CASUAL', {}).busAt !== Infinity) cas++;
+  }
+  return { gv, cas };
+});
+check('Graveyard Night 7 keeps the coach a probability, not the Story-forced event',
+  coachIso.gv > 0 && coachIso.gv < 300, `${coachIso.gv}/300`);
+check('Casual Night 7 keeps its ordinary coach probability too (not Story-forced)',
+  coachIso.cas > 0 && coachIso.cas < 300, `${coachIso.cas}/300`);
 
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
