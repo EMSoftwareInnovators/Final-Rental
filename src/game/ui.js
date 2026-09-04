@@ -154,7 +154,7 @@ export class UI {
       notes: $('notes'), notesSuspect: $('notes-suspect'), notesTarget: $('notes-target'),
       notesTargetHdr: $('notes-target-hdr'),
       phone: $('phone-ui'), phoneHdr: $('phone-hdr'), phoneText: $('phone-text'), phoneChoices: $('phone-choices'),
-      title: $('title'), titleMenu: $('title-menu'),
+      title: $('title'), titleMenu: $('title-menu'), titleStatus: $('title-status'),
       panel: $('panel'), panelBody: $('panel-body'),
       fade: $('fade'),
     };
@@ -178,9 +178,9 @@ export class UI {
    * supposed to keep from them. A clock that seems slow is ambience; a
    * clock that announces it has been held is the answer to the question.
    */
-  setClock(time, night, held) {
+  setClock(time, night, held, label = 'NIGHT') {
     this.el.clockTime.textContent = time;
-    this.el.clockNight.textContent = `NIGHT ${night}`;
+    this.el.clockNight.textContent = `${label} ${night}`;
     this.el.clockTime.parentElement.classList.remove('held');
     void held;
   }
@@ -381,10 +381,24 @@ export class UI {
    * <span class="sub">), so the stylesheet and titleSelect() need no changes.
    */
   setTitleMenu(items) {
-    this.el.titleMenu.innerHTML = items.map((it, n) =>
-      `<li${n === 0 ? ' class="sel"' : ''}>${escape(it.label)}`
-      + (it.sub ? `<span class="sub">${escape(it.sub)}</span>` : '')
-      + '</li>').join('');
+    this.el.titleMenu.innerHTML = items.map((it, n) => {
+      const cls = [n === 0 ? 'sel' : '', it.locked ? 'locked' : ''].filter(Boolean).join(' ');
+      return `<li${cls ? ` class="${cls}"` : ''}>${escape(it.label)}`
+        + (it.sub ? `<span class="sub">${escape(it.sub)}</span>` : '')
+        + '</li>';
+    }).join('');
+  }
+  /**
+   * The permanent-profile line under the tagline. Restrained on purpose: a
+   * "STORY CLEARED" mark and how many of the two endings have been seen, never
+   * a statistics dashboard, and it hides itself entirely before Story is done.
+   * The unseen ending is never named, so it cannot spoil the one you missed.
+   */
+  setTitleStatus(html) {
+    const el = this.el.titleStatus;
+    if (!el) return;
+    el.innerHTML = html || '';
+    el.hidden = !html;
   }
   titleSelect(i) {
     const items = this.el.titleMenu.querySelectorAll('li');
@@ -560,9 +574,13 @@ export function padHtml(p) {
   ESC on the keyboard leaves at any time.</p>`;
 }
 
-export function reportHtml(night, stats, grade, next) {
+export function reportHtml(night, stats, grade, next, opts = {}) {
   const row = (k, v, cls = '') => `<tr><td>${k}</td><td class="n ${cls}">${v}</td></tr>`;
-  return `<h2>END OF SHIFT &mdash; NIGHT ${night}</h2>
+  // Overtime labels the page and the clock-in line by SHIFT, never NIGHT, so a
+  // survival shift is never confused for a Story night.
+  const ot = !!opts.overtime;
+  const heading = ot ? `OVERTIME &mdash; SHIFT ${night} CLEARED` : `END OF SHIFT &mdash; NIGHT ${night}`;
+  return `<h2>${heading}</h2>
   <div class="report">
     <table>
       ${row('Customers served', stats.served)}
@@ -585,7 +603,7 @@ export function reportHtml(night, stats, grade, next) {
       <p class="note">${next}</p>
     </div>
   </div>
-  <p class="pad-foot">${glyph('confirm')} clock in for night ${night + 1}</p>`;
+  <p class="pad-foot">${glyph('confirm')} ${ot ? `on to shift ${night + 1}` : `clock in for night ${night + 1}`}</p>`;
 }
 
 /**
@@ -638,6 +656,16 @@ export function endingHtml(kind, data) {
           <p class="big">CASE CLOSED &mdash; NIGHT ${data.night}</p>
           <ul><li class="opt sel">Lock up</li></ul></div>`);
       }
+      /* Overtime arrest: a cleared shift, not a Story beat. One way forward --
+         the next shift -- with no "hand in the keys" (you quit from pause). */
+      if (data.overtime) {
+        return say(`<div class="ending"><h2>UNITS RESPONDING</h2>
+          <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>
+          ${where}
+          <p><b>${escape(data.name || 'Nobody')}</b> did not resist.</p>
+          <p class="big">SHIFT ${data.shift || data.night} CLEARED</p>
+          <ul><li class="opt sel">Work the next shift</li></ul></div>`);
+      }
       return say(`<div class="ending"><h2>UNITS RESPONDING</h2>
         <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>
         ${where}
@@ -669,4 +697,84 @@ export function endingHtml(kind, data) {
         <p class="pad-foot">${glyph('confirm')} new tape</p></div>`;
     default: return '';
   }
+}
+
+/* ============================================================
+   OVERTIME panels (Stage 12). The post-game challenge's own front end:
+   a small menu, a records screen, and a run-over summary. All retro, all
+   controller- and keyboard-navigable (the game counts li.opt rows).
+   ============================================================ */
+
+/* Nearest letter to a grade-point average, for display only. Mirrors
+   profile.js's gpaLetter without importing it, so ui.js stays presentation. */
+function gpaLetter(gpa) {
+  if (gpa == null) return '—';
+  return gpa >= 3.5 ? 'A' : gpa >= 2.5 ? 'B' : gpa >= 1.5 ? 'C' : gpa >= 0.5 ? 'D' : 'F';
+}
+
+/** Overtime's own menu. `rows` is [{label, sub}], already decided by the game. */
+export function overtimeMenuHtml(rows, profile) {
+  const rec = (profile && profile.overtime && profile.overtime.records) || {};
+  const best = rec.highestShift || 0;
+  const li = rows.map((r, i) =>
+    `<li class="opt${i === 0 ? ' sel' : ''}">${escape(r.label)}`
+    + (r.sub ? ` <span class="quiet">&mdash; ${escape(r.sub)}</span>` : '') + '</li>').join('\n    ');
+  return `<h2>OVERTIME</h2>
+  <p class="pad-foot">The store is still open, and so are you. Clear one graveyard
+  shift after another; a death or a wrong call ends the run. There is no retry in here.</p>
+  <ul>
+    ${li}
+  </ul>
+  <p class="pad-foot quiet">${best > 0 ? `Best so far: shift ${best} cleared.` : 'No shifts cleared yet.'}</p>
+  <p class="pad-foot">${glyph('confirm')} select &nbsp;&middot;&nbsp; ${glyph('back')} back</p>`;
+}
+
+/** The permanent Overtime records screen. */
+export function overtimeRecordsHtml(profile) {
+  const ov = (profile && profile.overtime) || {};
+  const r = ov.records || {};
+  const br = ov.bestRun;
+  const row = (k, v) => `<tr><td>${k}</td><td class="n">${v}</td></tr>`;
+  const bestRunBlock = br
+    ? `<p class="pad-foot">Best run: <b>shift ${br.highestShift}</b>, ${br.score} pts,
+       ${br.arrests} arrest${br.arrests === 1 ? '' : 's'}, average ${gpaLetter(br.averageGrade)}.</p>`
+    : `<p class="pad-foot quiet">No completed run on record yet.</p>`;
+  return `<h2>OVERTIME RECORDS</h2>
+  <table>
+    ${row('Highest shift cleared', r.highestShift || 0)}
+    ${row('Best run score', r.bestRunScore || 0)}
+    ${row('Most arrests in a run', r.mostArrests || 0)}
+    ${row('Best top-grade streak', r.bestGradeStreak || 0)}
+    ${row('Total shifts cleared', r.totalShifts || 0)}
+    ${row('Total runs', r.totalRuns || 0)}
+  </table>
+  ${bestRunBlock}
+  <p class="pad-foot">${glyph('confirm')} back</p>`;
+}
+
+/** The run-over summary. `beaten` is the list of record keys newly set. */
+export function overtimeSummaryHtml(run, beaten = []) {
+  const rs = (run && run.runStats) || {};
+  const set = new Set(beaten || []);
+  const tag = (key) => set.has(key) ? ' <span class="rec">NEW RECORD</span>' : '';
+  const row = (k, v, recKey) => `<tr><td>${k}</td><td class="n">${v}${recKey ? tag(recKey) : ''}</td></tr>`;
+  const cleared = rs.shiftsCleared || 0;
+  const reached = run ? run.shift : cleared;
+  const avg = gpaLetter(rs.avgGrade);
+  return `<div class="ending"><h2>OVERTIME ENDED</h2>
+    <p>The run is over. You reached shift ${reached} and cleared ${cleared} of them.</p>
+    <table>
+      ${row('Shifts cleared', cleared, 'highestShift')}
+      ${row('Run score', Math.round(rs.score || 0), 'bestRunScore')}
+      ${row('Arrests', rs.arrests || 0, 'mostArrests')}
+      ${row('Customers served', rs.customersServed || 0)}
+      ${row('Walked out on you', rs.walkouts || 0)}
+      ${row('Best grade streak', rs.bestGradeStreak || 0, 'bestGradeStreak')}
+      ${row('Average grade', avg)}
+    </table>
+    <ul>
+      <li class="opt sel">Try again</li>
+      <li class="opt">Back to title</li>
+    </ul>
+    <p class="pad-foot">${glyph('confirm')} select</p></div>`;
 }

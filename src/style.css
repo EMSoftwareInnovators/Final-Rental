@@ -297,8 +297,13 @@ body.cine #panel-body .report .note{line-height:1.3}
 .title-logo .l1,.title-logo .l2{display:block;font-weight:bold;letter-spacing:.4cqw}
 .title-logo .l1{font-size:9cqw;color:#e9e2cf;text-shadow:0.5cqw 0.5cqw 0 #7d1c12}
 .title-logo .l2{font-size:14cqw;color:var(--red);text-shadow:0.6cqw 0.6cqw 0 #2a0d08,0 0 4cqw rgba(214,59,40,.6)}
-.tag{font-size:calc(2.6cqw * var(--ui-scale));color:var(--amber-dim);letter-spacing:.3cqw;margin-bottom:3cqw}
+.tag{font-size:calc(2.6cqw * var(--ui-scale));color:var(--amber-dim);letter-spacing:.3cqw;margin-bottom:1cqw}
+/* The permanent-profile line under the tagline. Quiet: a green nod that Story
+   is behind you, not an announcement. */
+.title-status{font-size:calc(2cqw * var(--ui-scale));color:var(--green);letter-spacing:.2cqw;margin-bottom:2.4cqw;opacity:.85}
 #title-menu{list-style:none;font-size:calc(3.4cqw * var(--ui-scale))}
+/* A locked menu row reads as present-but-unavailable: dim, and it says why. */
+#title-menu li.locked,#title-menu li.locked.sel{color:#5a4a2a}
 #title-menu li{color:var(--amber-dim);padding:.2cqw}
 #title-menu li.sel{color:var(--amber)}
 #title-menu .sub{

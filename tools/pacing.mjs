@@ -140,5 +140,104 @@ check('Night 6: killer stays a probability (neither always nor never)', n6.kille
 const n8 = rows[7];
 check('Night 8: the two guaranteed regulars stay spread apart', n8.reqSpaceWorst !== null && n8.reqSpaceWorst > 0.08, `worst spacing ${n8.reqSpaceWorst}`);
 
+/* ============================================================
+   OVERTIME difficulty sampler (Stage 12).
+
+   Overtime reuses the graveyard generator with two Overtime-owned inputs: a
+   capped effective night for PRESSURE and a per-shift seed for VARIETY. It
+   passes no Story config, so this builds each shift exactly the way game.js
+   does -- makeNight(shiftSeed(runSeed, shift), effectiveNight(shift),
+   OVERTIME, {}) -- and checks the ramp is challenging, sane, escalating, and
+   ends in a plateau rather than runaway numbers.
+   ============================================================ */
+import { effectiveNight, shiftSeed, OVERTIME_NIGHT_CAP } from '../src/game/overtime.js';
+
+const OT_SHIFTS = [1, 2, 3, 5, 10, 20, 50];
+const OT_SEEDS = 160;
+
+function sampleOvertime(shift) {
+  const effN = effectiveNight(shift);
+  let killer = 0, deputy = 0, coach = 0;
+  let custSum = 0, custMin = 99, custMax = 0;
+  let bulletinSum = 0, huntMax = 0, breachMin = 999;
+  for (let i = 0; i < OT_SEEDS; i++) {
+    const runSeed = (900000 + i) >>> 0;
+    const nt = makeNight(shiftSeed(runSeed, shift), effN, MODE.OVERTIME, {});
+    if (nt.plan.appears) killer++;
+    if (nt.deputy) deputy++;
+    if (nt.busAt !== Infinity) coach++;
+    const c = nt.schedule.length;
+    custSum += c; custMin = Math.min(custMin, c); custMax = Math.max(custMax, c);
+    bulletinSum += nt.bulletin.keys.length;
+    huntMax = Math.max(huntMax, nt.plan.huntSpeed || 0);
+    if (nt.plan.appears) breachMin = Math.min(breachMin, nt.plan.breachLocked || 999);
+  }
+  return {
+    shift, effN,
+    killerPct: killer / OT_SEEDS, deputyPct: deputy / OT_SEEDS, coachPct: coach / OT_SEEDS,
+    custAvg: custSum / OT_SEEDS, custMin, custMax,
+    bulletinAvg: bulletinSum / OT_SEEDS, huntMax,
+    breachMin: breachMin === 999 ? null : breachMin,
+  };
+}
+
+console.log('\n--- overtime difficulty ---');
+const ot = OT_SHIFTS.map(sampleOvertime);
+if (SHOW_TABLE) {
+  console.log('shift  effN  killer%  dep%  coach%  cust(avg/min/max)  bulletin  huntMax  breachMin');
+  for (const r of ot) {
+    console.log(`${String(r.shift).padStart(5)}  ${String(r.effN).padStart(4)}  `
+      + `${(r.killerPct * 100).toFixed(0).padStart(6)}  ${(r.deputyPct * 100).toFixed(0).padStart(3)}  `
+      + `${(r.coachPct * 100).toFixed(0).padStart(5)}  `
+      + `${r.custAvg.toFixed(1)}/${r.custMin}/${r.custMax}`.padStart(16) + '  '
+      + `${r.bulletinAvg.toFixed(1)}`.padStart(7) + '  '
+      + `${r.huntMax.toFixed(2)}`.padStart(6) + '  '
+      + `${r.breachMin == null ? '-' : r.breachMin.toFixed(0)}`.padStart(8));
+  }
+}
+
+const otBy = Object.fromEntries(ot.map((r) => [r.shift, r]));
+
+/* Shift 1 is meaningfully dangerous, not a tutorial night. */
+check('overtime: shift 1 opens at an experienced difficulty (effective night >= 6)',
+  otBy[1].effN >= 6, `effN ${otBy[1].effN}`);
+check('overtime: shift 1 has a real chance of the killer',
+  otBy[1].killerPct >= 0.4, `${(otBy[1].killerPct * 100).toFixed(0)}%`);
+check('overtime: the deputy comes every shift, so the bulletin is always valid',
+  ot.every((r) => r.deputyPct === 1), ot.map((r) => (r.deputyPct * 100).toFixed(0)).join(' '));
+check('overtime: shift 1 is a busy floor, not empty',
+  otBy[1].custAvg >= 9, `avg ${otBy[1].custAvg.toFixed(1)}`);
+
+/* It escalates from shift 1 up to the plateau. */
+check('overtime: difficulty escalates 1 -> 3 -> 5',
+  otBy[1].effN < otBy[3].effN && otBy[3].effN < otBy[5].effN,
+  `${otBy[1].effN} < ${otBy[3].effN} < ${otBy[5].effN}`);
+check('overtime: killer odds climb early then reach the cap',
+  otBy[1].killerPct < otBy[5].killerPct && otBy[10].killerPct >= 0.88,
+  `s1 ${(otBy[1].killerPct * 100).toFixed(0)}% -> s10 ${(otBy[10].killerPct * 100).toFixed(0)}%`);
+
+/* Existing caps hold, and nothing runs away into nonsense. */
+check('overtime: customer count never exceeds the generator cap (13)',
+  ot.every((r) => r.custMax <= 13), ot.map((r) => r.custMax).join(' '));
+check('overtime: killer chance never exceeds its cap (0.92)',
+  ot.every((r) => r.killerPct <= 0.92), Math.max(...ot.map((r) => r.killerPct)).toFixed(2));
+check('overtime: bulletin length never exceeds the cap (10 traits)',
+  ot.every((r) => r.bulletinAvg <= 10), Math.max(...ot.map((r) => r.bulletinAvg)).toFixed(1));
+check('overtime: the killer never becomes impossibly fast (hunt speed bounded)',
+  ot.every((r) => r.huntMax <= 3.2), `max ${Math.max(...ot.map((r) => r.huntMax)).toFixed(2)}`);
+check('overtime: the deadbolt always buys a real number of seconds',
+  ot.every((r) => r.breachMin == null || r.breachMin >= 14),
+  `min ${Math.min(...ot.filter((r) => r.breachMin != null).map((r) => r.breachMin))}`);
+
+/* It PLATEAUS: past the cap, more shift number buys variety, not more pressure.
+   Shift 10, 20 and 50 all map to the same effective night, so their pressure
+   inputs are identical -- the averages match within sampling noise. */
+check('overtime: the effective night plateaus at the cap',
+  otBy[10].effN === OVERTIME_NIGHT_CAP && otBy[20].effN === OVERTIME_NIGHT_CAP && otBy[50].effN === OVERTIME_NIGHT_CAP,
+  `${otBy[10].effN}/${otBy[20].effN}/${otBy[50].effN}`);
+check('overtime: shift 20 and shift 50 are the same difficulty tier (plateau, not runaway)',
+  Math.abs(otBy[20].custAvg - otBy[50].custAvg) < 1.0 && otBy[20].huntMax === otBy[50].huntMax,
+  `cust ${otBy[20].custAvg.toFixed(1)} vs ${otBy[50].custAvg.toFixed(1)}, hunt ${otBy[20].huntMax.toFixed(2)}/${otBy[50].huntMax.toFixed(2)}`);
+
 console.log(fails ? `\npacing FAILED (${fails})` : '\npacing clean');
 process.exit(fails ? 1 : 0);

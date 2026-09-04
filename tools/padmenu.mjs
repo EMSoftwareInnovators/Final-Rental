@@ -86,10 +86,13 @@ async function session(id, expectScheme, expectSelect) {
   check(`${label}: ${expectSelect} opens the highlighted item`,
     (await st()).state === 'OPTIONS', (await st()).state);
 
-  /* ---- and it draws the right art for this pad ---- */
+  /* ---- and it draws the right art for this pad ----
+     Read the options panel itself, not a fixed-length slice of the whole
+     body -- the title screen has grown (a permanent-profile line, an Overtime
+     row) and a 4000-char body slice no longer reaches the options footer. */
   const art = await ev(() => {
-    const p = document.querySelector('.paper') || document.body;
-    return { html: p.innerHTML.slice(0, 4000) };
+    const p = document.getElementById('panel-body') || document.body;
+    return { html: p.innerHTML };
   });
   check(`${label}: the options footer is drawn in this pad's language`,
     art.html.includes(expectScheme === 'xbox' ? 'x-a' : 'p-x')

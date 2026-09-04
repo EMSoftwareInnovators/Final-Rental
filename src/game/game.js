@@ -27,8 +27,17 @@ import {
   recordCase, investigationState, investigationPolicy, INVESTIGATION_TAPE,
   setStoryFlag, storyFlag,
 } from './campaign.js';
+import {
+  loadProfile, saveProfile, overtimeUnlocked, endingsSeenCount, STORY_ENDING_COUNT,
+  bootstrapFromCampaign, recordStoryCompletion,
+  recordOvertimeRunStarted, recordOvertimeShiftCleared, recordOvertimeRunEnd,
+} from './profile.js';
+import {
+  freshOvertimeRun, loadOvertimeRun, saveOvertimeRun, hasOvertimeRun, deleteOvertimeRun,
+  effectiveNight as overtimeEffectiveNight, shiftSeed as overtimeShiftSeed, bankShift as overtimeBankShift,
+} from './overtime.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
-import { UI, howToHtml, optionsHtml, padHtml, keyboardHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds, setKeyCaps } from './ui.js';
+import { UI, howToHtml, optionsHtml, padHtml, keyboardHtml, reportHtml, endingHtml, overtimeMenuHtml, overtimeRecordsHtml, overtimeSummaryHtml, glyph, glyphText, setScheme, setPadBinds, setKeyCaps } from './ui.js';
 import { randomAppearance, paintSkin, voicePitchOf, pronounOf, describeApart, randomName } from './appearance.js';
 import { OFFICER } from './personality.js';
 import { GENRE_LABEL, GENRES, makeTape, tapeLabel, mediaWord } from './tapes.js';
@@ -43,6 +52,10 @@ const ST = {
   /* Story Mode bookends: the campaign is finished, and "this will erase your
      campaign" before a New Game does. Both are retro panels, not the shift. */
   STORYDONE: 'STORYDONE', NEWGAME: 'NEWGAME',
+  /* Overtime front-end panels (Stage 12): the mode's own little menu, its
+     records screen, its run-over summary, and the "abandon your run?" confirm.
+     All retro panels, controller- and keyboard-navigable, not the shift. */
+  OTMENU: 'OTMENU', OTRECORDS: 'OTRECORDS', OTSUMMARY: 'OTSUMMARY', OTNEW: 'OTNEW',
 };
 
 const RES = [[256, 192, '256x192'], [320, 240, '320x240'], [400, 300, '400x300']];
@@ -194,6 +207,14 @@ export class Game {
        disk save is the source of truth -- this is the working copy that is
        written to it at each night boundary. */
     this.campaign = null;
+    /* The permanent profile (profile.js): cross-campaign accomplishments and
+       records. Loaded once at boot, held in memory, written at accomplishment
+       boundaries. Never null after boot. */
+    this.profile = null;
+    /* The active Overtime run (overtime.js), when one is being played; null in
+       every other mode. Its own seed and stats -- shares nothing with the Story
+       campaign. */
+    this.otRun = null;
     this._mats = { view: mat(), cam: mat(), m: mat(), tmp: mat() };
     this.frame = this.frame.bind(this);   // handed straight to requestAnimationFrame
     // safe defaults so the attract-mode camera can render before a shift starts
@@ -293,6 +314,17 @@ export class Game {
     }
     this.layout();
 
+    /* The permanent profile. Load it once, then -- for a player who finished
+       the campaign under an earlier build, before this profile existed -- fold
+       that one completed campaign in so Overtime unlocks without replaying
+       Night 12. The import is idempotent (guarded on having recorded no
+       completion yet), so booting repeatedly never inflates the count. */
+    this.profile = loadProfile();
+    try {
+      const existing = loadCampaign();
+      if (bootstrapFromCampaign(this.profile, existing)) saveProfile(this.profile);
+    } catch (e) { /* a broken campaign save is simply not imported */ }
+
     this.state = ST.TITLE;
     this.refreshTitleMenu();
     this.ui.showTitle(true);
@@ -333,9 +365,21 @@ export class Game {
        overriding the post-arrest quiet because that is the night it ends. An
        empty object every other night, so nothing changes. */
     const inv = this.mode === MODE.STORY ? investigationPolicy(this.campaign, n) : {};
-    this.night = makeNight(this.seed, n, this.mode, {
-      calm: inv.calmOverride != null ? inv.calmOverride : (n <= R.calmUntil),
-      standDown: inv.standDownOverride != null ? inv.standDownOverride : (n === R.standDownNight),
+    /* Overtime generates like an ordinary graveyard night, but its DIFFICULTY
+       is the capped effective night for this shift, and its SEED is a per-shift
+       derivation of the run seed -- so a plateaued run still gets fresh stores.
+       It reads none of the Story config or investigation policy above (n is the
+       player-facing shift, not a Story night). Every other mode uses the run
+       seed and the night number directly, exactly as before. */
+    const overtime = this.mode === MODE.OVERTIME;
+    const genSeed = overtime ? overtimeShiftSeed(this.seed, n) : this.seed;
+    const genNight = overtime ? overtimeEffectiveNight(n) : n;
+    this.night = makeNight(genSeed, genNight, this.mode, {
+      // Overtime never runs the Story arrest-cooldown: every shift is a live
+      // graveyard night with the deputy and the killer both in play, so the
+      // bulletin is always valid and identification always possible.
+      calm: overtime ? false : (inv.calmOverride != null ? inv.calmOverride : (n <= R.calmUntil)),
+      standDown: overtime ? false : (inv.standDownOverride != null ? inv.standDownOverride : (n === R.standDownNight)),
       killerPolicy: inv.killerPolicy || (cfg ? cfg.killerPolicy : undefined),
       deputyPolicy: cfg ? cfg.deputyPolicy : undefined,
       coachPolicy: cfg ? cfg.coachPolicy : undefined,
@@ -519,6 +563,10 @@ export class Game {
       case ST.QUIT: this.updateQuitConfirm(); break;
       case ST.STORYDONE: this.updateStoryDone(); break;
       case ST.NEWGAME: this.updateNewGameConfirm(); break;
+      case ST.OTMENU: this.updateOvertimeMenu(); break;
+      case ST.OTRECORDS: this.updateOvertimeRecords(); break;
+      case ST.OTSUMMARY: this.updateOvertimeSummary(); break;
+      case ST.OTNEW: this.updateOvertimeNewConfirm(); break;
       case ST.REPORT: this.updateReport(dt); break;
       case ST.ENDING: this.updateEnding(dt); break;
       default: break;
@@ -631,6 +679,23 @@ export class Game {
       label: 'CASUAL SHIFT', sub: 'just the store. nobody is coming for you.',
       run: () => this.beginRun(MODE.CASUAL),
     });
+    /* OVERTIME. Locked until Story has been completed once; the row is shown
+       either way so the player knows there is something to unlock. Locked, it
+       says so and a press only toasts; unlocked, it opens Overtime's own menu.
+       An in-progress run is advertised in the subtitle. */
+    if (overtimeUnlocked(this.profile)) {
+      const run = hasOvertimeRun();
+      items.push({
+        label: 'OVERTIME',
+        sub: run ? 'the post-game challenge — a run in progress' : 'the post-game challenge. how long can you last',
+        run: () => this.openOvertimeMenu(),
+      });
+    } else {
+      items.push({
+        label: 'OVERTIME — COMPLETE STORY TO UNLOCK', locked: true,
+        run: () => this.ui.toast('Finish Story Mode to unlock Overtime.', 'hint'),
+      });
+    }
     items.push({
       label: 'HOW TO WORK THE COUNTER',
       run: () => { this.state = ST.HOWTO; this.ui.showPanel(howToHtml()); },
@@ -653,11 +718,22 @@ export class Game {
     this.ui.setTitleMenu(this._titleMenu);
     if (this.menuSel >= this._titleMenu.length) this.menuSel = 0;
     this.ui.titleSelect(this.menuSel);
+    this.refreshTitleStatus();
+  }
+
+  /** The subtle permanent-accomplishment line under the tagline: shown only
+      once Story has been cleared, and never naming the unseen ending. */
+  refreshTitleStatus() {
+    const p = this.profile;
+    if (!p || !overtimeUnlocked(p)) { this.ui.setTitleStatus(''); return; }
+    const seen = endingsSeenCount(p);
+    this.ui.setTitleStatus(`STORY CLEARED &middot; ENDINGS ${seen} / ${STORY_ENDING_COUNT}`);
   }
 
   beginRun(mode) {
     this.mode = mode;
     this.campaign = null;          // HORROR and CASUAL do not persist
+    this.otRun = null;             // and they are not an Overtime run
     this.nightNo = 1;
     this.seed = (Math.random() * 0xffffffff) >>> 0;
     /* What the run knows that a single night does not. An arrest buys a few
@@ -678,6 +754,7 @@ export class Game {
   /** Load a campaign's persistent state into the live run fields. */
   adoptCampaign(c) {
     this.campaign = c;
+    this.otRun = null;             // Story is not an Overtime run
     this.mode = MODE.STORY;
     this.seed = c.seed >>> 0;
     this.nightNo = c.currentNight;
@@ -787,6 +864,14 @@ export class Game {
    * night -- ends the campaign instead of starting night thirteen.
    */
   advanceNight() {
+    /* Overtime banks the cleared shift into the run, records the earned
+       progress to the permanent profile, saves the run BEFORE the next shift
+       (so a quit resumes it), and moves on. A survived shift carries a grade;
+       an arrest (endKind CAUGHT, no report) is banked as a top-grade clear. */
+    if (this.mode === MODE.OVERTIME && this.otRun) {
+      this.overtimeAdvance();
+      return;
+    }
     if (this.mode !== MODE.STORY || !this.campaign) {
       this.startNight(this.nightNo + 1);
       return;
@@ -825,14 +910,221 @@ export class Game {
     this.startNight(next);
   }
 
-  /** The last configured night is done. Mark it, save it, and show the
-      campaign-complete screen. */
+  /** The last configured night is done. Mark it, save it, record the permanent
+      accomplishment, and show the campaign-complete screen. */
   completeCampaign() {
     const c = this.campaign;
     c.completed = true;
     c.currentNight = STORY_NIGHT_COUNT;   // stays pointed at the last night
     saveCampaign(c);
+    /* The campaign completes FIRST (above); the profile only observes it. This
+       records the completion count, the ending seen, the dates, and any beaten
+       records, then persists the profile. Called exactly once per finished
+       campaign, on this one funnel. Overtime unlocks from here on. */
+    if (this.profile) {
+      this._completionRecords = recordStoryCompletion(this.profile, c);
+      saveProfile(this.profile);
+    }
     this.showStoryComplete();
+  }
+
+  /* ============================================================
+     OVERTIME
+     The post-game survival run. Its own seed, its own stats, its own save --
+     it reuses the ordinary graveyard night generator and nothing of Story's
+     campaign, memory, investigation or environment. A cleared shift banks and
+     the run continues; a death or a wrong call ENDS the run (no retry) and
+     folds its totals into the permanent records.
+     ============================================================ */
+
+  /** Load an active run's persistent fields into the live game. */
+  adoptOvertime(run) {
+    this.otRun = run;
+    this.campaign = null;          // Overtime shares nothing with Story
+    this.mode = MODE.OVERTIME;
+    this.seed = run.seed >>> 0;
+    this.nightNo = run.shift;
+    /* A fresh cooldown object so nothing from a prior mode leaks in; Overtime
+       never uses it (startNight forces calm/standDown off), but code paths that
+       read this.run still want a valid object. */
+    this.run = { calmUntil: 0, standDownNight: 0, arrests: 0 };
+  }
+
+  /** Open Overtime's own little menu from the title. */
+  openOvertimeMenu() {
+    this.otMenuSel = 0;
+    this.showOvertimeMenu();
+  }
+
+  /** Begin a brand-new run (past any abandon confirmation). */
+  newOvertime() {
+    deleteOvertimeRun();
+    const seed = (Math.random() * 0xffffffff) >>> 0;
+    const run = freshOvertimeRun(seed);
+    if (this.profile) { recordOvertimeRunStarted(this.profile); saveProfile(this.profile); }
+    this.adoptOvertime(run);
+    saveOvertimeRun(run);          // before the first shift, so a quit resumes it
+    this.startNight(1);
+  }
+
+  /** Resume the saved run at the start of its current shift. */
+  continueOvertime() {
+    const run = loadOvertimeRun();
+    if (!run) { this.newOvertime(); return; }   // save vanished between menu and here
+    this.adoptOvertime(run);
+    this.startNight(run.shift);
+  }
+
+  /** A shift was cleared: bank it, record the earned progress, save, continue. */
+  overtimeAdvance() {
+    const run = this.otRun;
+    const arrested = this.endKind === 'CAUGHT';
+    overtimeBankShift(run, {
+      grade: this.grade ? this.grade.letter : null,
+      score: this.grade ? this.grade.score : 0,
+      served: this.stats ? this.stats.served : 0,
+      walkouts: this.stats ? this.stats.stormedOut : 0,
+      arrested,
+    });
+    if (this.profile) { recordOvertimeShiftCleared(this.profile, run); saveProfile(this.profile); }
+    saveOvertimeRun(run);          // BEFORE the next shift, so a quit resumes it
+    this.ui.hidePanel(); this.ui.cinema(false);
+    this.death = null; this.shake = 0;
+    this.startNight(run.shift);
+  }
+
+  /**
+   * The run is over -- a death, a wrong call, or a deliberate replacement.
+   * Fold its totals into the permanent records, drop the active-run save (the
+   * records survive), and show the run summary. The in-memory run is kept for
+   * the summary panel; it is cleared when the player leaves it.
+   */
+  endOvertimeRun() {
+    const run = this.otRun;
+    if (!run) { this.toTitle(); return; }
+    this._otRecords = this.profile ? recordOvertimeRunEnd(this.profile, run) : [];
+    if (this.profile) saveProfile(this.profile);
+    deleteOvertimeRun();           // the active run is finished; records persist
+    this.showOvertimeSummary();
+  }
+
+  /* ---- Overtime front-end panels ---- */
+
+  /** The rows of Overtime's own menu, as {label, run}. CONTINUE only appears
+      when there is a run to continue. */
+  overtimeMenuRows() {
+    const rows = [];
+    if (hasOvertimeRun()) {
+      const run = loadOvertimeRun();
+      const shift = run ? run.shift : 1;
+      rows.push({ label: 'CONTINUE OVERTIME', sub: `shift ${shift}`, run: () => this.continueOvertime() });
+    }
+    rows.push({ label: 'NEW OVERTIME', run: () => this.startOvertime() });
+    rows.push({ label: 'RECORDS', run: () => { this.otRecordsFrom = ST.OTMENU; this.showOvertimeRecords(); } });
+    rows.push({ label: 'BACK', run: () => this.overtimeMenuBack() });
+    return rows;
+  }
+
+  showOvertimeMenu() {
+    this.state = ST.OTMENU;
+    this._otMenuRows = this.overtimeMenuRows();
+    if (this.otMenuSel == null || this.otMenuSel >= this._otMenuRows.length) this.otMenuSel = 0;
+    this.ui.showPanel(overtimeMenuHtml(this._otMenuRows, this.profile));
+    this.ui.panelSelect(this.otMenuSel);
+  }
+
+  overtimeMenuBack() {
+    this.ui.hidePanel();
+    this.state = ST.TITLE; this.refreshTitleMenu();
+  }
+
+  updateOvertimeMenu() {
+    const i = this.input;
+    const rows = this._otMenuRows || (this._otMenuRows = this.overtimeMenuRows());
+    const N = rows.length;
+    if (this.backHit()) { this.quietly(() => this.sound.uiBack()); this.overtimeMenuBack(); return; }
+    if (i.hit('ArrowUp', 'KeyW')) { this.otMenuSel = (this.otMenuSel + N - 1) % N; this.sound.uiMove(); this.ui.panelSelect(this.otMenuSel); }
+    if (i.hit('ArrowDown', 'KeyS')) { this.otMenuSel = (this.otMenuSel + 1) % N; this.sound.uiMove(); this.ui.panelSelect(this.otMenuSel); }
+    if (this.confirmHit()) { this.quietly(() => this.sound.uiSelect()); rows[this.otMenuSel].run(); }
+  }
+
+  /** NEW OVERTIME: confirm first if a run is already in progress. */
+  startOvertime() {
+    if (hasOvertimeRun()) { this.otNewSel = 0; this.showOvertimeNewConfirm(); return; }
+    this.newOvertime();
+  }
+
+  showOvertimeNewConfirm() {
+    this.state = ST.OTNEW;
+    const run = loadOvertimeRun();
+    const shift = run ? run.shift : 1;
+    this.ui.showPanel(`<h2>START A NEW OVERTIME RUN?</h2>
+      <p class="quiet">There is a run in progress on shift ${shift}. Starting a new one abandons it. Your records are kept either way; only the run in progress is lost.</p>
+      <ul><li class="opt sel">No &mdash; keep my run</li><li class="opt">Yes, abandon it and start over</li></ul>
+      <p class="pad-foot">${this.ui.keyHint('confirm')} select &nbsp;&middot;&nbsp; ${this.ui.keyHint('back')} back</p>`);
+    this.ui.panelSelect(this.otNewSel || 0);
+  }
+
+  updateOvertimeNewConfirm() {
+    const i = this.input;
+    const N = 2;
+    if (this.backHit()) { this.quietly(() => this.sound.uiBack()); this.showOvertimeMenu(); return; }
+    if (i.hit('ArrowUp', 'KeyW')) { this.otNewSel = (this.otNewSel + N - 1) % N; this.sound.uiMove(); this.ui.panelSelect(this.otNewSel); }
+    if (i.hit('ArrowDown', 'KeyS')) { this.otNewSel = (this.otNewSel + 1) % N; this.sound.uiMove(); this.ui.panelSelect(this.otNewSel); }
+    if (!this.confirmHit()) return;
+    this.quietly(() => this.sound.uiSelect());
+    if (this.otNewSel === 0) { this.showOvertimeMenu(); return; }
+    /* Abandon the run. The player deliberately walked away from it, so its
+       earned shifts still count toward the lifetime records (a good run is a
+       good run) -- but it is not a death. Then a fresh run begins. */
+    const abandoned = loadOvertimeRun();
+    if (abandoned && this.profile) {
+      const norm = abandoned;
+      recordOvertimeRunEnd(this.profile, norm, {});
+      saveProfile(this.profile);
+    }
+    this.newOvertime();
+  }
+
+  showOvertimeRecords() {
+    this.state = ST.OTRECORDS;
+    this.ui.showPanel(overtimeRecordsHtml(this.profile));
+    this.ui.panelSelect(0);
+  }
+
+  updateOvertimeRecords() {
+    if (this.confirmOrClick() || this.backHit()) {
+      this.quietly(() => this.sound.uiBack());
+      if (this.otRecordsFrom === ST.OTSUMMARY) { this.showOvertimeSummary(); return; }
+      this.showOvertimeMenu();
+    }
+  }
+
+  showOvertimeSummary() {
+    this.state = ST.OTSUMMARY;
+    this.otSummaryT = 0;
+    this.otSummarySel = 0;
+    this.dropLock();
+    this.ui.hideDialogue(); this.ui.hideNotes(); this.ui.hidePhone();
+    this.ui.setHudVisible(false); this.ui.setObjective(''); this.ui.cinema(true);
+    this.ui.showPanel(overtimeSummaryHtml(this.otRun, this._otRecords || []));
+    this.ui.panelSelect(0);
+  }
+
+  updateOvertimeSummary() {
+    this.otSummaryT = (this.otSummaryT || 0) + (1 / 60);
+    const i = this.input;
+    const N = 2;   // TRY AGAIN / TITLE
+    if (this.otSummaryT < 0.8) return;   // a beat so a held key does not skip it
+    if (i.hit('ArrowUp', 'KeyW')) { this.otSummarySel = (this.otSummarySel + N - 1) % N; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(this.otSummarySel); }
+    if (i.hit('ArrowDown', 'KeyS')) { this.otSummarySel = (this.otSummarySel + 1) % N; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(this.otSummarySel); }
+    if (this.confirmOrClick()) {
+      this.quietly(() => this.sound.uiSelect());
+      this.otRun = null;             // the run is finished; drop the working copy
+      this.ui.hidePanel(); this.ui.cinema(false);
+      if (this.otSummarySel === 0) { this.newOvertime(); return; }   // TRY AGAIN
+      this.toTitle();
+    }
   }
 
   updateTitle(dt) {
@@ -1486,7 +1778,10 @@ export class Game {
     else this.ui.setPrompt('');
 
     // ---- HUD ----
-    this.ui.setClock(clockString(this.elapsed, this.night.length), this.nightNo, holdClock);
+    // Overtime labels the clock "OT SHIFT n" so a survival shift never reads as
+    // a Story night; every other mode keeps "NIGHT n".
+    this.ui.setClock(clockString(this.elapsed, this.night.length), this.nightNo, holdClock,
+      this.mode === MODE.OVERTIME ? 'OT SHIFT' : 'NIGHT');
     /* The drawer is not on the HUD. Walking to the register and counting
        it says more than a number in the corner ever did -- what is in it
        tonight AND what is owed on accounts -- and this is a game about
@@ -3327,6 +3622,10 @@ export class Game {
     data.night = this.nightNo;
     this.endData = data;
     data.mode = this.mode;
+    // Overtime dresses the arrest panel as a single "next shift" beat -- there
+    // are no keys to hand in mid-run; you quit from the pause menu instead.
+    data.overtime = this.mode === MODE.OVERTIME;
+    if (data.overtime) data.shift = this.nightNo;
     this.endSel = 0;
     if (kind === 'CAUGHT') {
       this.sound.siren(); this.sound.chimeGood();
@@ -3401,17 +3700,20 @@ export class Game {
        tomorrow, so the panel asks rather than dropping you at the title. */
     if (this.endKind === 'CAUGHT' && this.endTimer > gate) {
       const i = this.input;
-      /* The final night's arrest has no "take tomorrow's shift" -- there is no
-         tomorrow -- so it offers no choice: confirm carries the campaign to its
-         completion screen (advanceNight past night 12 -> completeCampaign). */
-      const finale = this.mode === MODE.STORY && this.nightNo === STORY_NIGHT_COUNT;
-      if (!finale) {
+      /* Two arrests offer no "take tomorrow's shift" choice, so confirm just
+         carries on: the Story finale (there is no tomorrow -- advanceNight past
+         night 12 completes the campaign) and an Overtime arrest (a cleared
+         shift -- advanceNight banks it and starts the next). Every other arrest
+         asks whether to keep going. */
+      const single = (this.mode === MODE.STORY && this.nightNo === STORY_NIGHT_COUNT)
+        || this.mode === MODE.OVERTIME;
+      if (!single) {
         if (i.hit('ArrowUp', 'KeyW')) { this.endSel = 0; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(0); }
         if (i.hit('ArrowDown', 'KeyS')) { this.endSel = 1; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(1); }
       }
       if (this.confirmOrClick()) {
         this.quietly(() => this.sound.uiSelect());
-        if (!finale && this.endSel === 1) { this.toTitle(); return; }
+        if (!single && this.endSel === 1) { this.toTitle(); return; }
         this.ui.hidePanel(); this.ui.cinema(false);
         this.death = null; this.shake = 0;
         this.advanceNight();
@@ -3420,7 +3722,14 @@ export class Game {
       return;
     }
 
-    if (this.endTimer > gate && this.confirmOrClick()) this.toTitle();
+    /* A death or a wrong call. In Overtime that ENDS the run -- no retry --
+       so it folds the totals into the records and shows the run summary
+       instead of dropping to the title. Story/Graveyard/Casual are unchanged:
+       to the title (Story's Continue then rebuilds the same night = a retry). */
+    if (this.endTimer > gate && this.confirmOrClick()) {
+      if (this.mode === MODE.OVERTIME) { this.endOvertimeRun(); return; }
+      this.toTitle();
+    }
   }
 
   /** Back to the attract screen, with the world put back how it started. */
@@ -3480,7 +3789,8 @@ export class Game {
     } else {
       note = `Quiet night. That is not the same as a safe one.`;
     }
-    this.ui.showPanel(reportHtml(this.nightNo, this.stats, grade, note));
+    this.ui.showPanel(reportHtml(this.nightNo, this.stats, grade, note,
+      this.mode === MODE.OVERTIME ? { overtime: true } : {}));
   }
 
   updateReport(dt) {

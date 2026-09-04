@@ -27,7 +27,13 @@ export const SHIFT_HOURS = 3;         // to midnight
    and the killer are both in play), and everything that makes it a campaign
    rather than an endless run lives in campaign.js, not here. CASUAL is the
    same store with nobody coming for you. */
-export const MODE = { HORROR: 'HORROR', STORY: 'STORY', CASUAL: 'CASUAL' };
+/* OVERTIME is the post-game survival run (overtime.js). For the GENERATOR it
+   behaves exactly like HORROR -- the deputy and the killer are both in play,
+   and only CASUAL is ever special-cased below -- so nothing in this file has
+   to branch on it. What makes it Overtime (its own seed, a capped effective
+   night, run-ending failure, its own records) lives in overtime.js and
+   game.js, never here. */
+export const MODE = { HORROR: 'HORROR', STORY: 'STORY', CASUAL: 'CASUAL', OVERTIME: 'OVERTIME' };
 
 /* The deputy turns up the night before the threat can. He is the reason
    there is never a night where someone could walk in and you would have
