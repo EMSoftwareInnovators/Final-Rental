@@ -575,6 +575,20 @@ export function endingHtml(kind, data) {
       const calm = data.calmNights
         ? `<p class="quiet">Nobody will be working this block for ${data.calmNights} night${data.calmNights > 1 ? 's' : ''}. Nobody they know about.</p>`
         : '';
+      /* The final night's arrest. The note in his coat is the whole payoff:
+         proof he was supplied the store, the hour and the shared title -- and
+         no line at all pointing at who supplied it. One way forward, to the
+         campaign's ending screen. */
+      if (data.finale) {
+        return say(`<div class="ending"><h2>UNITS RESPONDING</h2>
+          <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>
+          ${where}
+          <p><b>${escape(data.name || 'Nobody')}</b> did not resist.</p>
+          <p>A deputy turns his coat pockets out on the counter for the light. Among the receipts and the cigarettes there is a folded index card, and on it, in someone else's hand: this store, the hour it closes, a description of you &mdash; and a title, underlined twice. He reads it out and then he stops reading.</p>
+          <p class="quiet">Somebody wrote this for him. Nothing on the card says who.</p>
+          <p class="big">CASE CLOSED &mdash; NIGHT ${data.night}</p>
+          <ul><li class="opt sel">Lock up</li></ul></div>`);
+      }
       return say(`<div class="ending"><h2>UNITS RESPONDING</h2>
         <p>You gave dispatch the jacket, the walk, the mark on the face. Everything the deputy read you, back the other way.</p>
         ${where}

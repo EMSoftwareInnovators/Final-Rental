@@ -25,6 +25,7 @@ import {
   getCustomerState, recordCustomerOutcome,
   environmentFlag, applyStoryConsequences,
   recordCase, investigationState, investigationPolicy, INVESTIGATION_TAPE,
+  setStoryFlag, storyFlag,
 } from './campaign.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
 import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds } from './ui.js';
@@ -202,7 +203,7 @@ export class Game {
     /* Which persistent environmental pieces this shift shows. All off until a
        Story night applies its campaign's facts; the endless modes never turn
        any of it on. */
-    this.env = { rearFloodlight: false, popcornNotice: false, popcornStain: false, arrestClipping: false, scheduleMemo: false };
+    this.env = { rearFloodlight: false, popcornNotice: false, popcornStain: false, arrestClipping: false, scheduleMemo: false, revisedHours: false };
     /* The investigation picture this shift runs under: prior arrests, the case
        file, whether tonight is the authored second threat. Null outside Story;
        the deputy dialogue reads it through ctx.investigation(). */
@@ -315,6 +316,8 @@ export class Game {
         secondThreat: !!inv.secondThreat,
         caseComparison: !!inv.caseComparison,   // Night 9: the deputy's side-by-side
         scheduleInquiry: !!inv.scheduleInquiry, // Night 10: someone's asking who closes
+        informationLink: !!inv.informationLink, // Night 11: the schedule caller knew the tape
+        finalShift: !!inv.finalShift,           // Night 12: the last solo late shift
       })
       : null;
     /* What the store itself remembers. Read the campaign's environmental facts
@@ -395,6 +398,14 @@ export class Game {
     this.sweep = null;
     this.managerCall = null;
     this.pizza = null;
+    /* The Night 11 anonymous call (Story only). Armed just when the
+       investigation says tonight is the connection; a fixed fraction into the
+       night so it draws no RNG and cannot perturb the shift, and gated on the
+       deputy having finished before it rings. Null in Graveyard/Casual and
+       every other night, so the endless modes never see it. */
+    this.storyCall = (this.mode === MODE.STORY && this.investigation && this.investigation.informationLink)
+      ? { phase: 'ARMED', at: this.night.length * 0.45, t: 0, rings: 0, bellT: 0, heard: false }
+      : null;
     /* The popcorn machine, what came out of it, and the thing in the back
        room that is the only way of dealing with what came out of it. */
     this.popper = { running: false, spilled: 0 };
@@ -690,6 +701,7 @@ export class Game {
       popcornStain: environmentFlag(c, 'popcornStainLeft'),
       arrestClipping: environmentFlag(c, 'arrestClippingPosted'),
       scheduleMemo: environmentFlag(c, 'schedulePrivacyNoticePosted'),
+      revisedHours: environmentFlag(c, 'revisedHoursPosted'),
     };
   }
 
@@ -1163,6 +1175,7 @@ export class Game {
       this.updateSweep(h);
       this.updateHandedPhone(h);
       this.updatePizza(h);
+      this.updateStoryCall(h);
       this.updatePopper(h);
       this.updatePuffs(h);
       this.updateBus(h);
@@ -1357,10 +1370,14 @@ export class Game {
   }
 
   /* ---------------- Story Mode: end of the campaign ----------------
-     Shown when the last configured night is done. Not the real ending --
-     a later task writes that -- but a genuine campaign-complete screen with
-     the run's record on it and a way back to the title. Wrapped in .ending
-     so it sits between the cinema bars like the night endings do. */
+     The finale screen. Shown once the last night is done, it reads the run's
+     record and resolves the mystery to exactly the degree the campaign earned:
+     the mechanism (someone was feeding information) becomes plain; the source
+     never does. Two variants -- the attacker was arrested on the last night
+     (strong evidence, a note recovered) or the shift was merely survived (no
+     note, the source even more ambiguous) -- and a few lines that read the
+     arrest history so nothing is invented. Wrapped in .ending like the night
+     endings. */
   showStoryComplete() {
     this.state = ST.STORYDONE;
     this.storyDoneT = 0;
@@ -1374,17 +1391,47 @@ export class Game {
     const st = c.stats || {};
     const nights = (h.grades || []).length;
     const grades = nights ? h.grades.join('  ') : '\u2014';
+    const scores = h.scores || [];
+    const avgLetter = scores.length ? (() => {
+      const a = scores.reduce((s, v) => s + v, 0) / scores.length;
+      return a >= 150 ? 'A' : a >= 100 ? 'B' : a >= 55 ? 'C' : a >= 15 ? 'D' : 'F';
+    })() : '\u2014';
     const row = (k, v) => `<tr><td>${k}</td><td class="n">${v}</td></tr>`;
-    this.ui.showPanel(`<div class="ending"><h2>YOUR EMPLOYMENT RECORD HAS BEEN FILED</h2>
-      <p>${STORY_NIGHT_COUNT} nights on the graveyard shift at Sunset Video. You locked up for the last time and went home.</p>
+
+    const arrests = (st.arrests | 0);
+    const arrested = storyFlag(c, 'endingId') === 'ARREST';
+    const linked = storyFlag(c, 'informationLinkConfirmed') === true;
+
+    /* The epilogue. Restrained on purpose. It states the mechanism and leaves
+       the source unresolved; the arrest-history line never claims an arrest the
+       player did not make. */
+    const evidenceLine = arrested
+      ? `<p>They took the last one alive. In his coat was a folded card: this address, the hour the store closes, a line about the clerk who works it &mdash; and a title, underlined. <b>${INVESTIGATION_TAPE}</b>. It was enough to prove somebody had handed it to him. It did not say who.</p>`
+      : `<p>You finished the last late shift and locked the door behind you. Nobody was arrested that night, and no note was found. What the county had at the end was what it had near the start: a description that never repeated, a schedule someone had been asking after, and a tape nobody outside the case should have been able to name.</p>`;
+    const historyLine = arrests >= 2
+      ? `<p class="quiet">Different men, on different nights, and you had a hand in taking more than one of them. Not one was the other. That was always the part that would not sit still.</p>`
+      : arrests === 1
+        ? `<p class="quiet">One of them you helped put in a cell. He was not the next one, or the one after. They never were.</p>`
+        : `<p class="quiet">You never did put your hands on one of them. Up the county, others did &mdash; and no two descriptions they took ever lined up.</p>`;
+    const linkLine = linked
+      ? `<p>The calls settled it past arguing: the voice asking who worked the late shift was the voice that knew ${INVESTIGATION_TAPE} by name, and that name was never in a paper. This was never a run of coincidences. Somebody had been pointing dangerous people at this store.</p>`
+      : '';
+
+    this.ui.showPanel(`<div class="ending"><h2>CLOSING TIME</h2>
+      <p>Twelve nights on the graveyard shift at Sunset Video, 4412 Delaney.</p>
+      ${linkLine}
+      ${evidenceLine}
+      ${historyLine}
+      <p>The source of the calls was never identified. Sunset Video stopped scheduling anyone to close alone. The store kept its hours the rest of the week and its lights the rest of the year; the file stayed open, in a drawer, in another town.</p>
       <table>
         ${row('Nights worked', nights || STORY_NIGHT_COUNT)}
-        ${row('Called in correctly', st.arrests || 0)}
+        ${row('Called in correctly', arrests)}
         ${row('Customers served', st.customersServed || 0)}
         ${row('Walked out on you', st.walkouts || 0)}
         ${row('Nightly grades', grades)}
+        ${row('Average', avgLetter)}
       </table>
-      <p class="big">STORY COMPLETE</p>
+      <p class="big">THE CASE REMAINS OPEN</p>
       <ul><li class="opt sel">Return to title</li></ul>
       <p class="pad-foot">${this.ui.keyHint('confirm')} title</p></div>`);
     this.ui.panelSelect(0);
@@ -3002,6 +3049,17 @@ export class Game {
             hair: ts(su.hair), jacket: ts(su.jacket),
           },
         });
+        /* The finale's strong-evidence beat. Catching the Night 12 attacker is
+           the arrest that recovers the note -- proof someone supplied him the
+           store, the timing, and the shared phrase, without naming who. Marked
+           here, banked when the campaign completes on the next advance, and
+           rolled back with a failed final night like everything else. */
+        if (this.nightNo === STORY_NIGHT_COUNT) {
+          setStoryFlag(this.campaign, 'finalThreatResolved', true);
+          setStoryFlag(this.campaign, 'endingId', 'ARREST');
+          data.finale = true;
+          data.finaleEvidence = true;
+        }
       }
     }
     if (kind === 'FIRED') { this.sound.siren(); this.sound.chimeBad(); }
@@ -3026,11 +3084,17 @@ export class Game {
        tomorrow, so the panel asks rather than dropping you at the title. */
     if (this.endKind === 'CAUGHT' && this.endTimer > gate) {
       const i = this.input;
-      if (i.hit('ArrowUp', 'KeyW')) { this.endSel = 0; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(0); }
-      if (i.hit('ArrowDown', 'KeyS')) { this.endSel = 1; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(1); }
+      /* The final night's arrest has no "take tomorrow's shift" -- there is no
+         tomorrow -- so it offers no choice: confirm carries the campaign to its
+         completion screen (advanceNight past night 12 -> completeCampaign). */
+      const finale = this.mode === MODE.STORY && this.nightNo === STORY_NIGHT_COUNT;
+      if (!finale) {
+        if (i.hit('ArrowUp', 'KeyW')) { this.endSel = 0; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(0); }
+        if (i.hit('ArrowDown', 'KeyS')) { this.endSel = 1; this.quietly(() => this.sound.uiMove()); this.ui.panelSelect(1); }
+      }
       if (this.confirmOrClick()) {
         this.quietly(() => this.sound.uiSelect());
-        if (this.endSel === 1) { this.toTitle(); return; }
+        if (!finale && this.endSel === 1) { this.toTitle(); return; }
         this.ui.hidePanel(); this.ui.cinema(false);
         this.death = null; this.shake = 0;
         this.advanceNight();
@@ -3066,6 +3130,15 @@ export class Game {
     this.stats.cashLoose = round2(this.player.cash.owed + this.player.changeInHand);
     const grade = gradeNight(this.stats);
     this.grade = grade;
+    /* The finale's survived path (Ending B). Reaching the ordinary close on the
+       last night means the player finished the final scheduled shift without
+       arresting the attacker -- no note recovered, the source even more
+       unknown. Mutually exclusive with the arrest ending (which is terminal and
+       never reaches here); marked only if the arrest did not happen. */
+    if (this.mode === MODE.STORY && this.campaign && this.nightNo === STORY_NIGHT_COUNT
+      && !storyFlag(this.campaign, 'finalThreatResolved')) {
+      setStoryFlag(this.campaign, 'endingId', 'SURVIVED');
+    }
     this.state = ST.REPORT;
     this.dropLock();
     this.ui.setHudVisible(false);
@@ -3173,6 +3246,10 @@ export class Game {
     if (this.env.scheduleMemo) {
       setTranslate(M.m, 0, 0, 0);
       rz.drawMesh(this.world.memoMesh, M.m, { shade: L });
+    }
+    if (this.env.revisedHours) {
+      setTranslate(M.m, 0, 0, 0);
+      rz.drawMesh(this.world.hoursMemoMesh, M.m, { shade: L });
     }
     this._floodShade = floodShade;
 
@@ -3806,6 +3883,17 @@ export class Game {
       },
       hangUp: () => g.hangUp(),
 
+      /* --- the Night 11 anonymous call (Story) --- */
+      storyCallState: () => g.storyCall,
+      /** Lifting the receiver stops the bell and marks it heard. */
+      storyCallAnswered: () => {
+        if (!g.storyCall) return;
+        g.storyCall.phase = 'HEARD';
+        g.storyCall.heard = true;
+        g.ui.setObjective('');
+        if (g.mode === MODE.STORY && g.campaign) setStoryFlag(g.campaign, 'heardTheCaller', true);
+      },
+
       /* --- killer beats --- */
       onKillerArrives: () => { },
       onKillerVanishes: () => { },
@@ -4166,6 +4254,38 @@ export class Game {
     }
 
     if (P.phase === 'DELIVERING') this.updateDriver(dt);
+  }
+
+  /**
+   * The Night 11 phone (Story). It waits for the deputy to finish his piece,
+   * then rings. Lift the receiver and you get the caller first-hand
+   * (buildPhoneCall routes to it). Ignore it -- because you are mid-sale, or
+   * because you would rather not -- and after a dozen rings it gives up: the
+   * deputy's briefing already carried the connection, so a missed call costs
+   * nothing but the chill of hearing it yourself. Story-only; there is no such
+   * object in Graveyard or Casual.
+   */
+  updateStoryCall(dt) {
+    const S = this.storyCall;
+    if (!S) return;
+    if (S.phase === 'ARMED') {
+      if (this.officerDone && this.sim >= S.at) { S.phase = 'RINGING'; S.bellT = 0.4; S.rings = 0; }
+      return;
+    }
+    if (S.phase === 'RINGING') {
+      S.bellT -= dt;
+      if (S.bellT <= 0) {
+        S.bellT = 4.2; S.rings++;
+        this.sound.phoneBell();
+        this.ui.setObjective('THE PHONE IS RINGING', S.rings > 3);
+      }
+      /* A dozen rings and whoever it was hangs up. Nothing is lost. */
+      if (S.rings > 12) {
+        S.phase = 'MISSED';
+        this.ui.setObjective('');
+        this.ui.toast(`The phone stops ringing. Whoever it was is standing in a booth somewhere, hanging up.`, '');
+      }
+    }
   }
 
   /** Somebody rings the store. Tonight, it is him. */

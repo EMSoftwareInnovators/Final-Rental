@@ -1706,6 +1706,286 @@ check('Story: a prior arrest a couple of nights back reads "the other night", no
   /the other night/i.test(timing.brief6) && !/took a man last night/i.test(timing.brief6),
   timing.brief6.match(/We took a man[^.]*\./i) ? timing.brief6.match(/We took a man[^.]*\./i)[0] : '(no priorArrest line)');
 
+/* ================================================================
+   STAGE 8 -- the finale (Nights 11-12).
+
+   The two nights that end the campaign: the connection (a call that knows both
+   clues) and the last shift (a genuine informed attacker). Verified at three
+   levels -- config shape, the anonymous-call phone routing, and the real game
+   driven through the arrest and survived endings, the retry semantics, and the
+   completion screen -- so no ending invents an arrest and nothing leaks into
+   the endless modes.
+   ================================================================ */
+
+/* ---------- Night 11/12 config shape across many seeds ---------- */
+const sched4 = await ev(() => {
+  const S = window.__story, C = window.__campaign;
+  const scan = (n) => {
+    const cfg = C.nightConfig(n);
+    const req = cfg.requiredSpecials.slice().sort();
+    let overCap = 0, maxSp = 0, deputies = 0, killers = 0, fullPlan = 0, coaches = 0, auditor = 0, swarms = 0;
+    const SEEDS = 200;
+    for (let i = 0; i < SEEDS; i++) {
+      const nt = S.night(50000 + i, n);
+      const sp = S.specials(nt);
+      maxSp = Math.max(maxSp, sp.length);
+      if (cfg.specialCap != null && sp.length > cfg.specialCap) overCap++;
+      if (sp.includes('AUDITOR')) auditor++;
+      if (nt.deputy) deputies++;
+      if (nt.plan.appears) killers++;
+      if (nt.plan.appears && typeof nt.plan.prowlFor === 'number' && typeof nt.plan.visitAt === 'number') fullPlan++;
+      if (nt.busAt !== Infinity) coaches++;
+      if (nt.swarm) swarms++;
+    }
+    return { req, cap: cfg.specialCap, overCap, maxSp, deputies, killers, fullPlan, coaches, auditor, swarms, seeds: SEEDS };
+  };
+  return { n11: scan(11), n12: scan(12) };
+});
+check('Night 11 -- the connection: NO killer, deputy forced, NO coach, cap 2, no guaranteed regular',
+  sched4.n11.killers === 0 && sched4.n11.deputies === 200 && sched4.n11.coaches === 0
+  && sched4.n11.cap === 2 && sched4.n11.overCap === 0 && sched4.n11.req.length === 0, JSON.stringify(sched4.n11));
+check('Night 12 -- the last shift: forced full-plan killer, deputy forced, NO coach, cap 1, Verna guaranteed, no swarm',
+  sched4.n12.killers === 200 && sched4.n12.fullPlan === 200 && sched4.n12.deputies === 200
+  && sched4.n12.coaches === 0 && sched4.n12.cap === 1 && sched4.n12.overCap === 0
+  && sched4.n12.auditor === 200 && sched4.n12.req.join() === 'AUDITOR' && sched4.n12.swarms === 0, JSON.stringify(sched4.n12));
+
+const det4 = await ev(() => {
+  const S = window.__story;
+  const fp = (nt) => JSON.stringify(nt.schedule.map((e) => [e.t, e.decoy, e.special || null]).concat([[nt.plan.appears, nt.plan.visitAt || 0]]));
+  const out = {};
+  for (const n of [11, 12]) out[n] = fp(S.night(99, n)) === fp(S.night(99, n));
+  return out;
+});
+check('the same seed rebuilds each Night 11-12 (schedule and killer plan) identically',
+  det4[11] && det4[12], JSON.stringify(det4));
+
+/* ---------- the finale flag + memo lifecycle ---------- */
+const fin = await ev(() => {
+  const g = window.__game, C = window.__campaign, N = window.__night;
+  const fresh = C.freshCampaign(5);
+  const startFalse = C.storyFlag(fresh, 'informationLinkConfirmed') === false
+    && C.storyFlag(fresh, 'finalShiftScheduled') === false
+    && C.environmentFlag(fresh, 'revisedHoursPosted') === false;
+  // Not raised by finishing Night 10 -- it needs Night 11 worked.
+  const c10 = C.freshCampaign(5); C.setStoryFlag(c10, 'scheduleInquiryRaised', true); C.applyStoryConsequences(c10, 10);
+  const notAt10 = C.storyFlag(c10, 'informationLinkConfirmed') === false
+    && C.environmentFlag(c10, 'revisedHoursPosted') === false;
+  // Raised once Night 11 is worked; idempotent.
+  const c11 = C.freshCampaign(5); C.setStoryFlag(c11, 'scheduleInquiryRaised', true);
+  C.applyStoryConsequences(c11, 11);
+  const setAt11 = C.storyFlag(c11, 'informationLinkConfirmed') === true
+    && C.storyFlag(c11, 'finalShiftScheduled') === true
+    && C.environmentFlag(c11, 'revisedHoursPosted') === true;
+  C.applyStoryConsequences(c11, 11);
+  const idem = C.storyFlag(c11, 'informationLinkConfirmed') === true;
+  // The memo is not in the scene during Night 11; it goes up for Night 12.
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 11; g.startNight(11);
+  const memoAbsentN11 = g.env.revisedHours === false;
+  const callArmedN11 = !!g.storyCall && g.storyCall.phase === 'ARMED';
+  const invLinkN11 = g.investigation.informationLink === true && g.night.plan.appears === false && g.night.deputy === true;
+  C.setEnvironmentFlag(g.campaign, 'revisedHoursPosted', true);
+  g.nightNo = 12; g.startNight(12);
+  const memoPresentN12 = g.env.revisedHours === true && !!g.world.hoursMemoMesh;
+  const noCallN12 = g.storyCall === null;
+  // Isolation: the endless modes never arm the call or show the memo.
+  g.beginRun(N.MODE.HORROR); g.startNight(11); const gvCall = g.storyCall; const gvMemo = g.env.revisedHours;
+  g.beginRun(N.MODE.CASUAL); g.startNight(12); const casMemo = g.env.revisedHours;
+  // Rollback: dying on Night 11 never banks the link.
+  C.deleteCampaignSave(); g.newStory();
+  g.campaign.currentNight = 11; g.nightNo = 11; C.setStoryFlag(g.campaign, 'scheduleInquiryRaised', true);
+  C.saveCampaign(g.campaign); g.startNight(11); g.toTitle(); g.continueStory();
+  const afterFail = C.storyFlag(g.campaign, 'informationLinkConfirmed');
+  return { startFalse, notAt10, setAt11, idem, memoAbsentN11, callArmedN11, invLinkN11, memoPresentN12, noCallN12, gvCall, gvMemo, casMemo, afterFail };
+});
+check('finale flags: start false, and Night 10 alone does not raise the information link',
+  fin.startFalse && fin.notAt10, JSON.stringify(fin));
+check('finale flags: Night 11 confirms the link, schedules the final shift, posts the memo (idempotent)',
+  fin.setAt11 && fin.idem);
+check('Night 11: the anonymous call is armed, no killer, deputy present, and the memo is not up yet',
+  fin.callArmedN11 && fin.invLinkN11 && fin.memoAbsentN11);
+check('Night 12: the revised-hours memo is in the scene and the anonymous call is gone',
+  fin.memoPresentN12 && fin.noCallN12);
+check('finale content never leaks into Graveyard/Casual (no call armed, no memo)',
+  fin.gvCall === null && fin.gvMemo === false && fin.casMemo === false);
+check('a failed Night 11 does not bank the information link (rolls back)',
+  fin.afterFail === false, `afterFail ${fin.afterFail}`);
+
+/* ---------- the anonymous call: routing and bounded knowledge ---------- */
+const call = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  const allText = (root) => {
+    const out = [];
+    const walk = (node, depth) => {
+      if (!node || depth > 10 || out.length > 60) return;
+      if (node.text) out.push(node.text);
+      if (node.person && node.person.name) out.push('[' + node.person.name + ']');
+      for (const c of (node.choices || [])) { let n = null; try { n = c.fn ? c.fn() : null; } catch (e) { /**/ } walk(n, depth + 1); }
+    };
+    walk(root, 0); return out.join('\n');
+  };
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 11; g.startNight(11);
+  // Phone with no ring is the ordinary line; ringing routes to the caller.
+  g.storyCall.phase = 'ARMED';
+  const idle = D.buildPhoneCall(g.ctx);
+  g.storyCall.phase = 'RINGING';
+  const ringing = D.buildPhoneCall(g.ctx);
+  const routed = ringing.person && ringing.person.name === 'THE LINE';
+  const answered = g.storyCall.phase === 'HEARD';
+  const text = allText(ringing);
+  return {
+    idleIsNotCaller: !(idle.person && idle.person.name === 'THE LINE'),
+    routed, answered, text,
+  };
+});
+check('the store phone routes to the anonymous caller only while it is ringing',
+  call.idleIsNotCaller && call.routed && call.answered);
+check('the caller knows the closing shift AND the tape -- and never monologues',
+  /close|late shift|on your own/i.test(call.text) && call.text.includes('THE LAST CUSTOMER')
+  && !/I sent|you'll never catch|my game|welcome to|all those/i.test(call.text), call.text.slice(0, 70));
+
+/* ---------- Night 11 deputy: the connection carried regardless of the phone ---------- */
+const dep11 = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  const allText = (root) => {
+    const out = [];
+    const walk = (node, depth) => {
+      if (!node || depth > 10 || out.length > 90) return;
+      if (node.text) out.push(node.text);
+      for (const c of (node.choices || [])) { let n = null; try { n = c.fn ? c.fn() : null; } catch (e) { /**/ } walk(n, depth + 1); }
+    };
+    walk(root, 0); return out.join('\n');
+  };
+  const brief = (arrests, rows) => {
+    C.deleteCampaignSave(); g.newStory();
+    g.campaign.stats.arrests = arrests; g.run.arrests = arrests; g.campaign.cases = rows.slice();
+    g.nightNo = 11; g.startNight(11);
+    return allText(D.buildOfficerIntro({ name: 'Deputy' }, g.night.bulletin, g.night.caseFile, g.ctx));
+  };
+  const row = { night: 4, result: 'arrested', name: 'Earl', signatureTape: C.INVESTIGATION_TAPE, profile: { height: 'tall' } };
+  return { two: brief(2, [row, { ...row, night: 8 }]), one: brief(1, [row]), zero: brief(0, []) };
+});
+check('Night 11 deputy: states the connection -- schedule caller knew the unpublished tape -- and stays cautious',
+  dep11.two.includes('THE LAST CUSTOMER') && /never (printed|in a paper|in the paper)/i.test(dep11.two)
+  && /coincidence (very )?hard to sell/i.test(dep11.two) && /payphone|booth/i.test(dep11.two)
+  && !/we solved it|we've got him now/i.test(dep11.two), dep11.two.slice(0, 60));
+check('Night 11 deputy: the connection is carried on every arrest history (missed-call fallback)',
+  dep11.one.includes('THE LAST CUSTOMER') && dep11.zero.includes('THE LAST CUSTOMER'));
+
+/* ---------- Night 12 deputy: the check-in, leading to a real bulletin ---------- */
+const dep12 = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  const allText = (root) => {
+    const out = [];
+    const walk = (node, depth) => {
+      if (!node || depth > 10 || out.length > 90) return;
+      if (node.text) out.push(node.text);
+      for (const c of (node.choices || [])) { let n = null; try { n = c.fn ? c.fn() : null; } catch (e) { /**/ } walk(n, depth + 1); }
+    };
+    walk(root, 0); return out.join('\n');
+  };
+  C.deleteCampaignSave(); g.newStory(); g.campaign.stats.arrests = 1; g.run.arrests = 1;
+  C.setStoryFlag(g.campaign, 'informationLinkConfirmed', true);
+  g.nightNo = 12; g.startNight(12);
+  const brief = allText(D.buildOfficerIntro({ name: 'Deputy' }, g.night.bulletin, g.night.caseFile, g.ctx));
+  return { brief, desc: g.night.bulletin.description, killer: g.night.plan.appears, finalShift: g.investigation.finalShift };
+});
+check('Night 12 deputy: the last-shift check-in -- more patrols, not a man posted inside -- into a real bulletin',
+  dep12.finalShift && dep12.killer && /patrol/i.test(dep12.brief)
+  && /last (of )?(these|the) late/i.test(dep12.brief) && dep12.brief.includes(dep12.desc), dep12.brief.slice(0, 50));
+
+/* ---------- the two endings, the retry, and no Night 13 ---------- */
+const ends = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  const complete = (setup) => {
+    C.deleteCampaignSave(); g.newStory();
+    // As a legitimately-reached Night 12 would look: Night 11's facts banked.
+    C.setStoryFlag(g.campaign, 'scheduleInquiryRaised', true);
+    C.setStoryFlag(g.campaign, 'informationLinkConfirmed', true);
+    C.setStoryFlag(g.campaign, 'finalShiftScheduled', true);
+    C.setEnvironmentFlag(g.campaign, 'revisedHoursPosted', true);
+    setup(g);
+    g.campaign.currentNight = 12; g.nightNo = 12; C.saveCampaign(g.campaign);
+    g.startNight(12);
+    return g;
+  };
+  // ENDING A: arrest the final attacker.
+  complete((g) => { g.campaign.stats.arrests = 2; g.run.arrests = 2; });
+  g.rng = g.night.rng;
+  g.ending('CAUGHT', {});
+  const aFlags = { resolved: C.storyFlag(g.campaign, 'finalThreatResolved') === true, id: C.storyFlag(g.campaign, 'endingId'), finale: !!(g.endData && g.endData.finale) };
+  const aHtml = window.__ui.endingHtml('CAUGHT', g.endData);
+  // now carry the CAUGHT panel forward to the completion screen
+  g.advanceNight();
+  const aDone = { state: g.state, completed: g.campaign.completed === true, night: g.campaign.currentNight };
+  const aScreen = document.querySelector('.ending') ? document.querySelector('.ending').innerText : '';
+
+  // ENDING B: survive the final shift without an arrest (ordinary close).
+  const gb = complete((g) => { g.campaign.stats.arrests = 1; g.run.arrests = 1; });
+  gb.stats = gb.stats || {};
+  gb.endNight();
+  const bId = C.storyFlag(gb.campaign, 'endingId');
+  gb.advanceNight ? null : null;
+  // updateReport -> advance; call advanceNight directly (report already shown)
+  gb.advanceNight();
+  const bDone = { state: gb.state, completed: gb.campaign.completed === true, id: bId };
+  const bScreen = document.querySelector('.ending') ? document.querySelector('.ending').innerText : '';
+
+  // RETRY: dying on Night 12 does not complete the campaign.
+  const gr = complete((g) => { g.campaign.stats.arrests = 0; g.run.arrests = 0; });
+  gr.rng = gr.night.rng;
+  gr.ending('ATTACKED', {});
+  gr.toTitle(); gr.continueStory();
+  const retry = { night: gr.campaign.currentNight, completed: gr.campaign.completed === true, memo: C.environmentFlag(gr.campaign, 'revisedHoursPosted') };
+  return { aFlags, aDone, aScreen, bId, bDone, bScreen, retry, aHtmlHasNote: /card|underlined|handed it|supplied|does not say who|nothing on the card/i.test(aHtml) };
+});
+check('Ending A (arrest): marks the final threat resolved, endingId ARREST, and the finale arrest panel',
+  ends.aFlags.resolved && ends.aFlags.id === 'ARREST' && ends.aFlags.finale && ends.aHtmlHasNote);
+check('Ending A: the campaign completes (STORYDONE), and there is no Night 13',
+  ends.aDone.state === 'STORYDONE' && ends.aDone.completed && ends.aDone.night === 12);
+check('Ending A screen: the mechanism is established, the source is not, the case stays open',
+  /supplied|handed|feeding|pointing/i.test(ends.aScreen) && /never identified|not identify|stayed open|remains open/i.test(ends.aScreen)
+  && ends.aScreen.includes('THE LAST CUSTOMER'), ends.aScreen.slice(0, 60));
+check('Ending B (survived): endingId SURVIVED, campaign completes, no note recovered in the text',
+  ends.bId === 'SURVIVED' && ends.bDone.state === 'STORYDONE' && ends.bDone.completed
+  && /no note was found|no note|nobody was arrested/i.test(ends.bScreen), ends.bScreen.slice(0, 60));
+check('Night 12 death/quit retries the final night rather than completing the campaign',
+  ends.retry.night === 12 && ends.retry.completed === false && ends.retry.memo === true, JSON.stringify(ends.retry));
+
+/* ---------- ending text invents no arrests (0-arrest history) ---------- */
+const ends0 = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave(); g.newStory();
+  g.campaign.stats.arrests = 0; g.run.arrests = 0;
+  C.setStoryFlag(g.campaign, 'informationLinkConfirmed', true);
+  g.campaign.currentNight = 12; g.nightNo = 12; C.saveCampaign(g.campaign);
+  g.startNight(12); g.stats = g.stats || {};
+  g.endNight(); g.advanceNight();
+  const screen = document.querySelector('.ending') ? document.querySelector('.ending').innerText : '';
+  return { screen };
+});
+check('Ending (0 arrests): the epilogue never claims the player caught anyone',
+  !/you helped put|you had a hand in taking|you helped us take/i.test(ends0.screen)
+  && /never did put your hands|others did/i.test(ends0.screen), ends0.screen.slice(0, 60));
+
+/* ---------- Night 12 shows the whole campaign's accumulated store history ---------- */
+const envAll = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave(); g.newStory();
+  // Every earned consequence set true, as a fully-completed campaign would have.
+  for (const k of ['rearFloodlightInstalled', 'popcornNoticePosted', 'popcornStainLeft', 'arrestClippingPosted', 'schedulePrivacyNoticePosted', 'revisedHoursPosted']) {
+    C.setEnvironmentFlag(g.campaign, k, true);
+  }
+  g.nightNo = 12; g.startNight(12);
+  const e = g.env;
+  const meshes = ['floodMesh', 'noticeMesh', 'stainMesh', 'clippingMesh', 'memoMesh', 'hoursMemoMesh'].every((m) => !!g.world[m]);
+  return {
+    all: e.rearFloodlight && e.popcornNotice && e.popcornStain && e.arrestClipping && e.scheduleMemo && e.revisedHours,
+    meshes,
+  };
+});
+check('Night 12 applies every legitimately earned store change, each a single prebuilt mesh',
+  envAll.all && envAll.meshes);
+
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
   window.__campaign.deleteCampaignSave();

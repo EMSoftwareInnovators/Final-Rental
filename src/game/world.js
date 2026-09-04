@@ -434,6 +434,7 @@ export function buildWorld(T) {
     stainMesh: buildStain(T),
     clippingMesh: buildClipping(T),
     memoMesh: buildScheduleMemo(T),
+    hoursMemoMesh: buildHoursMemo(T),
     T,
   };
 }
@@ -975,6 +976,17 @@ function buildScheduleMemo(T) {
   const b = new MeshBuilder();
   b.light = lightAt;
   b.plate(10.43, 0.51, COUNTER.z1 + 0.013, 0.40, 0.44, 0, T.scheduleMemo, [0, 0, 64, 64], 0);
+  return b.build();
+}
+
+/* The revised closing-hours memo (Stage 8). The last thing to go up on the
+   counter face, to the right of the popcorn notice and clear of the rewinder
+   above -- so on the final night the little wall of the campaign's paperwork
+   is complete, and the newest sheet says the shifts are ending. */
+function buildHoursMemo(T) {
+  const b = new MeshBuilder();
+  b.light = lightAt;
+  b.plate(11.6, 0.51, COUNTER.z1 + 0.013, 0.42, 0.46, 0, T.hoursMemo, [0, 0, 64, 64], 0);
   return b.build();
 }
 

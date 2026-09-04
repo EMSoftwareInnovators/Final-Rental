@@ -797,6 +797,31 @@ export function buildTextures() {
     noise(g, w, h, 7);
   });
 
+  /* The revised-hours memo (Stage 8 / finale). Regional's answer to a season
+     of violence: after the last scheduled late shift, nobody closes alone.
+     Same copier-paper look as the other notices, but this one is a printed
+     bulletin with a memo header -- corporate, detached, referring to "security
+     concerns" where it means what it means. Goes up for the final night. */
+  T.hoursMemo = makeTex(64, 64, (g, w, h) => {
+    fill(g, '#eae3ce', w, h);
+    g.fillStyle = 'rgba(206,196,166,0.55)';      // tape at the corners
+    g.fillRect(3, 0, 15, 7); g.fillRect(w - 18, 0, 15, 7);
+    g.fillStyle = '#8a2018'; g.fillRect(4, 8, w - 8, 9);   // a red banner strip
+    g.fillStyle = '#f2ead6'; g.textAlign = 'center';
+    g.font = 'bold 6px "Courier New",monospace';
+    g.fillText('SUNSET VIDEO — MEMO', w / 2, 14.5);
+    g.fillStyle = '#1b1812';
+    g.font = 'bold 7px "Courier New",monospace';
+    g.fillText('REVISED CLOSING', w / 2, 27);
+    g.fillText('HOURS EFFECTIVE', w / 2, 36);
+    g.fillText('MONDAY', w / 2, 45);
+    g.font = '5px "Courier New",monospace';
+    g.fillText('no solo closing', w / 2, 54);
+    g.fillText('/security concerns/', w / 2, 60);
+    g.strokeStyle = '#1b1812'; g.strokeRect(3.5, 5.5, w - 7, h - 10);
+    noise(g, w, h, 7);
+  });
+
   /* A butter/grease stain the mop never quite lifted. Transparent apart from
      the blotch, so it blends onto the carpet as a dark patch rather than a
      square. Irregular on purpose -- a real spill is never a clean ellipse. */

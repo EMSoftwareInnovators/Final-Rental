@@ -414,6 +414,63 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
     ]);
   }
 
+  /* ---- Act III, Night 11: the connection ----
+     No killer tonight. The deputy came because two clues finally touched: the
+     voice asking who closes is the voice that knew the tape, and that tape was
+     never public. He states the mechanism and refuses to overstate it -- still
+     cautious, still short of naming anyone. He carries this whether or not the
+     player answered the live phone, so a missed call never strands the story. */
+  if (inv && inv.informationLink) {
+    const tape = (inv && inv.signatureTape) || 'THE LAST CUSTOMER';
+    const trace = () => say(officer,
+      `We tried. You can ask the phone company where a call came from, and by the time they answer it's next week and the answer is a booth. A payphone out on 30. Another clear over the county line. Different boxes, different nights.\n\nWhich tells me two things. Somebody's being careful, and somebody's got a car.`, [
+      reply(`So you can't trace it to anyone.`, () => say(officer,
+        `Not to a person. Not off a payphone, not in 'ninety-six, not with what this county's got. It proves he's real. It doesn't hand him to me.`,
+        [reply(`...Understood.`, () => outro())])),
+      reply(`So what do the police do now?`, () => say(officer,
+        `We treat that phone as evidence and we pull every call this store has logged. And you keep that door where you can see it, same as ever.`,
+        [reply(`I will.`, () => outro())])),
+    ]);
+    const connect = () => say(officer,
+      `Two calls we're sure of. One asking who works your late shift — which nights, who's alone. We knew about that one.\n\nAnd one asking after a tape. By name. ${tape}.\n\nClerk, that title comes off the case files. It's the thing the men we took had in common, and it was never printed anywhere. So the person who wants to know when you're alone is the same person who knows a thing only the offenders knew. That makes coincidence very hard to sell.`, [
+      reply(`Then it was never copycats.`, () => say(officer,
+        `I didn't say that. I said coincidence got hard to sell.\n\nMaybe it's one man. Maybe it's a few of them and a telephone. I'm not going to stand here and tell you I know, because I don't. But somebody has been putting this store in front of dangerous people, and that much I'd sign.`,
+        [reply(`Can you trace the calls?`, () => trace())])),
+      reply(`Can you find out who's calling?`, () => trace()),
+    ]);
+    return say(officer,
+      `${C.greeting}\n\nI'm not here about a face tonight. I'm here because two things finally touched, and I didn't care for the sound they made.`, [
+      reply(`Go on.`, () => connect()),
+      reply(`What two things?`, () => connect()),
+    ]);
+  }
+
+  /* ---- Act III, Night 12: the last shift ----
+     A real threat again, so this ends in the ordinary bulletin. The deputy is
+     not briefing a stranger any more; he checks in, names the situation, and is
+     honest about what the county can and cannot do (more patrols, not a man
+     posted inside). Lightly path-aware, inventing no arrest. */
+  if (inv && inv.finalShift) {
+    const caught = inv.caughtSomeone;
+    const patrol = () => say(officer,
+      `A car comes by more than usual tonight. That's what I can promise, and I won't promise more, because it isn't mine to give.\n\nWe've got the county, four cars, and a Friday. I can't post a man inside a video store all night on a description and a bad feeling; the sheriff won't wear it, and if I'm honest he's right not to. So it's patrols, and it's you being sharp.`, [
+      reply(`That's all? Patrols?`, () => say(officer,
+        `That's all. It's more than this store had a month ago, for what that's worth to you at midnight.\n\nSame as ever: you see the man on that sheet, you don't be clever and you don't be a hero. You lock the door and you get on the phone. Now — the description.`,
+        [reply(`Go ahead.`, () => detail())])),
+      reply(`Understood. The description?`, () => detail()),
+    ]);
+    return say(officer,
+      `${C.greeting}\n\nLast of these late ones for you, I hear. About time somebody upstairs did the sensible thing.\n\nSo let's do it right. There's a description tonight, and after what that phone's been telling us, I want you treating it like it means something.`, [
+      reply(`You think tonight's the night.`, () => say(officer,
+        caught
+          ? `I think if somebody's gone to the trouble of learning your store and your hours, and there's one more night with you alone in it, I'd be a fool to bank on quiet. You've done this before, and you did it right. Do it once more.`
+          : `I think somebody went to a lot of trouble to know when you're here on your own — and tonight you're here on your own. I won't dress it up. Watch that door.`,
+        [reply(`Then what's the plan?`, () => patrol())])),
+      reply(`What are the police doing tonight?`, () => patrol()),
+      reply(`Just give me the description.`, () => detail()),
+    ]);
+  }
+
   const alias = C.alias ? ` The papers are calling it ${C.alias}.` : '';
   const opener = caughtBefore
     ? `${C.greeting}\n\nWe've got a new description out on somebody working this side of the river. New one. Not the one from before — and there's more of it than there was.`
@@ -1422,6 +1479,11 @@ export function buildPhoneCall(ctx) {
 
   const hang = () => { ctx.hangUp(); return null; };
 
+  /* The Night 11 anonymous call takes priority over everything else the phone
+     could be: if it is ringing, lifting the receiver is answering the caller. */
+  const SC = ctx.storyCallState && ctx.storyCallState();
+  if (SC && SC.phase === 'RINGING') { ctx.storyCallAnswered(); return buildAnonymousCall(ctx); }
+
   /* If the thing is ringing, picking it up answers it. Nothing else on
      this phone matters until you have found out who that is. */
   const P = ctx.pizzaState && ctx.pizzaState();
@@ -1474,6 +1536,47 @@ export function buildPhoneCall(ctx) {
       .concat([reply(`Never mind. Sorry.`, () => hang())]));
 
   return choose();
+}
+
+/* ============================================================
+   THE NIGHT 11 CALL
+
+   The one anonymous call. Short, level, and almost polite -- the horror is
+   in how little is said and how much of it they should not know. They know
+   the store, because they rang it. They know the clerk closes alone, because
+   they asked around. And then they ask after a tape by name -- the one detail
+   that was only ever in the case files. Two facts touching is the whole beat.
+   Nobody confesses to anything. Then the line goes dead.
+
+   Everything the caller knows is plausibly obtainable: a phone book, a few
+   questions, and whatever channel carried the case detail. Nothing supernatural,
+   nothing about the player they could not have learned from outside.
+   ============================================================ */
+export function buildAnonymousCall(ctx) {
+  const CALLER = { name: 'THE LINE', voicePitch: 0.95, rough: 0.5 };
+  const inv = ctx.investigation ? ctx.investigation() : null;
+  const tape = (inv && inv.signatureTape) || 'THE LAST CUSTOMER';
+  const done = () => { ctx.hangUp(); return null; };
+
+  /* The turn. Having established you are alone, they ask for the title -- and
+     then, whatever you say, they are gone. */
+  const gone = (text) => say(CALLER, text, [reply(`...`, () => done())]);
+  const askTape = () => say(CALLER,
+    `One more thing. Have you got ${tape}. On the shelf, tonight.`, [
+    reply(`How do you know that title?`, () => gone(`(the line is already dead. Somewhere a receiver settles onto a hook.)`)),
+    reply(`...We might. Who is this?`, () => gone(`(a click. Then the flat tone of a line with nobody on it.)`)),
+    reply(`(say nothing, and listen)`, () => gone(`(traffic. A truck changing gear. Then the receiver goes down, unhurried, and the tone comes up.)`)),
+  ]);
+
+  return say(CALLER,
+    `Evening. Sorry to call so late.\n\nIs it the same one who closes up? The clerk that's usually on the late shift. You're on your own in there tonight, aren't you.`, [
+    reply(`Who is this, please?`, () => say(CALLER,
+      `(a pause. Behind them, traffic, and the particular echo of a booth.)\n\nJust checking your hours. Are you on your own or not.`, [
+      reply(`...Why do you want to know that?`, () => askTape()),
+      reply(`We close at midnight. Is there something you need?`, () => askTape()),
+    ])),
+    reply(`We're open until midnight. Can I help you find something?`, () => askTape()),
+  ]);
 }
 
 /* ============================================================
@@ -2163,6 +2266,26 @@ export function specialRoot(c, ctx) {
       const h = history(ctx, 'AUDITOR');
       const warm = h.lastOutcome === 'liked';
       const lit = ctx.environmentFlag && ctx.environmentFlag('rearFloodlightInstalled');
+      const invA = ctx.investigation ? ctx.investigation() : null;
+      /* Night 12: the last late shift. Whatever her history with the player,
+         Verna leads with the one mundane, public thing the whole town now knows
+         -- the store is finally stopping the midnight shifts -- and a little
+         plain warmth for the clerk she has needled for two weeks. She knows
+         nothing of the calls or the tape; this is the checkout-line version. */
+      if (invA && invA.finalShift && !c._greeted) {
+        c._greeted = true;
+        return say(c, rng.pick([
+          `Last late one, isn't it, dear. I heard — the whole town heard. They're stopping these midnight shifts at last. About time, and I'm sorry it took what it took.`,
+          `So this is the last of the late nights. Marjorie told me at the Kroger's; it's all round the checkout line. I shan't pretend I'm sorry you'll be home at a decent hour after this.`,
+        ]), [
+          reply(`News travels fast.`, () => say(c,
+            `It's a small town with a big checkout line, dear. Everything travels.\n\nNow — one last go at these shelves of yours, since I shan't be catching you this late again.`,
+            [reply(`Go on, then.`, () => complaint())])),
+          reply(`I'll be glad of it, honestly.`, () => say(c,
+            `Course you will. Anybody sensible would.\n\nRight. Let me have a proper look before they change your hours on you.`,
+            [reply(`Please.`, () => complaint())])),
+        ]);
+      }
       if (h.encounters > 0 && !c._greeted) {
         c._greeted = true;
         if (warm && rng.chance(0.5)) {
@@ -2199,8 +2322,7 @@ export function specialRoot(c, ctx) {
          of locking the car. All of it public knowledge and her own nerves: she
          knows nothing the police know, names nobody, points nowhere, and never
          touches the tape, the schedule calls, or any case detail. */
-      const invA = ctx.investigation ? ctx.investigation() : null;
-      if (invA && (invA.caseComparison || invA.scheduleInquiry) && !c._greeted) {
+      if (invA && (invA.caseComparison || invA.scheduleInquiry || invA.informationLink) && !c._greeted) {
         c._greeted = true;
         return say(c, rng.pick([
           `Before you say a word, dear — is it as bad as the paper makes out? The whole checkout line at the Kroger's talking about your end of the street, and I'll tell you, I never used to lock my car and now I lock my car.`,

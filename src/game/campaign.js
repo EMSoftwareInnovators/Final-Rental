@@ -228,6 +228,39 @@ const NIGHTS = {
     coachPolicy: POLICY.FORBIDDEN,
     specialCap: 2,
   },
+
+  /* The finale. Two nights that answer one question -- are these really just
+     unrelated copycats -- with "probably not: someone is feeding them
+     information," and refuse to answer any of the others (who, why, one or
+     many, whether the police ever find them). The mechanism is revealed; the
+     mastermind is not, because there may not be one to reveal. */
+
+  // Night 11 -- the connection. Tense but physically safe (killer FORBIDDEN),
+  // and the player is NOT told it is safe. The deputy comes (FORCED) with the
+  // first hard link: the voice asking who closes also knew THE LAST CUSTOMER,
+  // a detail never made public. Mid-shift the store's own phone rings once --
+  // the caller, first-hand, short and bloodless. Corporate reacts between
+  // shifts: after tonight, no more solo closing. Coach forbidden, cap 2, no
+  // guaranteed regular -- the quiet is the point.
+  11: {
+    killerPolicy: POLICY.FORBIDDEN,
+    deputyPolicy: POLICY.FORCED,
+    coachPolicy: POLICY.FORBIDDEN,
+    specialCap: 2,
+  },
+  // Night 12 -- one more night. The last solo late shift, and a genuine
+  // informed attacker (killer FORCED, full plan, ordinary human, procedurally
+  // staged -- not the caller). Deputy FORCED but Story-timed to check in rather
+  // than brief a fresh bulletin. One quiet regular (Verna) for a last mundane
+  // human beat; coach forbidden and cap 1 so the night has room to breathe and
+  // never becomes a retail circus.
+  12: {
+    killerPolicy: POLICY.FORCED,
+    deputyPolicy: POLICY.FORCED,
+    coachPolicy: POLICY.FORBIDDEN,
+    requiredSpecials: ['AUDITOR'],
+    specialCap: 1,
+  },
 };
 
 /**
@@ -534,6 +567,19 @@ export function applyStoryConsequences(campaign, completedNight = 0) {
     setStoryFlag(campaign, 'scheduleInquiryRaised', true);
     setEnvironmentFlag(campaign, 'schedulePrivacyNoticePosted', true);
   }
+
+  /* The finale's setup pays off between Night 11 and Night 12. Working Night 11
+     confirms the information link -- the schedule caller also knew the
+     unpublished tape -- and puts the last solo closing shift on the schedule.
+     Corporate's reaction, a revised-hours memo, goes up for the final night.
+     Banked at the boundary like everything else and rolled back with a failed
+     Night 11, so the memo never appears before it is earned. Keyed off the
+     schedule inquiry already being raised, not a bare night number. */
+  if (getStoryFlag(campaign, 'scheduleInquiryRaised') === true && completedNight >= 11) {
+    setStoryFlag(campaign, 'informationLinkConfirmed', true);
+    setStoryFlag(campaign, 'finalShiftScheduled', true);
+    setEnvironmentFlag(campaign, 'revisedHoursPosted', true);
+  }
 }
 
 /* ============================================================
@@ -739,6 +785,16 @@ export function investigationPolicy(campaign, n) {
   }
   if (n === 10) {
     return { scheduleInquiry: true, calmOverride: false, standDownOverride: false };
+  }
+  /* The finale. Night 11 is the connection (no killer -- the override cannot
+     conjure one); Night 12's forced killer must not be suppressed by a leftover
+     calm. Both are narrative markers the deputy reads; the killer/deputy/coach
+     come from the static config. */
+  if (n === 11) {
+    return { informationLink: true, calmOverride: false, standDownOverride: false };
+  }
+  if (n === 12) {
+    return { finalShift: true, calmOverride: false, standDownOverride: false };
   }
   return {};
 }
