@@ -435,6 +435,7 @@ export function buildWorld(T) {
     clippingMesh: buildClipping(T),
     memoMesh: buildScheduleMemo(T),
     hoursMemoMesh: buildHoursMemo(T),
+    cheatSheetMesh: buildCheatSheet(T),
     T,
   };
 }
@@ -987,6 +988,17 @@ function buildHoursMemo(T) {
   const b = new MeshBuilder();
   b.light = lightAt;
   b.plate(11.6, 0.51, COUNTER.z1 + 0.013, 0.42, 0.46, 0, T.hoursMemo, [0, 0, 64, 64], 0);
+  return b.build();
+}
+
+/* The employee reference card (Stage 9). Taped to the clerk's side of the
+   counter by the register -- the first thing in the player's eyeline when they
+   step up to ring somebody up. Permanent workplace furniture, drawn in every
+   mode, not a campaign consequence, so it is built here and shown always. */
+function buildCheatSheet(T) {
+  const b = new MeshBuilder();
+  b.light = lightAt;
+  b.plate(12.06, 0.52, COUNTER.z1 + 0.013, 0.52, 0.56, 0, T.cheatSheet, [0, 0, 128, 128], 0);
   return b.build();
 }
 

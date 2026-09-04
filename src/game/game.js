@@ -153,6 +153,12 @@ export class Game {
       sens: 0.5, invert: false, vol: 0.8, res: 1, snap: true, grain: 0.5,
       vhs: true,
     };
+    /* Player preferences that live across sessions and across campaigns --
+       separate from the Story save (which is one run) and from the pad binds
+       (their own key). hintsSeen is the set of first-use nudges already shown,
+       so a returning player is never re-taught; hintsEnabled turns the whole
+       lot off. loadPrefs() fills this in at boot. */
+    this.prefs = { hintsEnabled: true, hintsSeen: {} };
     this.menuSel = 0;
     this.optSel = 0;
     this.padSel = 0;
@@ -816,6 +822,7 @@ export class Game {
       sens: this.opts.sens, invert: this.opts.invert, vol: this.opts.vol,
       resLabel: RES[this.opts.res][2], snap: this.opts.snap, grain: this.opts.grain,
       vhs: this.opts.vhs,
+      hints: this.prefs.hintsEnabled,
       // Named here so a pad that behaves oddly can at least be identified.
       pad: this.input.padId,
       padNeedsSetup: !!this.input.padId && !this.input.padTrusted && !this.input.bindsAreUser,
@@ -833,10 +840,14 @@ export class Game {
       }
       return;
     }
-    const N = 9;
-    const BACK = N - 1;
-    const PADROW = N - 2;
+    const N = 11;
+    const BACK = N - 1;         // 10
+    const PADROW = N - 2;       // 9  Controller
+    const HINTS = 7;            // First-shift hints (toggle)
+    const RESET = 8;            // Reset first-shift hints (action)
     const TOGGLES = { 1: 'invert', 4: 'snap', 5: 'vhs' };
+    // Refresh the panel after a change, keeping the cursor where it is.
+    const refresh = () => { this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel); };
     if (i.hit('ArrowUp', 'KeyW')) { this.optSel = (this.optSel + N - 1) % N; this.sound.uiMove(); }
     if (i.hit('ArrowDown', 'KeyS')) { this.optSel = (this.optSel + 1) % N; this.sound.uiMove(); }
     const d = (i.hit('ArrowRight', 'KeyD') ? 1 : 0) - (i.hit('ArrowLeft', 'KeyA') ? 1 : 0);
@@ -847,11 +858,13 @@ export class Game {
         case 2: this.opts.vol = clamp(this.opts.vol + d * 0.1, 0, 1); break;
         case 3: this.opts.res = clamp(this.opts.res + d, 0, RES.length - 1); this.layout(); break;
         case 6: this.opts.grain = clamp(this.opts.grain + d * 0.1, 0, 1); break;
+        case HINTS: this.prefs.hintsEnabled = !this.prefs.hintsEnabled; break;
         default:
           if (TOGGLES[this.optSel]) this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
           break;
       }
       this.applyOptions();
+      this.savePrefs();
       this.ui.showPanel(optionsHtml(this.optView()));
     }
     this.ui.panelSelect(this.optSel);
@@ -866,9 +879,19 @@ export class Game {
         this.state = ST.PADCFG; this.padSel = 0;
         this.input.cancelCapture();
         this.showPadMenu();
+      } else if (this.optSel === HINTS) {
+        this.prefs.hintsEnabled = !this.prefs.hintsEnabled;
+        this.savePrefs(); this.sound.uiSelect(); refresh();
+      } else if (this.optSel === RESET) {
+        // Clear the seen-set so a fresh player's first-shift nudges return. No
+        // browser confirm -- a small workplace action with a toast.
+        this.prefs.hintsSeen = {};
+        this.prefs.hintsEnabled = true;
+        this.savePrefs(); this.sound.uiSelect();
+        this.ui.toast('First-shift hints reset.', 'good'); refresh();
       } else if (TOGGLES[this.optSel]) {
         this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
-        this.applyOptions(); this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel);
+        this.applyOptions(); this.savePrefs(); refresh();
       }
     }
   }
@@ -983,7 +1006,66 @@ export class Game {
     } catch (err) { /* a corrupt entry just means the defaults */ }
   }
 
+  /* One small blob of cross-session preferences: the settings a player expects
+     to stick, and which first-use hints they have already seen. Deliberately
+     nothing to do with the campaign save or the pad binds -- wiping one must
+     never touch the others. Fails soft: private mode, a corrupt entry, or no
+     storage at all just means defaults. */
+  loadPrefs() {
+    try {
+      const raw = localStorage.getItem('finalrental.prefs');
+      if (!raw) return;
+      const p = JSON.parse(raw);
+      if (!p || typeof p !== 'object') return;
+      if (typeof p.hintsEnabled === 'boolean') this.prefs.hintsEnabled = p.hintsEnabled;
+      if (p.hintsSeen && typeof p.hintsSeen === 'object') this.prefs.hintsSeen = { ...p.hintsSeen };
+      // Persisted display/control settings, each validated against its default's
+      // type so a hand-edited file cannot hand gameplay a bad value.
+      if (p.opts && typeof p.opts === 'object') {
+        for (const k of Object.keys(this.opts)) {
+          if (k in p.opts && typeof p.opts[k] === typeof this.opts[k]) this.opts[k] = p.opts[k];
+        }
+        this.opts.res = clamp(this.opts.res | 0, 0, RES.length - 1);
+      }
+    } catch (err) { /* defaults are fine */ }
+  }
+
+  savePrefs() {
+    try {
+      localStorage.setItem('finalrental.prefs', JSON.stringify({
+        hintsEnabled: this.prefs.hintsEnabled,
+        hintsSeen: this.prefs.hintsSeen,
+        opts: this.opts,
+      }));
+    } catch (err) { /* nothing we can do, nothing worth doing */ }
+  }
+
+  /**
+   * A one-time contextual nudge, on the toast HUD. Fires the first time a
+   * situation is reached and never again on this browser, so a returning player
+   * is not re-taught -- and does nothing at all when hints are turned off.
+   * Diegetic and quiet: it names what a thing is or what to do with it, not
+   * where a beat is going. Consumes no gameplay RNG, so it cannot move a night.
+   */
+  hint(id, text, kind = 'hint') {
+    if (!this.prefs || !this.prefs.hintsEnabled) return;
+    if (this.prefs.hintsSeen[id]) return;
+    this.prefs.hintsSeen[id] = true;
+    this.savePrefs();
+    this.ui.toast(text, kind);
+  }
+
+  /** Has this first-use hint already been shown (or hints turned off)? Lets a
+      first-playthrough teaching beat know whether to expand or stay terse. */
+  hintPending(id) {
+    return !!(this.prefs && this.prefs.hintsEnabled && !this.prefs.hintsSeen[id]);
+  }
+
   applyOptions() {
+    // Read persisted settings once, at the first apply (boot). Later calls come
+    // from the player changing a setting; re-reading disk then would overwrite
+    // the very change they just made.
+    if (!this._prefsLoaded) { this._prefsLoaded = true; this.loadPrefs(); }
     this.loadPadBinds();
     this.input.sensitivity = 0.0009 + this.opts.sens * 0.0032;
     this.input.invertY = this.opts.invert;
@@ -2058,6 +2140,8 @@ export class Game {
         if (held && near) {
           const ok = held.genre === tgt.genre;
           const bad = !held.game && !held.rewound;
+          if (bad) this.hint('rewind', 'That tape is not rewound. Run it through the rewinder before it goes on a shelf.');
+          else this.hint('shelve', 'Every tape belongs on its own genre run. Match the label.');
           prompt = `${K()}<span class="hold">Hold</span> to shelve ${held.title}`
             + `\n<span class="sub">${GENRE_LABEL[tgt.genre]} run ${ok ? '- correct section' : '- this is not its section'}`
             + `${bad ? ' - NOT REWOUND' : ''}</span>`;
@@ -2081,7 +2165,10 @@ export class Game {
       }
       case 'bin': {
         if (held) { prompt = `${K()}Drop ${held.title} in returns`; act = () => this.binFromHand(); }
-        else if (this.bin.length) { prompt = `${K()}Take from returns\n<span class="sub">${this.bin.length} waiting</span>`; act = () => this.takeFromBin(); }
+        else if (this.bin.length) {
+          this.hint('returns', 'Returned tapes pile up here. Take one, rewind it if it needs it, then shelve it on its genre.');
+          prompt = `${K()}Take from returns\n<span class="sub">${this.bin.length} waiting</span>`; act = () => this.takeFromBin();
+        }
         else prompt = `<span class="sub">RETURNS - empty</span>`;
         break;
       }
@@ -2098,6 +2185,7 @@ export class Game {
         const cash = this.player.cash;
         const owedOut = this.changeOwedOut();
         if (cash.owed > 0.001) {
+          this.hint('register', 'Ring it up here to take their money. If they handed you too much, the change goes back to them.');
           prompt = `${K()}Ring up $${cash.owed.toFixed(2)}\n<span class="sub">$${cash.tendered.toFixed(2)} in your hand`
             + `${cash.tendered - cash.owed > 0.001 ? ` &middot; $${(cash.tendered - cash.owed).toFixed(2)} to count back` : ''}</span>`;
           act = () => this.ringUp();
@@ -2123,6 +2211,7 @@ export class Game {
         break;
       }
       case 'phone': {
+        this.hint('phone', 'The telephone. When you are sure someone is the one, you call the county from here.');
         prompt = `${K()}Pick up the phone`;
         act = () => this.pickUpPhone();
         break;
@@ -2144,6 +2233,7 @@ export class Game {
         break;
       }
       case 'door': {
+        this.hint('door', 'This locks the front door. If someone is coming for you, lock up first — then call it in.');
         prompt = this.door.locked ? `${K()}Unlock the front door` : `${K()}Lock the front door`;
         act = () => this.toggleLock();
         break;
@@ -3216,6 +3306,12 @@ export class Game {
     setTranslate(M.m, 0, 0, 0);
     rz.drawMesh(this.world.mesh, M.m, { shade: L });
 
+    /* The employee reference card. Permanent workplace furniture, not a
+       campaign consequence, so it draws in every mode and on every night --
+       unlike the env props below, which are switched on by this.env. */
+    setTranslate(M.m, 0, 0, 0);
+    rz.drawMesh(this.world.cheatSheetMesh, M.m, { shade: L });
+
     /* ---- persistent environmental pieces (Story) ----
        Prebuilt meshes, switched on by campaign facts in this.env. The
        floodlight carries a cheap-fixture flicker: mostly steady, with a brief
@@ -3830,6 +3926,7 @@ export class Game {
         const b = g.night.bulletin;
         for (const k of b.keys) b.known.add(k);
         g.sound.paper();
+        g.hint('notebook', `The description is in your notebook now. ${glyphText('notes')} opens it — hold it against every face, and check all of it, not one thing.`);
       },
       addBulletinDetail: (e) => {
         g.night.bulletin.known.add(e.key);
@@ -3837,6 +3934,18 @@ export class Game {
         g.sound.paper();
       },
       finishIntro: () => g.finishBriefing(),
+
+      /* --- first-run onboarding, for the deputy's Night 3 teaching beat ---
+         True only while first-shift hints are on and the player has not yet
+         been walked through the identification job; once they read it, it never
+         offers again, on any night or campaign. Story dialogue itself is never
+         gated on this -- only the extra plain-language guidance. */
+      tutorial: () => g.hintPending('deputyTaught'),
+      sawDeputyTeaching: () => {
+        if (!g.prefs) return;
+        g.prefs.hintsSeen.deputyTaught = true;
+        g.savePrefs();
+      },
 
       /* --- phone --- */
       phoneTargets: () => g.phoneTargets(),
@@ -4269,7 +4378,18 @@ export class Game {
     const S = this.storyCall;
     if (!S) return;
     if (S.phase === 'ARMED') {
-      if (this.officerDone && this.sim >= S.at) { S.phase = 'RINGING'; S.bellT = 0.4; S.rings = 0; }
+      // Not before the deputy has finished and the mid-shift window is reached.
+      if (!this.officerDone || this.sim < S.at) return;
+      /* Prefer a lull: do not start ringing over an open dialogue choice, an
+         active phone call, or a customer mid-conversation -- one of the
+         campaign's best beats should not fire while the player is buried in a
+         menu. But never wait forever: past a max defer window it rings anyway,
+         so it still feels interruptive, and the missed-call fallback stands
+         either way. */
+      const busy = this.dlg.active || this.phone.active || !!this.speaking;
+      const deadline = S.at + this.night.length * 0.22;
+      if (busy && this.sim < deadline) return;
+      S.phase = 'RINGING'; S.bellT = 0.4; S.rings = 0;
       return;
     }
     if (S.phase === 'RINGING') {

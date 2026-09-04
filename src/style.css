@@ -126,6 +126,9 @@ body.talking #hands,body.talking #objective{display:none}
 }
 .toast.good{border-color:var(--green);color:var(--green)}
 .toast.bad{border-color:var(--red);color:var(--red)}
+/* First-shift hints: a quiet photocopied-note look, set apart from the amber
+   gameplay toasts so a nudge reads as workplace guidance, not an alert. */
+.toast.hint{border-color:#b9a06a;color:#e6d9b4;background:rgba(14,12,8,.72);font-style:italic}
 .toast.fade{opacity:0;transition:opacity .5s}
 @keyframes toast-in{from{transform:translateX(30%);opacity:0}}
 

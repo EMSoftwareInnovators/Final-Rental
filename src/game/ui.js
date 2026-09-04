@@ -295,7 +295,7 @@ export class UI {
       const tag = bits.length ? `<span class="tag-in">[${bits.join(' ')}]</span> ` : '';
       return `<li class="${i === sel ? 'sel' : ''}">${i + 1}. ${tag}${escape(c.label)}</li>`;
     }).join('');
-    this.el.dlgChoices.innerHTML = ch.length ? html : `<li class="sel">[E] continue</li>`;
+    this.el.dlgChoices.innerHTML = ch.length ? html : `<li class="sel">${glyph('confirm')} continue</li>`;
   }
   hideDialogue() {
     this.el.dialogue.classList.add('hidden');
@@ -451,6 +451,8 @@ export function optionsHtml(o) {
     <li class="opt">Polygon jitter &nbsp; ${o.snap ? 'PS1 (ON)' : 'SMOOTH'}</li>
     <li class="opt">VHS tape &nbsp; ${o.vhs ? 'ON' : 'OFF &mdash; clean PS1'}</li>
     <li class="opt">Tape damage &nbsp; ${bar(o.grain)}${o.vhs ? '' : ' <span class="quiet">(tape off)</span>'}</li>
+    <li class="opt">First-shift hints &nbsp; ${o.hints ? 'ON' : 'OFF'}</li>
+    <li class="opt">Reset first-shift hints</li>
     <li class="opt">Controller${o.pad ? '' : ' <span class="quiet">(none connected)</span>'}</li>
     <li class="opt">Back</li>
   </ul>
@@ -536,7 +538,7 @@ export function reportHtml(night, stats, grade, next) {
       <p class="note">${next}</p>
     </div>
   </div>
-  <p class="pad-foot">[E] clock in for night ${night + 1}</p>`;
+  <p class="pad-foot">${glyph('confirm')} clock in for night ${night + 1}</p>`;
 }
 
 /**
@@ -606,7 +608,7 @@ export function endingHtml(kind, data) {
         <p>{He} does not hurry. There is no reason to hurry.</p>
         <p class="quiet">The store stays open until midnight. The tape in the deck keeps turning until somebody stops it.</p>
         <p class="big">NIGHT ${data.night} &mdash; SHIFT ENDED</p>
-        <p class="pad-foot">[E] rewind</p></div>`);
+        <p class="pad-foot">${glyph('confirm')} rewind</p></div>`);
     case 'FIRED':
       /* The name here is the person you were wrong about, and `reason` is
          written about them by describeInnocent -- so nothing on this page
@@ -617,7 +619,7 @@ export function endingHtml(kind, data) {
         <p>The district manager drove in at two in the morning to say it in person. You handed over the keys and the little pin with the film reel on it.</p>
         <p class="quiet">Somewhere out there, the actual one is still renting tapes.</p>
         <p class="big">BAD ENDING &mdash; YOU'RE DONE HERE</p>
-        <p class="pad-foot">[E] new tape</p></div>`;
+        <p class="pad-foot">${glyph('confirm')} new tape</p></div>`;
     default: return '';
   }
 }

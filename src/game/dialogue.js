@@ -476,7 +476,26 @@ export function buildOfficerIntro(officer, bulletin, caseFile, ctx) {
     ? `${C.greeting}\n\nWe've got a new description out on somebody working this side of the river. New one. Not the one from before — and there's more of it than there was.`
     : `${C.greeting}\n\nWe've got a description out on somebody working this side of the river. I'm hitting every business still lit up.${alias}`;
 
+  /* First-run onboarding, only on the safe practice nights and only until the
+     player has read it once. This is the deputy doing exactly what a deputy is
+     there for: he spells out the identification job in plain words -- match ALL
+     of it, not one thing; lock the door THEN call; a wrong call ends you. Not a
+     lecture, one optional reply; canonical dialogue is untouched when hints are
+     off. */
+  const teach = () => {
+    if (ctx.sawDeputyTeaching) ctx.sawDeputyTeaching();
+    return say(officer,
+      `Alright. The whole of it, once, and then I'll not labor it.\n\nI read you a description. You do not go on one thing that matches — half this county's in a dark jacket. You go on ALL of it. One thing wrong and it is not him: you let him rent his tape and you let him walk.\n\nAnd if it is him — every last part of it — you do not get clever. You lock that front door, and THEN you get on the phone, in that order. Call it in on the wrong man and you'll be handing me your keys by morning.`, [
+      reply(`How do I keep it all straight?`, () => say(officer,
+        `You write it down and you hold the page up against every face that comes through that door. Slow is fine. Wrong is not. That's the whole job.`,
+        [reply(`Read me the description, then.`, () => detail())])),
+      reply(`Understood. Read it to me.`, () => detail()),
+    ]);
+  };
+  const teaching = (ctx.tutorial && ctx.tutorial()) ? [reply(`I've never worked nights before. What am I actually watching for?`, () => teach())] : [];
+
   return say(officer, opener, [
+    ...teaching,
     ...(caughtBefore ? [reply(`Hold on. You caught somebody already.`, () => theOtherOne())] : []),
     ...(C.grew ? [reply(`More of it how?`, () => whyMore())] : []),
     reply(`Go ahead.`, () => detail()),

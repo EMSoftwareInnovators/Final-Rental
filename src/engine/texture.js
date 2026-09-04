@@ -822,6 +822,44 @@ export function buildTextures() {
     noise(g, w, h, 7);
   });
 
+  /* The employee reference card (Stage 9). A cheap laminated sheet taped by
+     the register that spells out the job, so a new clerk is never guessing at
+     the loop. Workplace material, not lore -- it stays up every night, in every
+     mode. Photocopied header, three short numbered sections, a little coffee
+     ring because it has been on that counter for years. */
+  T.cheatSheet = makeTex(128, 128, (g, w, h) => {
+    fill(g, '#efe9d6', w, h);                    // laminated cream
+    g.fillStyle = 'rgba(255,255,255,0.10)';      // a plastic sheen band
+    g.fillRect(0, 8, w, 20);
+    g.fillStyle = '#20242e'; g.fillRect(6, 6, w - 12, 15);   // header bar, navy
+    g.fillStyle = '#efe9d6'; g.textAlign = 'center';
+    g.font = 'bold 9px "Courier New",monospace';
+    g.fillText('SUNSET VIDEO', w / 2, 17);
+    g.fillStyle = '#1b1812'; g.textAlign = 'left';
+    const L = 10;
+    g.font = 'bold 8px "Courier New",monospace';
+    g.fillText('RETURNS', L, 34);
+    g.font = '7px "Courier New",monospace';
+    g.fillText('1. Take the tape', L, 44);
+    g.fillText('2. Late fee if owed', L, 52);
+    g.fillText('3. Rewind if needed', L, 60);
+    g.fillText('4. Shelve by genre', L, 68);
+    g.font = 'bold 8px "Courier New",monospace';
+    g.fillText('RENTALS', L, 82);
+    g.font = '7px "Courier New",monospace';
+    g.fillText('1. Ring up, take cash', L, 92);
+    g.fillText('2. Count the change', L, 100);
+    g.font = 'bold 8px "Courier New",monospace';
+    g.fillText('CLOSING', L, 114);
+    g.font = '7px "Courier New",monospace';
+    g.fillText('Clear the floor,', L, 123);
+    // a faint coffee ring, bottom-right
+    g.strokeStyle = 'rgba(120,86,40,0.35)'; g.lineWidth = 2;
+    g.beginPath(); g.arc(w - 22, h - 20, 12, 0, Math.PI * 2); g.stroke();
+    g.strokeStyle = '#1b1812'; g.lineWidth = 1; g.strokeRect(4, 3, w - 8, h - 6);
+    noise(g, w, h, 5);
+  });
+
   /* A butter/grease stain the mop never quite lifted. Transparent apart from
      the blotch, so it blends onto the carpet as a dark patch rather than a
      square. Irregular on purpose -- a real spill is never a clean ellipse. */

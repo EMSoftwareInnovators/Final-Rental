@@ -601,9 +601,11 @@ async function oddPad() {
   check('odd pad: a button the standard table does not know still works a menu',
     (await st()).state === 'OPTIONS', (await st()).state);
 
-  // Down to the Controller row and into it.
-  await ev(() => { window.__game.optSel = 7; window.__ui && 0; });
-  await ev(() => { window.__game.ui.panelSelect(7); });
+  // Down to the Controller row and into it. (Options rows, in order: sens,
+  // invert, volume, resolution, jitter, VHS, tape damage, first-shift hints,
+  // reset hints, CONTROLLER, back -- so the pad row is index 9.)
+  await ev(() => { window.__game.optSel = 9; window.__ui && 0; });
+  await ev(() => { window.__game.ui.panelSelect(9); });
   await tap(11);
   check('odd pad: the controller screen opens', (await st()).state === 'PADCFG', (await st()).state);
 

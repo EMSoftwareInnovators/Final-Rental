@@ -1986,10 +1986,138 @@ const envAll = await ev(() => {
 check('Night 12 applies every legitimately earned store change, each a single prebuilt mesh',
   envAll.all && envAll.meshes);
 
+/* ================================================================
+   STAGE 9 -- commercial polish: onboarding, hints, timing, UX.
+
+   The first-shift hint layer and its persistence, kept independent of the
+   campaign save; the Night 3 deputy teaching that only a first-timer sees; the
+   Night 11 call preferring a lull; and the control-prompt / cheat-sheet
+   readability fixes.
+   ================================================================ */
+
+/* ---------- first-shift hints: fire once, persist, reset, isolate ---------- */
+const prefs = await ev(() => {
+  const g = window.__game;
+  localStorage.removeItem('finalrental.prefs');
+  g._prefsLoaded = false; g.prefs = { hintsEnabled: true, hintsSeen: {} };
+  g.loadPrefs();                                   // nothing stored -> defaults
+  const startClean = g.prefs.hintsEnabled === true && Object.keys(g.prefs.hintsSeen).length === 0;
+  g.hint('probeA', 'first time');
+  const firedOnce = g.prefs.hintsSeen.probeA === true;
+  g.hint('probeA', 'again');                       // already seen -> no-op
+  const stillSeen = g.prefs.hintsSeen.probeA === true;
+  const persisted = !!localStorage.getItem('finalrental.prefs')
+    && JSON.parse(localStorage.getItem('finalrental.prefs')).hintsSeen.probeA === true;
+  // a fresh load rebuilds the seen-set from disk
+  g._prefsLoaded = false; g.prefs = { hintsEnabled: true, hintsSeen: {} };
+  g.loadPrefs();
+  const survivesReload = g.prefs.hintsSeen.probeA === true;
+  // turned off -> hints do nothing
+  g.prefs.hintsEnabled = false;
+  g.hint('probeB', 'x');
+  const disabledNoop = !g.prefs.hintsSeen.probeB;
+  g.prefs.hintsEnabled = true;
+  // reset clears the seen-set (as the Settings action does)
+  g.prefs.hintsSeen = {}; g.prefs.hintsEnabled = true; g.savePrefs();
+  const afterReset = Object.keys(g.prefs.hintsSeen).length === 0
+    && JSON.parse(localStorage.getItem('finalrental.prefs')).hintsSeen.probeA === undefined;
+  return { startClean, firedOnce, stillSeen, persisted, survivesReload, disabledNoop, afterReset };
+});
+check('first-shift hints: fire once, mark themselves seen, and persist across a reload',
+  prefs.startClean && prefs.firedOnce && prefs.stillSeen && prefs.persisted && prefs.survivesReload, JSON.stringify(prefs));
+check('first-shift hints: do nothing when turned off, and Reset restores them',
+  prefs.disabledNoop && prefs.afterReset);
+
+/* ---------- hint prefs are independent of the campaign save ---------- */
+const prefIso = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  C.deleteCampaignSave();
+  g.prefs.hintsSeen = { keep: true }; g.savePrefs();
+  const prefsMadeNoCampaign = C.loadCampaign() === null;   // writing prefs created no campaign
+  // a Story run, then wiping it, must leave the hint prefs untouched
+  g.newStory(); C.saveCampaign(g.campaign); C.deleteCampaignSave();
+  g._prefsLoaded = false; g.prefs = { hintsEnabled: true, hintsSeen: {} }; g.loadPrefs();
+  const prefsIntact = g.prefs.hintsSeen.keep === true;
+  // and a Graveyard run touches neither
+  g.beginRun(window.__night.MODE.HORROR); g.startNight(1);
+  const gvNoCampaign = C.loadCampaign() === null;
+  return { prefsMadeNoCampaign, prefsIntact, gvNoCampaign };
+});
+check('hint prefs and the campaign save never touch each other',
+  prefIso.prefsMadeNoCampaign && prefIso.prefsIntact && prefIso.gvNoCampaign, JSON.stringify(prefIso));
+
+/* ---------- control prompts use the input glyph, not a hardcoded key ---------- */
+const prompts = await ev(() => {
+  const U = window.__ui;
+  const stats = { served: 0, rentalsRung: 0, feesCollected: 0, feesWaived: 0, shelvedRight: 0, shelvedWrong: 0, shelvedUnrewound: 0, unshelved: 0, angered: 0, stormedOut: 0, turnedAway: 0, changeStiffed: 0, cashLoose: 0, tips: 0 };
+  const rep = U.reportHtml(1, stats, { letter: 'A', score: 0 }, 'note');
+  const att = U.endingHtml('ATTACKED', { night: 4, app: { gender: { id: 'm' } } });
+  const fired = U.endingHtml('FIRED', { name: 'X', reason: 'r', night: 4 });
+  return { blob: rep + att + fired };
+});
+check('control prompts carry no hardcoded [E] (correct on keyboard and pad alike)',
+  !/\[E\]/.test(prompts.blob));
+
+/* ---------- the employee cheat sheet is permanent workplace furniture ---------- */
+const sheet = await ev(() => {
+  const g = window.__game, N = window.__night;
+  g.beginRun(N.MODE.CASUAL); g.startNight(1);
+  return { mesh: !!(g.world && g.world.cheatSheetMesh), tex: !!(g.world && g.world.T && g.world.T.cheatSheet) };
+});
+check('the employee cheat sheet is built and shown in every mode (not a campaign prop)',
+  sheet.mesh && sheet.tex);
+
+/* ---------- Night 3 deputy teaching: first run only ---------- */
+const teach = await ev(() => {
+  const g = window.__game, C = window.__campaign, D = window.__dlg;
+  const hasTeach = () => (D.buildOfficerIntro({ name: 'Deputy' }, g.night.bulletin, g.night.caseFile, g.ctx).choices || [])
+    .some((c) => /never worked nights/i.test(c.label));
+  C.deleteCampaignSave(); g.newStory();
+  g.prefs.hintsEnabled = true; g.prefs.hintsSeen = {};
+  g.nightNo = 3; g.startNight(3);
+  const on = hasTeach();
+  g.ctx.sawDeputyTeaching();                        // reading it marks it seen
+  const afterRead = hasTeach();
+  g.prefs.hintsSeen = {}; g.prefs.hintsEnabled = false;
+  const off = hasTeach();
+  g.prefs.hintsEnabled = true;
+  return { on, afterRead, off };
+});
+check('Night 3 deputy teaching appears on a first run, once, and never with hints off',
+  teach.on && !teach.afterRead && !teach.off, JSON.stringify(teach));
+
+/* ---------- Night 11 call prefers a lull, but never waits forever ---------- */
+const defer = await ev(() => {
+  const g = window.__game, C = window.__campaign;
+  const busyNode = { text: 'x', choices: [{ label: 'a', fn: () => null }] };
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 11; g.startNight(11);
+  const armed = !!g.storyCall && g.storyCall.phase === 'ARMED';
+  g.officerDone = true; g.sim = g.storyCall.at + 1;   // inside the ring window
+  g.dlg.node = busyNode;                              // player buried in a menu
+  g.updateStoryCall(0.1);
+  const heldOff = g.storyCall.phase === 'ARMED';
+  g.dlg.node = null;                                  // a lull opens
+  g.updateStoryCall(0.1);
+  const ringsInLull = g.storyCall.phase === 'RINGING';
+  // re-arm and stay busy past the max defer -> it rings anyway
+  g.startNight(11); g.officerDone = true;
+  g.dlg.node = busyNode;
+  g.sim = g.storyCall.at + g.night.length * 0.22 + 1;
+  g.updateStoryCall(0.1);
+  const ringsPastDeadline = g.storyCall.phase === 'RINGING';
+  g.dlg.node = null;
+  return { armed, heldOff, ringsInLull, ringsPastDeadline };
+});
+check('Night 11 call: armed, holds off while the player is busy, then rings the moment a lull opens',
+  defer.armed && defer.heldOff && defer.ringsInLull, JSON.stringify(defer));
+check('Night 11 call: past the max defer window it rings anyway (never waits forever)',
+  defer.ringsPastDeadline);
+
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
   window.__campaign.deleteCampaignSave();
   localStorage.removeItem('finalrental.padbinds');
+  localStorage.removeItem('finalrental.prefs');
 });
 
 console.log('\n--- errors ---');
