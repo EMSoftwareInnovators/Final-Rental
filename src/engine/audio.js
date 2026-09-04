@@ -10,10 +10,30 @@ export class Sound {
     this.ctx = null;
     this.ready = false;
     this.masterVol = 0.8;
+    /* Category levels, 0..1, applied to their buses. MASTER is masterVol above.
+       Defaults are sensible; the prefs layer overrides them at boot. */
+    this.mix = { amb: 1, sfx: 1, voice: 1 };
     this.tension = 0;
     this._tensionTarget = 0;
     this.muted = false;
+    /* The store is only "occupied" -- and so only makes its idle one-shot
+       sounds -- while a shift is actually being played. The game sets this. */
+    this.inStore = false;
+    /* A private RNG for AUDIO ONLY. Ambient one-shots and tiny per-sound
+       variations draw from this, never from the gameplay RNG, so nothing an
+       ear hears can move a customer, a suspect, or the killer. Seeded off wall
+       clock at construction -- audio variety need not be reproducible. */
+    this._aseed = (Date.now() ^ 0x9e3779b9) >>> 0;
   }
+
+  /** xorshift32 on the audio-only seed. Never touches gameplay determinism. */
+  _arand() {
+    let s = this._aseed;
+    s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0;
+    this._aseed = s;
+    return s / 4294967296;
+  }
+  _apick(arr) { return arr[Math.floor(this._arand() * arr.length)]; }
 
   /** Must be called from a user gesture. */
   init() {
@@ -38,8 +58,13 @@ export class Sound {
     if (comp.knee) comp.knee.value = 14;
     comp.connect(this.master);
 
-    this.sfxBus = ctx.createGain(); this.sfxBus.gain.value = 1; this.sfxBus.connect(comp);
-    this.ambBus = ctx.createGain(); this.ambBus.gain.value = 1; this.ambBus.connect(this.master);
+    /* Three category buses under the master. SFX (mechanical one-shots) and
+       VOICE (the telephone and character blips) go through the limiter; the
+       ambience beds run straight to the master so a footstep transient cannot
+       duck the room tone. Their gains are the AMBIENCE / SFX / VOICE settings. */
+    this.sfxBus = ctx.createGain(); this.sfxBus.gain.value = this.mix.sfx; this.sfxBus.connect(comp);
+    this.voiceBus = ctx.createGain(); this.voiceBus.gain.value = this.mix.voice; this.voiceBus.connect(comp);
+    this.ambBus = ctx.createGain(); this.ambBus.gain.value = this.mix.amb; this.ambBus.connect(this.master);
 
     // shared noise buffer (2s of white noise)
     const len = ctx.sampleRate * 2;
@@ -159,7 +184,48 @@ export class Sound {
     const lfo = ctx.createOscillator(); lfo.frequency.value = 0.13;
     const lg = ctx.createGain(); lg.gain.value = 60;
     lfo.connect(lg).connect(this.dreadFilter.frequency); lfo.start();
+
+    /* The rear floodlight (Stage 4), when it has been installed: a faint,
+       cheap sodium-ballast buzz -- quieter than the interior hum, thinner, and
+       biased to one side so it reads as coming from out back. Silent until
+       setFloodlight(true). A landlord's repair, not a horror cue. */
+    this.floodGain = ctx.createGain(); this.floodGain.gain.value = 0;   // clean on/off
+    const fpan = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+    if (fpan) { fpan.pan.value = 0.35; this.floodGain.connect(fpan).connect(this.ambBus); }
+    else this.floodGain.connect(this.ambBus);
+    const buzz = ctx.createGain(); buzz.gain.value = 1;   // carries the flutter
+    buzz.connect(this.floodGain);
+    for (const [f, g] of [[100, 1], [200, 0.5]]) {
+      const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f;
+      const bp = ctx.createBiquadFilter(); bp.type = 'lowpass'; bp.frequency.value = 500;
+      const gg = ctx.createGain(); gg.gain.value = g * 0.2;
+      o.connect(bp).connect(gg).connect(buzz); o.start();
+    }
+    // a slow, shallow flutter around unity, so the buzz is never perfectly
+    // steady -- modulating the inner gain, never the on/off gain.
+    const flo = ctx.createOscillator(); flo.type = 'sine'; flo.frequency.value = 0.7;
+    const flg = ctx.createGain(); flg.gain.value = 0.15;
+    flo.connect(flg).connect(buzz.gain); flo.start();
   }
+
+  /** Apply the category mix (0..1 each). Called from the game when settings
+      change; safe before init (the values are read when the buses are built). */
+  setMix(amb, sfx, voice) {
+    if (typeof amb === 'number') this.mix.amb = amb;
+    if (typeof sfx === 'number') this.mix.sfx = sfx;
+    if (typeof voice === 'number') this.mix.voice = voice;
+    if (!this.ready) return;
+    // Category levels only -- mute is handled per-bed and per-one-shot, so an
+    // unmute never needs a setMix call to bring the buses back.
+    const t = this.t;
+    if (this.ambBus) this.ambBus.gain.setTargetAtTime(this.mix.amb, t, 0.05);
+    if (this.sfxBus) this.sfxBus.gain.setTargetAtTime(this.mix.sfx, t, 0.05);
+    if (this.voiceBus) this.voiceBus.gain.setTargetAtTime(this.mix.voice, t, 0.05);
+  }
+
+  /** The rear floodlight's ballast buzz: on once it is installed, off otherwise.
+      update() drives the actual gain, so it also follows mute. */
+  setFloodlight(on) { this._floodOn = !!on; }
 
   setTension(x) { this._tensionTarget = Math.max(0, Math.min(1, x)); }
 
@@ -178,6 +244,22 @@ export class Sound {
     this.tension += (this._tensionTarget - this.tension) * Math.min(1, dt * 1.2);
     const t = this.t;
 
+    /* Mundane one-shots: the store making its ordinary night noises. Sparse,
+       on their own time schedule and their own RNG, and only while a shift is
+       being worked and nothing has ducked the room for a death. The whole point
+       is that none of them mean anything -- a car outside, a pipe ticking -- so
+       the ONE that does (a real footstep, the killer at the glass) lands
+       against a floor of harmless ones. Never fired from the gameplay RNG. */
+    if (this.inStore && !this._ducked && !this.muted) {
+      this._ambT = (this._ambT === undefined ? 6 + this._arand() * 8 : this._ambT) - dt;
+      if (this._ambT <= 0) {
+        this._ambT = 10 + this._arand() * 24;      // one every ~10-34s
+        this._ambientOneShot();
+      }
+    } else {
+      this._ambT = undefined;                        // re-arm cleanly next shift
+    }
+
     const dread = this.muted ? 0 : this.tension * this.tension * 0.16;
     if (!this._ducked && Math.abs(dread - (this._dreadSent || 0)) > 0.002) {
       this._dreadSent = dread;
@@ -190,6 +272,12 @@ export class Sound {
       for (let i = 0; i < this.dreadOscs.length; i++) {
         this.dreadOscs[i].detune.setTargetAtTime((i - 1) * (6 + this.tension * 34), t, 0.5);
       }
+    }
+    // The floodlight buzz follows both mute and whether it has been installed.
+    const flood = (this.muted || !this._floodOn) ? 0 : 0.014;
+    if (this.floodGain && Math.abs(flood - (this._floodSent || 0)) > 0.0002) {
+      this._floodSent = flood;
+      this.floodGain.gain.setTargetAtTime(flood, t, 0.4);
     }
     if (this._ducked) return;
     const hum = this.muted ? 0 : 0.035 * this.lightLevel();
@@ -210,6 +298,110 @@ export class Sound {
 
   lightLevel() { return this._lights === undefined ? 1 : this._lights; }
   setLights(v) { this._lights = v; }
+
+  /* ============================================================
+     MUNDANE ONE-SHOTS
+
+     The store's ordinary night noises, scheduled sparsely from update(). All
+     go to the AMBIENCE bus (so the ambience slider governs them), all are
+     quiet, and all vary through the audio-only RNG so no two are identical.
+     None is tied to the killer, or to any game state -- that is the point.
+     ============================================================ */
+  _ambientOneShot() {
+    const r = this._arand();
+    // weighted toward the truly nothing sounds; the "somebody's out there"
+    // ones (a far slam, a distant voice) stay rare.
+    if (r < 0.34) this.ambCarPass();
+    else if (r < 0.55) this.ambPipeTick();
+    else if (r < 0.72) this.ambBallast();
+    else if (r < 0.85) this.ambTireHiss();
+    else if (r < 0.94) this.ambFarSlam();
+    else this.ambFarVoices();
+  }
+  /** A car going by on Delaney: filtered noise that swells and fades, panned
+      across, duller because it is outside. */
+  ambCarPass() {
+    const pan = this._arand() < 0.5 ? -0.7 : 0.7;
+    const rate = 0.7 + this._arand() * 0.5;
+    this.noise({ filter: 'lowpass', freq: 360, q: 0.7, gain: 0.05,
+      a: 0.9, d: 0.2, s: 1, sT: 0.5, r: 1.3, pan, rate, bus: this.ambBus });
+  }
+  /** A pipe or the building ticking as it cools. A dry, small knock. */
+  ambPipeTick() {
+    const f = 90 + this._arand() * 70;
+    this.tone({ freq: f, type: 'sine', gain: 0.05, a: 0.001, d: 0.10,
+      pan: this._arand() * 1.4 - 0.7, bus: this.ambBus });
+    this.noise({ filter: 'bandpass', freq: 700 + this._arand() * 500, q: 4,
+      gain: 0.03, a: 0.001, d: 0.05, bus: this.ambBus });
+  }
+  /** A fluorescent ballast clicking -- a tiny high tick, occasional. */
+  ambBallast() {
+    this.noise({ filter: 'bandpass', freq: 4800 + this._arand() * 1200, q: 8,
+      gain: 0.028, a: 0.001, d: 0.03, pan: this._arand() * 1.2 - 0.6, bus: this.ambBus });
+  }
+  /** A car's tires hissing past on wet asphalt. */
+  ambTireHiss() {
+    this.noise({ filter: 'highpass', freq: 2200, gain: 0.035, a: 0.4, d: 0.2, s: 1, sT: 0.3, r: 0.7,
+      pan: this._arand() < 0.5 ? -0.6 : 0.6, rate: 0.8 + this._arand() * 0.4, bus: this.ambBus });
+  }
+  /** A door or a dumpster lid somewhere off in the lot. Low, distant, and just
+      loud enough to make a nervous clerk look up. Never means anything. */
+  ambFarSlam() {
+    this.noise({ filter: 'lowpass', freq: 240, gain: 0.06, a: 0.002, d: 0.22,
+      pan: this._arand() * 1.4 - 0.7, bus: this.ambBus });
+    this.tone({ freq: 60 + this._arand() * 20, type: 'sine', gain: 0.05, a: 0.002, d: 0.35, when: 0.02, bus: this.ambBus });
+  }
+  /** Voices out in the parking lot, too far to make out -- a swell of muffled
+      noise that could be two people or a television two doors down. */
+  ambFarVoices() {
+    this.noise({ filter: 'bandpass', freq: 500, q: 1.2, gain: 0.028,
+      a: 1.1, d: 0.3, s: 1, sT: 0.8, r: 1.4, pan: this._arand() * 1.2 - 0.6, bus: this.ambBus });
+  }
+
+  /* ============================================================
+     THE TELEPHONE LINE
+
+     When a call connects, the line itself has a sound: a faint band-limited
+     hiss and a low mains hum, opened with a click and closed with one. It sits
+     on the VOICE bus, under the caller. The point on Night 11 is contrast --
+     the store ambience keeps running UNDER the call, and when the line drops,
+     that ordinary room is suddenly all that is left, and feels louder for it.
+     No distortion, no supernatural treatment: a 1996 phone line.
+     ============================================================ */
+  phoneLineOpen(cold = false) {
+    if (!this.ready || this.muted || this.phoneLine) return;
+    const ctx = this.ctx, t0 = this.t;
+    const out = ctx.createGain(); out.gain.value = 0.0001;
+    out.gain.exponentialRampToValueAtTime(cold ? 0.05 : 0.038, t0 + 0.08);
+    out.connect(this.voiceBus);
+    // band-limited line hiss
+    const src = ctx.createBufferSource(); src.buffer = this.noiseBuf; src.loop = true;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.value = cold ? 1700 : 1500; bp.Q.value = 0.8;
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = cold ? 500 : 380;
+    const hiss = ctx.createGain(); hiss.gain.value = 0.5;
+    src.connect(bp).connect(hp).connect(hiss).connect(out);
+    // the low mains hum riding under it
+    const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = 60;
+    const og = ctx.createGain(); og.gain.value = 0.06;
+    o.connect(og).connect(out);
+    src.start(t0); o.start(t0);
+    this.phoneLine = { src, o, out };
+    // the connection click
+    this.noise({ filter: 'bandpass', freq: 2000, q: 4, gain: 0.09, a: 0.001, d: 0.02, bus: this.voiceBus });
+  }
+  phoneLineClose() {
+    const n = this.phoneLine;
+    if (!n) return;
+    const t = this.t;
+    // the disconnect click, then the line falls silent -- and the room stands
+    this.noise({ filter: 'bandpass', freq: 1500, q: 3, gain: 0.08, a: 0.001, d: 0.03, bus: this.voiceBus });
+    n.out.gain.cancelScheduledValues(t);
+    n.out.gain.setValueAtTime(Math.max(0.0002, n.out.gain.value), t);
+    n.out.gain.exponentialRampToValueAtTime(0.0001, t + 0.12);
+    for (const node of [n.src, n.o]) { try { node.stop(t + 0.2); } catch (e) { /* already stopped */ } }
+    this.phoneLine = null;
+  }
 
   /* ---------------- the sound library ---------------- */
   doorChime(pan = 0) {
@@ -325,14 +517,24 @@ export class Sound {
     this.tone({ freq: 1320, type: 'square', gain: 0.05, a: 0.002, d: 0.08, when: 0.3 });
   }
 
-  phonePickup() { this.noise({ filter: 'bandpass', freq: 1400, q: 2, gain: 0.12, a: 0.002, d: 0.1 }); this.tone({ freq: 350, type: 'sine', gain: 0.06, a: 0.05, d: 0.9, when: 0.15 }); this.tone({ freq: 440, type: 'sine', gain: 0.06, a: 0.05, d: 0.9, when: 0.15 }); }
-  phoneHang() { this.tone({ freq: 200, type: 'square', gain: 0.1, a: 0.002, d: 0.08, filter: 'lowpass', cutoff: 800 }); this.noise({ filter: 'bandpass', freq: 900, gain: 0.1, a: 0.002, d: 0.12 }); }
+  phonePickup(incoming = false) {
+    const bus = this.voiceBus || this.sfxBus;
+    this.noise({ filter: 'bandpass', freq: 1400, q: 2, gain: 0.12, a: 0.002, d: 0.1, bus });
+    // The dial tone belongs only to lifting the receiver to CALL out. Answering
+    // an incoming ring connects you to whoever is already there -- no dial tone.
+    if (!incoming) {
+      this.tone({ freq: 350, type: 'sine', gain: 0.06, a: 0.05, d: 0.9, when: 0.15, bus });
+      this.tone({ freq: 440, type: 'sine', gain: 0.06, a: 0.05, d: 0.9, when: 0.15, bus });
+    }
+  }
+  phoneHang() { const bus = this.voiceBus || this.sfxBus; this.tone({ freq: 200, type: 'square', gain: 0.1, a: 0.002, d: 0.08, filter: 'lowpass', cutoff: 800, bus }); this.noise({ filter: 'bandpass', freq: 900, gain: 0.1, a: 0.002, d: 0.12, bus }); }
   dialTone(digit) {
     const LOW = [941, 697, 697, 697, 770, 770, 770, 852, 852, 852];
     const HIGH = [1336, 1209, 1336, 1477, 1209, 1336, 1477, 1209, 1336, 1477];
     const i = digit % 10;
-    this.tone({ freq: LOW[i], type: 'sine', gain: 0.09, a: 0.005, d: 0.16 });
-    this.tone({ freq: HIGH[i], type: 'sine', gain: 0.09, a: 0.005, d: 0.16 });
+    const bus = this.voiceBus || this.sfxBus;
+    this.tone({ freq: LOW[i], type: 'sine', gain: 0.09, a: 0.005, d: 0.16, bus });
+    this.tone({ freq: HIGH[i], type: 'sine', gain: 0.09, a: 0.005, d: 0.16, bus });
   }
   /**
    * The phone on the counter, ringing at you.
@@ -343,17 +545,25 @@ export class Sound {
    * times a second for two seconds, with the whole thing sitting in a plastic
    * box that takes the top off it.
    */
-  phoneBell() {
-    const T = 2.0, HZ = 19;
+  phoneBell(opts = {}) {
+    /* The pizza call is somebody ordering food -- the warm, ordinary ring.
+       The Night 11 call is the same physical bell, but at that hour, in that
+       silence, it reads colder: struck a touch slower, thinner in the top, the
+       gong a little more out of tune with itself. Not supernatural -- just an
+       ordinary telephone you would rather were not ringing. */
+    const cold = !!opts.cold;
+    const T = 2.0, HZ = cold ? 17 : 19;
+    const bus = this.voiceBus || this.sfxBus;
+    const [f1, f2] = cold ? [980, 1230] : [1040, 1355];
     for (let i = 0; i * (1 / HZ) < T; i++) {
       const when = i * (1 / HZ);
-      const g = 0.055 * (i % 2 ? 0.85 : 1);
-      this.tone({ freq: 1040, type: 'triangle', gain: g, a: 0.001, d: 0.055,
-        filter: 'bandpass', cutoff: 1600, when });
-      this.tone({ freq: 1355, type: 'triangle', gain: g * 0.7, a: 0.001, d: 0.045,
-        filter: 'bandpass', cutoff: 2000, when });
-      this.noise({ filter: 'bandpass', freq: 2600, q: 3, gain: g * 0.5,
-        a: 0.001, d: 0.03, when });
+      const g = 0.055 * (i % 2 ? 0.85 : 1) * (cold ? 0.92 : 1);
+      this.tone({ freq: f1, type: 'triangle', gain: g, a: 0.001, d: cold ? 0.06 : 0.055,
+        filter: 'bandpass', cutoff: cold ? 1400 : 1600, when, bus });
+      this.tone({ freq: f2, type: 'triangle', gain: g * (cold ? 0.6 : 0.7), a: 0.001, d: 0.045,
+        filter: 'bandpass', cutoff: cold ? 1700 : 2000, when, bus });
+      this.noise({ filter: 'bandpass', freq: cold ? 2300 : 2600, q: 3, gain: g * (cold ? 0.4 : 0.5),
+        a: 0.001, d: 0.03, when, bus });
     }
   }
   /* -------- the popcorn machine, and the thing that cleans up after it --------
@@ -397,16 +607,21 @@ export class Sound {
     this.noise({ filter: 'highpass', freq: 1800, gain: 0.10, a: 0.005, d: 0.22, rate: 0.7 });
   }
   ringback() {
+    const bus = this.voiceBus || this.sfxBus;
     for (let k = 0; k < 2; k++) {
-      this.tone({ freq: 440, type: 'sine', gain: 0.07, a: 0.02, d: 0.02, s: 1, sT: 1.6, r: 0.05, when: k * 3 });
-      this.tone({ freq: 480, type: 'sine', gain: 0.07, a: 0.02, d: 0.02, s: 1, sT: 1.6, r: 0.05, when: k * 3 });
+      this.tone({ freq: 440, type: 'sine', gain: 0.07, a: 0.02, d: 0.02, s: 1, sT: 1.6, r: 0.05, when: k * 3, bus });
+      this.tone({ freq: 480, type: 'sine', gain: 0.07, a: 0.02, d: 0.02, s: 1, sT: 1.6, r: 0.05, when: k * 3, bus });
     }
   }
-  /** Character voice: short blips whose pitch encodes the speaker. */
-  blip(pitch = 1, rough = 0) {
+  /** Character voice: short blips whose pitch encodes the speaker. On the VOICE
+      bus, so the voice/phone slider governs speech. `line` narrows and cools
+      them so a voice heard down the telephone sits on the line, not in the room. */
+  blip(pitch = 1, rough = 0, line = false) {
+    const bus = this.voiceBus || this.sfxBus;
     const f = 180 * pitch * (0.94 + Math.random() * 0.12);
-    this.tone({ freq: f, type: rough > 0.5 ? 'sawtooth' : 'square', gain: 0.045, a: 0.004, d: 0.055, filter: 'lowpass', cutoff: 900 + rough * 1400 });
-    this.tone({ freq: f * 2, type: 'sine', gain: 0.018, a: 0.004, d: 0.04 });
+    this.tone({ freq: f, type: rough > 0.5 ? 'sawtooth' : 'square', gain: line ? 0.05 : 0.045, a: 0.004, d: 0.055,
+      filter: line ? 'bandpass' : 'lowpass', cutoff: line ? 1500 : (900 + rough * 1400), q: line ? 1.4 : 1, bus });
+    if (!line) this.tone({ freq: f * 2, type: 'sine', gain: 0.018, a: 0.004, d: 0.04, bus });
   }
   stinger(intensity = 1) {
     this.tone({ freq: 90, to: 40, type: 'sawtooth', gain: 0.2 * intensity, a: 0.005, d: 1.4, filter: 'lowpass', cutoff: 400 });

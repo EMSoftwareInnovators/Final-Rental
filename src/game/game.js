@@ -152,6 +152,10 @@ export class Game {
     this.opts = {
       sens: 0.5, invert: false, vol: 0.8, res: 1, snap: true, grain: 0.5,
       vhs: true,
+      // Audio category levels, 0..1, under the master volume. Ambience a touch
+      // below the effects so the room sits under the job; voice/phone full so
+      // the deputy and the caller are always clear.
+      volAmb: 0.8, volSfx: 0.9, volVoice: 1.0,
     };
     /* Player preferences that live across sessions and across campaigns --
        separate from the Story save (which is one run) and from the pad binds
@@ -412,6 +416,9 @@ export class Game {
     this.storyCall = (this.mode === MODE.STORY && this.investigation && this.investigation.informationLink)
       ? { phase: 'ARMED', at: this.night.length * 0.45, t: 0, rings: 0, bellT: 0, heard: false }
       : null;
+    // Never carry a telephone line open across a night boundary (a death or
+    // quit mid-call would otherwise leave the hiss running).
+    if (this._storyLineOpen) { this._storyLineOpen = false; this.sound.phoneLineClose(); }
     /* The popcorn machine, what came out of it, and the thing in the back
        room that is the only way of dealing with what came out of it. */
     this.popper = { running: false, spilled: 0 };
@@ -490,14 +497,19 @@ export class Game {
       default: break;
     }
 
+    // The store only makes its idle one-shot noises while a shift is on the
+    // floor -- not on the title, in a menu, a report, or an ending.
+    this.sound.inStore = (this.state === ST.PLAY);
     this.sound.update(dt);
     const typed = this.ui.update(dt);
     if (typed >= 0) {
       if (Math.floor(typed / 3) > Math.floor(this._lastTyped / 3)) {
         const node = this.phone.active ? this.phone.node : this.dlg.node;
         const app = node && !node.asPlayer && node.person && node.person.app;
-        if (app) this.sound.blip(voicePitchOf(app), app.voice.rough);
-        else this.sound.blip(1.05, 0.5);
+        // A voice heard down the Night 11 line sits on the line, not in the room.
+        const onLine = this.phone.active && this._storyLineOpen;
+        if (app) this.sound.blip(voicePitchOf(app), app.voice.rough, onLine);
+        else this.sound.blip(onLine ? 0.98 : 1.05, 0.5, onLine);
       }
       this._lastTyped = typed;
     } else this._lastTyped = -1;
@@ -709,6 +721,9 @@ export class Game {
       scheduleMemo: environmentFlag(c, 'schedulePrivacyNoticePosted'),
       revisedHours: environmentFlag(c, 'revisedHoursPosted'),
     };
+    // The floodlight's ballast buzz follows the same fact that draws its mesh:
+    // on once installed, off otherwise, in Story only.
+    this.sound.setFloodlight(!!this.env.rearFloodlight);
   }
 
   /** NEW GAME from the menu: confirm first if a campaign is already going. */
@@ -822,6 +837,7 @@ export class Game {
       sens: this.opts.sens, invert: this.opts.invert, vol: this.opts.vol,
       resLabel: RES[this.opts.res][2], snap: this.opts.snap, grain: this.opts.grain,
       vhs: this.opts.vhs,
+      volAmb: this.opts.volAmb, volSfx: this.opts.volSfx, volVoice: this.opts.volVoice,
       hints: this.prefs.hintsEnabled,
       // Named here so a pad that behaves oddly can at least be identified.
       pad: this.input.padId,
@@ -840,12 +856,15 @@ export class Game {
       }
       return;
     }
-    const N = 11;
-    const BACK = N - 1;         // 10
-    const PADROW = N - 2;       // 9  Controller
-    const HINTS = 7;            // First-shift hints (toggle)
-    const RESET = 8;            // Reset first-shift hints (action)
-    const TOGGLES = { 1: 'invert', 4: 'snap', 5: 'vhs' };
+    /* Row layout (see optionsHtml): 0 sens, 1 invert, 2 master, 3 ambience,
+       4 sfx, 5 voice, 6 resolution, 7 jitter, 8 vhs, 9 tape damage, 10 hints,
+       11 reset hints, 12 controller, 13 back. */
+    const N = 14;
+    const BACK = N - 1;         // 13
+    const PADROW = N - 2;       // 12 Controller
+    const HINTS = 10;
+    const RESET = 11;
+    const TOGGLES = { 1: 'invert', 7: 'snap', 8: 'vhs' };
     // Refresh the panel after a change, keeping the cursor where it is.
     const refresh = () => { this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel); };
     if (i.hit('ArrowUp', 'KeyW')) { this.optSel = (this.optSel + N - 1) % N; this.sound.uiMove(); }
@@ -856,8 +875,11 @@ export class Game {
       switch (this.optSel) {
         case 0: this.opts.sens = clamp(this.opts.sens + d * 0.1, 0.1, 1.0); break;
         case 2: this.opts.vol = clamp(this.opts.vol + d * 0.1, 0, 1); break;
-        case 3: this.opts.res = clamp(this.opts.res + d, 0, RES.length - 1); this.layout(); break;
-        case 6: this.opts.grain = clamp(this.opts.grain + d * 0.1, 0, 1); break;
+        case 3: this.opts.volAmb = clamp(this.opts.volAmb + d * 0.1, 0, 1); break;
+        case 4: this.opts.volSfx = clamp(this.opts.volSfx + d * 0.1, 0, 1); break;
+        case 5: this.opts.volVoice = clamp(this.opts.volVoice + d * 0.1, 0, 1); break;
+        case 6: this.opts.res = clamp(this.opts.res + d, 0, RES.length - 1); this.layout(); break;
+        case 9: this.opts.grain = clamp(this.opts.grain + d * 0.1, 0, 1); break;
         case HINTS: this.prefs.hintsEnabled = !this.prefs.hintsEnabled; break;
         default:
           if (TOGGLES[this.optSel]) this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
@@ -1071,6 +1093,7 @@ export class Game {
     this.input.invertY = this.opts.invert;
     this.sound.masterVol = this.opts.vol;
     if (this.sound.master) this.sound.master.gain.value = this.opts.vol;
+    this.sound.setMix(this.opts.volAmb, this.opts.volSfx, this.opts.volVoice);
     this.raster.snap = this.opts.snap ? 1 : 0;
   }
 
@@ -2544,7 +2567,12 @@ export class Game {
 
   /* ---------------- phone ---------------- */
   pickUpPhone() {
-    this.sound.phonePickup();
+    // Answering an incoming ring (the pizza order, or the Night 11 caller)
+    // connects you to whoever is there -- no dial tone. Lifting it to call out
+    // gives the ordinary dial tone.
+    const incoming = !!(this.storyCall && this.storyCall.phase === 'RINGING')
+      || !!(this.pizza && this.pizza.phase === 'RINGING');
+    this.sound.phonePickup(incoming);
     const node = buildPhoneCall(this.ctx);
     this.phone.start({ name: 'DISPATCH' }, node, () => { });
     this.player.frozen = true;
@@ -2555,6 +2583,9 @@ export class Game {
     this.phone.node = null;
     this.ui.hidePhone();
     this.player.frozen = false;
+    // Close the Night 11 line first, so its disconnect click lands and the room
+    // is left standing on its own before the receiver settles.
+    if (this._storyLineOpen) { this._storyLineOpen = false; this.sound.phoneLineClose(); }
     this.sound.phoneHang();
     if (this.state === ST.PLAY) { this.wantLock = true; this.grabLock(); }
   }
@@ -3994,12 +4025,17 @@ export class Game {
 
       /* --- the Night 11 anonymous call (Story) --- */
       storyCallState: () => g.storyCall,
-      /** Lifting the receiver stops the bell and marks it heard. */
+      /** Lifting the receiver stops the bell and marks it heard, and opens the
+          telephone line -- a faint, cold hiss under the caller. The store
+          ambience keeps running beneath it, so when the line drops the room is
+          suddenly all that is left. */
       storyCallAnswered: () => {
         if (!g.storyCall) return;
         g.storyCall.phase = 'HEARD';
         g.storyCall.heard = true;
         g.ui.setObjective('');
+        g._storyLineOpen = true;
+        g.sound.phoneLineOpen(true);
         if (g.mode === MODE.STORY && g.campaign) setStoryFlag(g.campaign, 'heardTheCaller', true);
       },
 
@@ -4070,7 +4106,12 @@ export class Game {
   openDoorFor(who) {
     this.door.holdOpen = Math.max(this.door.holdOpen, 1.6);
     if (!who || who.z > 0.15 || who.leaving || who.exited) this.door.fromInside = true;
-    this.sound.doorChime(0);
+    /* The entrance bell, rate-limited on the wall clock: during Night 7's coach
+       rush a dozen people come through in a few seconds, and a dozen dings is a
+       fire alarm, not a store bell. One bell inside a short window; the rest of
+       a cluster open quietly. A lone customer always gets their bell. */
+    const now = this.time || 0;
+    if (now - (this._lastChimeT || -9) > 0.85) { this._lastChimeT = now; this.sound.doorChime(0); }
   }
 
   /**
@@ -4396,7 +4437,9 @@ export class Game {
       S.bellT -= dt;
       if (S.bellT <= 0) {
         S.bellT = 4.2; S.rings++;
-        this.sound.phoneBell();
+        // The store's own phone, but colder than the pizza call -- same bell,
+        // later hour, more silence around it.
+        this.sound.phoneBell({ cold: true });
         this.ui.setObjective('THE PHONE IS RINGING', S.rings > 3);
       }
       /* A dozen rings and whoever it was hangs up. Nothing is lost. */

@@ -29,8 +29,9 @@ check('escape pauses', (await st()).s === 'PAUSE', (await st()).head);
 await page.keyboard.press('ArrowDown'); await page.waitForTimeout(120);
 await page.keyboard.press('Enter'); await page.waitForTimeout(300);
 check('options opens from pause', (await st()).s === 'OPTIONS', (await st()).head);
-// toggle the VHS filter while in there
-for (let i = 0; i < 5; i++) { await page.keyboard.press('ArrowDown'); await page.waitForTimeout(80); }
+// toggle the VHS filter while in there. Rows: 0 sens, 1 invert, 2 master,
+// 3 ambience, 4 sfx, 5 voice, 6 resolution, 7 jitter, 8 VHS -- so eight down.
+for (let i = 0; i < 8; i++) { await page.keyboard.press('ArrowDown'); await page.waitForTimeout(80); }
 await page.keyboard.press('Enter'); await page.waitForTimeout(200);
 const vhs = await page.evaluate(() => window.__game.opts.vhs);
 check('VHS toggles from the pause options', vhs === false);

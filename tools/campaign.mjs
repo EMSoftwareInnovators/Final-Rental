@@ -2113,6 +2113,94 @@ check('Night 11 call: armed, holds off while the player is busy, then rings the 
 check('Night 11 call: past the max defer window it rings anyway (never waits forever)',
   defer.ringsPastDeadline);
 
+/* ================================================================
+   STAGE 10 -- audio & atmosphere.
+
+   Perceptual mixing is judged by ear, but the structure is testable: the
+   volume categories and their persistence, the floodlight buzz following the
+   same fact as its mesh, the Night 11 telephone line opening and closing with
+   the call, and -- most important -- that none of the audio layer can touch
+   gameplay determinism.
+   ================================================================ */
+const audio = await ev(() => {
+  const g = window.__game, C = window.__campaign, N = window.__night, D = window.__dlg;
+  g.sound.muted = false;
+  g.sound.init();
+  const ready = g.sound.ready === true;
+
+  // Category levels default sensibly, apply to the mix, and master is exact.
+  const defaults = typeof g.opts.volAmb === 'number' && typeof g.opts.volSfx === 'number'
+    && typeof g.opts.volVoice === 'number';
+  // Pin the boot-time "prefs already loaded" state a prior test may have reset,
+  // so applyOptions applies the opts set here rather than reloading from disk.
+  g._prefsLoaded = true;
+  g.opts.vol = 0.5; g.opts.volAmb = 0.6; g.opts.volSfx = 0.7; g.opts.volVoice = 0.9;
+  g.applyOptions();
+  const mixApplied = g.sound.mix.amb === 0.6 && g.sound.mix.sfx === 0.7 && g.sound.mix.voice === 0.9;
+  const masterExact = !!g.sound.master && Math.abs(g.sound.master.gain.value - 0.5) < 0.0001;
+  g.opts.vol = 0; g.applyOptions();
+  const masterMutes = !!g.sound.master && g.sound.master.gain.value === 0;
+  g.opts.vol = 0.8; g.applyOptions();
+
+  // Persist through the Stage 9 prefs blob, and normalize a prefs file that
+  // predates the categories (they fall back to defaults, nothing crashes).
+  g.savePrefs();
+  const savedHasCats = (() => { try { const p = JSON.parse(localStorage.getItem('finalrental.prefs')); return typeof p.opts.volAmb === 'number'; } catch (e) { return false; } })();
+  localStorage.setItem('finalrental.prefs', JSON.stringify({ hintsEnabled: true, hintsSeen: {}, opts: { vol: 0.4 } }));
+  g._prefsLoaded = false; g.prefs = { hintsEnabled: true, hintsSeen: {} };
+  g.opts.volAmb = 0.8; g.loadPrefs();
+  const oldPrefsOk = g.opts.vol === 0.4 && typeof g.opts.volAmb === 'number';
+
+  // The floodlight buzz follows the same fact as its mesh: on once installed.
+  C.deleteCampaignSave(); g.newStory();
+  C.setEnvironmentFlag(g.campaign, 'rearFloodlightInstalled', true);
+  g.nightNo = 6; g.startNight(6);
+  const floodOn = g.sound._floodOn === true;
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 1; g.startNight(1);
+  const floodOff = g.sound._floodOn === false;
+  g.beginRun(N.MODE.HORROR); g.startNight(6);
+  const gvFloodOff = g.sound._floodOn === false;   // never in the endless modes
+
+  // The Night 11 telephone line opens when the call is answered and closes when
+  // it hangs up; an ordinary (non-story) pickup opens no line.
+  C.deleteCampaignSave(); g.newStory(); g.nightNo = 11; g.startNight(11);
+  const lineIdle = g.sound.phoneLine == null && !g._storyLineOpen;
+  g.storyCall.phase = 'RINGING';
+  D.buildPhoneCall(g.ctx);                          // routes to the caller + storyCallAnswered
+  const lineOpen = g.sound.phoneLine != null && g._storyLineOpen === true;
+  g.hangUp();
+  const lineClosed = g.sound.phoneLine == null && g._storyLineOpen === false;
+  // a dispatch pickup (no ring) never opens the story line
+  C.deleteCampaignSave(); g.newStory(); g.campaign.stats.arrests = 1; g.nightNo = 4; g.startNight(4);
+  D.buildPhoneCall(g.ctx);
+  const noLineOnDispatch = g.sound.phoneLine == null && !g._storyLineOpen;
+
+  // Determinism: hammer the ambient one-shot scheduler and confirm a seeded
+  // night is byte-identical before and after -- audio draws its own RNG.
+  const S = window.__story;
+  const fp = (nt) => JSON.stringify(nt.schedule.map((e) => [e.t, e.decoy, e.special || null]).concat([[nt.plan.appears, nt.plan.visitAt || 0]]));
+  const before = fp(S.night(31337, 8));
+  g.sound.inStore = true;
+  for (let i = 0; i < 300; i++) { g.sound._ambT = -1; g.sound.update(0.05); }
+  g.sound.inStore = false;
+  const after = fp(S.night(31337, 8));
+  const deterministic = before === after;
+
+  return { ready, defaults, mixApplied, masterExact, masterMutes, savedHasCats, oldPrefsOk,
+    floodOn, floodOff, gvFloodOff, lineIdle, lineOpen, lineClosed, noLineOnDispatch, deterministic };
+});
+check('audio: the AudioContext initializes headless', audio.ready);
+check('audio: volume categories default, apply to the mix, and master is exact / mutes at 0',
+  audio.defaults && audio.mixApplied && audio.masterExact && audio.masterMutes, JSON.stringify(audio));
+check('audio: category levels persist and an old prefs file (no categories) normalizes safely',
+  audio.savedHasCats && audio.oldPrefsOk);
+check('audio: the floodlight ballast buzz follows the install flag, Story only',
+  audio.floodOn && audio.floodOff && audio.gvFloodOff);
+check('audio: the Night 11 telephone line opens on answer, closes on hangup, and no dispatch call opens it',
+  audio.lineIdle && audio.lineOpen && audio.lineClosed && audio.noLineOnDispatch, JSON.stringify(audio));
+check('audio: the ambient one-shot scheduler never perturbs gameplay determinism',
+  audio.deterministic);
+
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
   window.__campaign.deleteCampaignSave();

@@ -447,6 +447,9 @@ export function optionsHtml(o) {
     <li class="opt sel">Look sensitivity &nbsp; ${bar(o.sens)}</li>
     <li class="opt">Invert look &nbsp; ${o.invert ? 'ON' : 'OFF'}</li>
     <li class="opt">Master volume &nbsp; ${bar(o.vol)}</li>
+    <li class="opt">&nbsp;&nbsp;Ambience &nbsp; ${bar(o.volAmb)}</li>
+    <li class="opt">&nbsp;&nbsp;Sound effects &nbsp; ${bar(o.volSfx)}</li>
+    <li class="opt">&nbsp;&nbsp;Voice / phone &nbsp; ${bar(o.volVoice)}</li>
     <li class="opt">Internal resolution &nbsp; ${o.resLabel}</li>
     <li class="opt">Polygon jitter &nbsp; ${o.snap ? 'PS1 (ON)' : 'SMOOTH'}</li>
     <li class="opt">VHS tape &nbsp; ${o.vhs ? 'ON' : 'OFF &mdash; clean PS1'}</li>

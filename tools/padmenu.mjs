@@ -602,10 +602,10 @@ async function oddPad() {
     (await st()).state === 'OPTIONS', (await st()).state);
 
   // Down to the Controller row and into it. (Options rows, in order: sens,
-  // invert, volume, resolution, jitter, VHS, tape damage, first-shift hints,
-  // reset hints, CONTROLLER, back -- so the pad row is index 9.)
-  await ev(() => { window.__game.optSel = 9; window.__ui && 0; });
-  await ev(() => { window.__game.ui.panelSelect(9); });
+  // invert, master, ambience, sfx, voice, resolution, jitter, VHS, tape damage,
+  // first-shift hints, reset hints, CONTROLLER, back -- so the pad row is 12.)
+  await ev(() => { window.__game.optSel = 12; window.__ui && 0; });
+  await ev(() => { window.__game.ui.panelSelect(12); });
   await tap(11);
   check('odd pad: the controller screen opens', (await st()).state === 'PADCFG', (await st()).state);
 
