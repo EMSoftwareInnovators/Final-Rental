@@ -2201,6 +2201,224 @@ check('audio: the Night 11 telephone line opens on answer, closes on hangup, and
 check('audio: the ambient one-shot scheduler never perturbs gameplay determinism',
   audio.deterministic);
 
+/* ================================================================
+   STAGE 11 -- accessibility, input flexibility, readability.
+
+   Everything here has to leave the game it is making comfortable EXACTLY
+   as deterministic as it found it: none of these settings may consume the
+   gameplay RNG or shift a single customer, special, suspect or killer plan.
+   ================================================================ */
+
+/* ---- keyboard remapping: the same freedom the pad has ---- */
+const kb = await ev(() => {
+  const g = window.__game, I = g.input, U = window.__ui;
+  I.resetKeyBinds();
+  const def = { ...I.keyBinds };
+  const defGlyph = U.glyphText('interact');
+  // Rebind INTERACT (default E) onto F, which the bolt is on: they must SWAP,
+  // never both end up on one key or one end up on nothing.
+  I.bindKey('interact', 'KeyF');
+  U.setKeyCaps(I.keyCaps());
+  const afterGlyph = U.glyphText('interact');
+  const swap = { interact: I.keyBinds.interact, bolt: I.keyBinds.bolt };
+  // The translation the rest of the game reads: physical F must now PRODUCE the
+  // canonical KeyE the interact call sites test, and physical E the bolt's KeyF.
+  const emit = { f: I._translate('KeyF'), e: I._translate('KeyE') };
+  // A reserved menu key can never be taken for a gameplay action.
+  const reserved = I.bindKey('interact', 'Escape');
+  // Persist, then reload from storage into a fresh default map.
+  g.savePrefs();
+  const stored = JSON.parse(localStorage.getItem('finalrental.prefs')).keyBinds;
+  I.setKeyBinds({ forward: 'KeyW', back: 'KeyS', left: 'KeyA', right: 'KeyD',
+    interact: 'KeyF', notes: 'Tab', drop: 'KeyG', run: 'ShiftLeft', bolt: 'KeyE' });
+  const reloaded = I.keyBinds.interact;
+  // Reset returns every default and is remembered as "no custom map".
+  I.resetKeyBinds(); g.savePrefs();
+  const afterReset = { ...I.keyBinds, stored: JSON.parse(localStorage.getItem('finalrental.prefs')).keyBinds };
+  return { def, defGlyph, afterGlyph, swap, emit, reserved, stored, reloaded, afterReset };
+});
+check('keyboard: the default layout is WASD + E/TAB/G/SHIFT/F',
+  kb.def.forward === 'KeyW' && kb.def.interact === 'KeyE' && kb.def.notes === 'Tab'
+  && kb.def.bolt === 'KeyF' && kb.defGlyph === 'E', JSON.stringify(kb.def));
+check('keyboard: rebinding INTERACT to a used key swaps the two, never orphans one',
+  kb.swap.interact === 'KeyF' && kb.swap.bolt === 'KeyE', JSON.stringify(kb.swap));
+check('keyboard: the on-screen glyph follows the rebind (E becomes F)',
+  kb.defGlyph === 'E' && kb.afterGlyph === 'F', `${kb.defGlyph} -> ${kb.afterGlyph}`);
+check('keyboard: a rebound key PRODUCES the canonical code the game already tests',
+  kb.emit.f.includes('KeyE') && kb.emit.e.includes('KeyF'), JSON.stringify(kb.emit));
+check('keyboard: a reserved menu key (ESC) can never be bound to a gameplay action',
+  kb.reserved === false);
+check('keyboard: a custom map persists and reloads',
+  kb.stored && kb.stored.interact === 'KeyF' && kb.reloaded === 'KeyF', JSON.stringify(kb.stored));
+check('keyboard: RESET returns every default and forgets the custom map',
+  kb.afterReset.interact === 'KeyE' && kb.afterReset.bolt === 'KeyF' && kb.afterReset.stored === null,
+  JSON.stringify(kb.afterReset));
+
+/* ---- keyboard binds are independent of the controller binds ---- */
+const indep = await ev(() => {
+  const I = window.__game.input;
+  localStorage.setItem('finalrental.padbinds', '{"0":["confirm"]}');
+  I.bindKey('interact', 'KeyF');
+  window.__game.savePrefs();
+  // Writing the keyboard map must not have touched the pad blob, and vice versa.
+  const padUntouched = localStorage.getItem('finalrental.padbinds') === '{"0":["confirm"]}';
+  const prefsHasNoPad = !('padbinds' in JSON.parse(localStorage.getItem('finalrental.prefs')));
+  I.resetKeyBinds(); window.__game.savePrefs();
+  return { padUntouched, prefsHasNoPad };
+});
+check('keyboard: rebinding a key never touches the controller binding, or the reverse',
+  indep.padUntouched && indep.prefsHasNoPad);
+
+/* ---- look sensitivity drives BOTH devices, invert Y both ---- */
+const sens = await ev(() => {
+  const g = window.__game, out = {};
+  for (const s of [0.1, 1.0]) {
+    g.opts.sens = s; g.applyOptions();
+    out[s] = { mouse: g.input.sensitivity, pad: g.input.padSensitivity };
+  }
+  g.opts.sens = 0.5;
+  g.opts.invert = true; g.applyOptions();
+  const invOn = g.input.invertY;
+  g.opts.invert = false; g.applyOptions();
+  const invOff = g.input.invertY;
+  return { ...out, invOn, invOff };
+});
+check('sensitivity: one slider moves both the mouse and the stick, low to high',
+  sens['0.1'].mouse < sens['1'].mouse && sens['0.1'].pad < sens['1'].pad
+  && sens['1'].pad <= 7 && sens['0.1'].pad >= 2, JSON.stringify(sens));
+check('sensitivity: invert Y applies to the look input and clears again',
+  sens.invOn === true && sens.invOff === false);
+
+/* ---- the VHS dial: FULL / REDUCED / OFF, none of it touching the night ---- */
+const vhs = await ev(() => {
+  const g = window.__game, S = window.__story;
+  const sig = () => {
+    // A fingerprint of a generated night: whatever the settings must never move.
+    const nt = S.night(7777, 5);
+    return JSON.stringify({ specials: S.specials(nt), appears: nt.plan.appears,
+      visits: nt.plan.visits, deputy: !!nt.deputy, bus: nt.busAt });
+  };
+  const base = sig();
+  const per = {};
+  for (const m of ['full', 'reduced', 'off']) {
+    g.opts.vhsMode = m; g.applyOptions();
+    per[m] = { flag: g.opts.vhs, sig: sig() };
+  }
+  g.savePrefs();
+  const stored = JSON.parse(localStorage.getItem('finalrental.prefs')).opts.vhsMode;
+  g.opts.vhsMode = 'full'; g.applyOptions();
+  return { base, per, stored };
+});
+check('VHS: REDUCED and OFF are still selectable, and the legacy flag tracks them',
+  vhs.per.full.flag === true && vhs.per.reduced.flag === true && vhs.per.off.flag === false);
+check('VHS: no filter mode changes a single thing about the night that is generated',
+  vhs.per.full.sig === vhs.base && vhs.per.reduced.sig === vhs.base && vhs.per.off.sig === vhs.base);
+check('VHS: the chosen mode persists', vhs.stored === 'off', vhs.stored);
+
+/* ---- reduced flicker: the light still MEANS something, it just stops strobing ---- */
+const flick = await ev(() => {
+  const g = window.__game;
+  // Drive the fluorescents hard (high tension) over a run of frames with the
+  // reducer on, and confirm the lights still dim (understandable) but never
+  // swing as violently as they do with it off. The randomness is Math.random,
+  // not the seeded gameplay RNG -- so the seed must be untouched by any of it.
+  // updateAtmosphere reads night length and the killer; give it a bare night
+  // and no killer so it runs the fluorescent path without a live shift.
+  g.night = g.night || { length: 2400 };
+  g.elapsed = 0; g.killer = null;
+  const run = (reduce) => {
+    g.opts.reduceFlicker = reduce; g.applyOptions();
+    g.tension = 1; g.flickerAmt = 0; g.flickerT = 0; g.lights = 1;
+    let min = 1, max = 0, swing = 0, prev = 1;
+    for (let i = 0; i < 240; i++) {
+      g.updateAtmosphere(1 / 60);
+      min = Math.min(min, g.lights); max = Math.max(max, g.lights);
+      swing = Math.max(swing, Math.abs(g.lights - prev)); prev = g.lights;
+    }
+    return { min, max, swing };
+  };
+  const seedBefore = g.seed;
+  const off = run(false);
+  const on = run(true);
+  g.opts.reduceFlicker = false; g.applyOptions();
+  return { off, on, seedBefore, seedAfter: g.seed };
+});
+check('reduced flicker: the fluorescents still dim under tension (darkness is kept)',
+  flick.on.min < 0.95, `dimmed to ${flick.on.min.toFixed(2)}`);
+check('reduced flicker: but the frame-to-frame swing is far smaller than full flicker',
+  flick.on.swing < flick.off.swing * 0.6,
+  `swing ${flick.on.swing.toFixed(3)} vs ${flick.off.swing.toFixed(3)}`);
+check('reduced flicker: the fluorescent flicker never touches the gameplay seed',
+  flick.seedBefore === flick.seedAfter);
+
+/* ---- reduced camera motion damps bob and shake, nothing else ---- */
+const motion = await ev(() => {
+  const g = window.__game;
+  g.opts.reduceMotion = true; g.applyOptions();
+  const on = { motion: g.motionScale, pad: g.input.motionScale };
+  g.opts.reduceMotion = false; g.applyOptions();
+  const off = { motion: g.motionScale, pad: g.input.motionScale };
+  return { on, off };
+});
+check('reduced motion: scales bob/shake down when on, back to full when off',
+  motion.on.motion < 0.5 && motion.on.pad < 0.5 && motion.off.motion === 1 && motion.off.pad === 1,
+  JSON.stringify(motion));
+
+/* ---- text scale: DEFAULT is the shipping size, exactly ---- */
+const text = await ev(() => {
+  const g = window.__game, read = () => getComputedStyle(document.documentElement).getPropertyValue('--ui-scale').trim();
+  g.opts.textScale = 1.0; g.applyOptions(); const def = read();
+  g.opts.textScale = 1.3; g.applyOptions(); const large = read();
+  g.opts.textScale = 0.9; g.applyOptions(); const small = read();
+  g.opts.textScale = 1.0; g.applyOptions();
+  return { def, large, small };
+});
+check('text scale: DEFAULT is 1 (the current presentation), and LARGE/SMALL move it',
+  text.def === '1' && text.large === '1.3' && text.small === '0.9', JSON.stringify(text));
+
+/* ---- window focus suspends the audio without restarting the beds ---- */
+const focus = await ev(async () => {
+  const g = window.__game;
+  // If audio was never started (no gesture in a headless run), the handlers
+  // must still be safe to fire; if it was, the beds must not be rebuilt.
+  const hadBeds = !!(g.sound && g.sound.humGain);
+  const bedBefore = g.sound && g.sound.humGain;
+  dispatchEvent(new Event('blur'));
+  await new Promise((r) => setTimeout(r, 30));
+  dispatchEvent(new Event('focus'));
+  await new Promise((r) => setTimeout(r, 30));
+  return { hadBeds, sameBed: g.sound.humGain === bedBefore, ready: !!g.sound.ready };
+});
+check('focus: blurring and refocusing is safe and never rebuilds the ambience beds',
+  focus.sameBed, JSON.stringify(focus));
+
+/* ---- the whole accessibility surface is determinism-neutral ---- */
+const det = await ev(() => {
+  const g = window.__game, S = window.__story;
+  const sig = () => {
+    const parts = [];
+    for (const seed of [11, 222, 3333]) {
+      const nt = S.night(seed, 6);
+      parts.push(S.specials(nt).join(',') + '|' + nt.plan.appears + nt.plan.visits + '|' + nt.busAt);
+    }
+    return parts.join(';');
+  };
+  const base = sig();
+  // Flip every accessibility control at once and regenerate.
+  g.opts.reduceFlicker = true; g.opts.reduceMotion = true; g.opts.textScale = 1.3;
+  g.opts.vhsMode = 'reduced'; g.opts.invert = true; g.opts.sens = 0.9;
+  g.input.bindKey('interact', 'KeyJ');
+  g.applyOptions();
+  const after = sig();
+  // put it all back
+  g.opts.reduceFlicker = false; g.opts.reduceMotion = false; g.opts.textScale = 1.0;
+  g.opts.vhsMode = 'full'; g.opts.invert = false; g.opts.sens = 0.5;
+  g.input.resetKeyBinds(); g.applyOptions();
+  return { same: base === after };
+});
+check('accessibility: no combination of these settings changes the nights that generate',
+  det.same);
+
 /* tidy up so a real player's machine is not left mid-campaign by the tests */
 await ev(() => {
   window.__campaign.deleteCampaignSave();

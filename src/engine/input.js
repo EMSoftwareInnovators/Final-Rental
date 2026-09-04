@@ -61,6 +61,65 @@ export const BINDABLE = ['confirm', 'back', 'drop', 'notes', 'run', 'bolt', 'pau
   'up', 'down', 'left', 'right'];
 
 /**
+ * The keyboard, made rebindable the same way the pad is.
+ *
+ * The rest of the game tests CANONICAL keys ('KeyE' for interact, 'KeyW' for
+ * forward, and so on) -- the same physical codes movement and interaction have
+ * always used. A rebind does not touch any of those call sites: it just makes
+ * the player's chosen physical key PRODUCE the canonical one, and stops the old
+ * key from producing it. So `hit('KeyE')` keeps working after INTERACT moves to
+ * F, because pressing F now emits 'KeyE'.
+ *
+ * Only real gameplay actions are here. Menu navigation (the arrows, Enter,
+ * Escape) is deliberately NOT rebindable and always works, so a player can
+ * never bind themselves out of the menus -- see KEY_RESERVED.
+ */
+export const KEY_ACTIONS = {
+  forward: { label: 'Walk forward', canon: 'KeyW', def: 'KeyW' },
+  back: { label: 'Walk back', canon: 'KeyS', def: 'KeyS' },
+  left: { label: 'Step left', canon: 'KeyA', def: 'KeyA' },
+  right: { label: 'Step right', canon: 'KeyD', def: 'KeyD' },
+  interact: { label: 'Interact / talk', canon: 'KeyE', def: 'KeyE' },
+  notes: { label: 'Notepad', canon: 'Tab', def: 'Tab' },
+  drop: { label: 'Put it down', canon: 'KeyG', def: 'KeyG' },
+  run: { label: 'Hurry', canon: 'ShiftLeft', def: 'ShiftLeft' },
+  bolt: { label: 'Throw the bolt', canon: 'KeyF', def: 'KeyF' },
+};
+export const KEY_BINDABLE = ['forward', 'back', 'left', 'right', 'interact', 'notes', 'drop', 'run', 'bolt'];
+
+/* Keys that run the menus, pause, and the safety fallbacks -- never assignable
+   to a gameplay action, so the player cannot trap themselves out of Settings or
+   lose the ability to walk (the arrows always move as well). */
+const KEY_RESERVED = new Set([
+  'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Escape', 'Space',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'F1',
+]);
+
+/* Human-readable cap for a physical code, for the prompts and the rebind
+   screen. Falls back to the bare code for anything exotic. */
+export function codeLabel(code) {
+  if (!code) return '?';
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  const named = {
+    Tab: 'TAB', Space: 'SPACE', ShiftLeft: 'SHIFT', ShiftRight: 'RSHIFT',
+    ControlLeft: 'CTRL', ControlRight: 'RCTRL', AltLeft: 'ALT', AltRight: 'RALT',
+    Enter: 'ENTER', Escape: 'ESC', Backspace: 'BKSP',
+    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+    Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']',
+    Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/', Backslash: '\\',
+  };
+  return named[code] || code.toUpperCase();
+}
+
+/** Default keyboard binds: each action on its default physical code. */
+export function defaultKeyBinds() {
+  const out = {};
+  for (const a of Object.keys(KEY_ACTIONS)) out[a] = KEY_ACTIONS[a].def;
+  return out;
+}
+
+/**
  * button index -> the actions on it, as the standard mapping lays it out.
  *
  * A list rather than a single id: one button can carry several jobs, the
@@ -87,6 +146,7 @@ export function normaliseBinds(b) {
 }
 
 const DEAD = 0.22;
+const EMPTY = [];
 
 /**
  * Layouts we know about that the browser will not describe.
@@ -201,7 +261,95 @@ export class Input {
     /** When set, the next button pressed is bound to this action instead. */
     this.capturing = null;
     this.onCaptured = null;
+    /* Keyboard remapping. keyBinds is action -> physical code; the handlers
+       translate a pressed physical key into the canonical key(s) the game
+       tests, via the maps _rebuildKeyMap() builds. */
+    this.keyBinds = defaultKeyBinds();
+    this.keyBindsUser = false;
+    this.capturingKey = null;
+    this.onKeyCaptured = null;
+    this._rebuildKeyMap();
     this._bind();
+  }
+
+  /* Build the physical->canonical translation from the current keyBinds.
+     _emit maps a physical code to the canonical codes it should produce;
+     _canon is the set of all canonical gameplay codes, so a canonical key that
+     has been rebound AWAY produces nothing. */
+  _rebuildKeyMap() {
+    this._emit = {};
+    this._canon = new Set();
+    for (const a of Object.keys(KEY_ACTIONS)) {
+      const canon = KEY_ACTIONS[a].canon;
+      this._canon.add(canon);
+      const code = this.keyBinds[a] || KEY_ACTIONS[a].def;
+      (this._emit[code] = this._emit[code] || []).push(canon);
+    }
+  }
+
+  /* Translate one physical code into the logical codes to register. A bound
+     key emits its action's canonical code(s); a reserved/menu key or any key
+     the game reads raw passes through; a canonical key that was rebound away
+     emits nothing. */
+  _translate(code) {
+    if (this._emit[code]) return this._emit[code];
+    if (this._canon.has(code)) return EMPTY;   // a canonical key, unbound from its action
+    return [code];                              // arrows, Enter, Escape, digits, debug, etc.
+  }
+
+  /**
+   * Put a gameplay action on a physical key.
+   *
+   * Refuses the reserved menu/pause keys. If the key already carries another
+   * gameplay action, the two SWAP -- the displaced action takes the key this
+   * one was on -- so a rebind never silently leaves two actions on one key or
+   * an action on nothing.
+   */
+  bindKey(action, code) {
+    if (!KEY_ACTIONS[action] || !code || KEY_RESERVED.has(code)) return false;
+    const old = this.keyBinds[action];
+    for (const a of Object.keys(this.keyBinds)) {
+      if (a !== action && this.keyBinds[a] === code) this.keyBinds[a] = old;
+    }
+    this.keyBinds[action] = code;
+    this.keyBindsUser = true;
+    this._rebuildKeyMap();
+    return true;
+  }
+
+  /** Load a saved keyboard map, validated action by action; unknown actions
+      and reserved keys are ignored, missing ones keep their default. */
+  setKeyBinds(map) {
+    if (!map || typeof map !== 'object') return;
+    const next = defaultKeyBinds();
+    let any = false;
+    for (const a of Object.keys(KEY_ACTIONS)) {
+      const c = map[a];
+      if (typeof c === 'string' && c && !KEY_RESERVED.has(c)) { next[a] = c; any = true; }
+    }
+    this.keyBinds = next;
+    this.keyBindsUser = any;
+    this._rebuildKeyMap();
+  }
+
+  /** Back to the default keyboard layout. Never touches the pad binds. */
+  resetKeyBinds() {
+    this.keyBinds = defaultKeyBinds();
+    this.keyBindsUser = false;
+    this._rebuildKeyMap();
+  }
+
+  /** The next keyboard key pressed is bound to `action` rather than acting. */
+  captureKey(action) { this.capturingKey = action; }
+  cancelCaptureKey() { this.capturingKey = null; }
+
+  /** action -> readable cap, for prompts and the rebind screen. */
+  keyCaps() {
+    const out = {};
+    for (const a of Object.keys(KEY_ACTIONS)) out[a] = codeLabel(this.keyBinds[a]);
+    // interact doubles as the menu-confirm cap the prompts call 'interact'.
+    out.confirm = out.interact;
+    return out;
   }
 
   _bind() {
@@ -211,16 +359,28 @@ export class Input {
       return e.key.length === 1 ? 'Key' + e.key.toUpperCase() : e.key;
     };
     addEventListener('keydown', (e) => {
-      const k = norm(e);
-      if (BLOCK.has(k)) e.preventDefault();
-      if (!this.down.has(k)) this.pressed.add(k);
-      this.down.add(k);
+      const phys = norm(e);
+      if (BLOCK.has(phys)) e.preventDefault();
       this.scheme = 'kbm';
+      /* A keyboard rebind swallows the next press: bind it and act on nothing.
+         Repeats fire while a key is held, so only the first (a real edge) binds. */
+      if (this.capturingKey && !e.repeat) {
+        const act = this.capturingKey;
+        this.capturingKey = null;
+        if (this.bindKey(act, phys) && this.onKeyCaptured) this.onKeyCaptured(act, phys);
+        e.preventDefault();
+        return;
+      }
+      // Translate the physical key into the logical key(s) the game reads.
+      for (const k of this._translate(phys)) {
+        if (!this.down.has(k)) this.pressed.add(k);
+        this.down.add(k);
+      }
       if (this.onGesture) this.onGesture();
     });
     addEventListener('keyup', (e) => {
-      const k = norm(e);
-      this.down.delete(k); this.released.add(k);
+      const phys = norm(e);
+      for (const k of this._translate(phys)) { this.down.delete(k); this.released.add(k); }
     });
     addEventListener('blur', () => {
       this.down.clear(); this.mouse = [false, false, false];

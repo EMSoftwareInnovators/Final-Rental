@@ -78,6 +78,10 @@ export class Sound {
   }
 
   resume() { if (this.ctx && this.ctx.state === 'suspended') this.ctx.resume(); }
+  /* Freeze everything -- beds, music, tails -- in place. Used when the tab is
+     hidden or the window loses focus; resume() picks up exactly where it left
+     off, so no bed is ever restarted or doubled. */
+  suspend() { if (this.ctx && this.ctx.state === 'running') this.ctx.suspend(); }
   get t() { return this.ctx.currentTime; }
 
   /* ---------------- primitive voices ---------------- */

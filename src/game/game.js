@@ -5,7 +5,7 @@
    ============================================================ */
 import { Raster } from '../engine/raster.js';
 import { PostFX } from '../engine/postfx.js';
-import { Input, PAD_ACTIONS, BINDABLE, normaliseBinds } from '../engine/input.js';
+import { Input, PAD_ACTIONS, BINDABLE, normaliseBinds, KEY_ACTIONS, KEY_BINDABLE, codeLabel } from '../engine/input.js';
 import { Sound } from '../engine/audio.js';
 import { buildTextures } from '../engine/texture.js';
 import { mat, mul, setPosYaw, setRotX, setRotY, setTranslate, invertRigid, clamp, angleTowards } from '../engine/mathx.js';
@@ -28,13 +28,15 @@ import {
   setStoryFlag, storyFlag,
 } from './campaign.js';
 import { DialogueRunner, buildOfficerIntro, buildSweepReport, talkTo, buildPhoneCall } from './dialogue.js';
-import { UI, howToHtml, optionsHtml, padHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds } from './ui.js';
+import { UI, howToHtml, optionsHtml, padHtml, keyboardHtml, reportHtml, endingHtml, glyph, glyphText, setScheme, setPadBinds, setKeyCaps } from './ui.js';
 import { randomAppearance, paintSkin, voicePitchOf, pronounOf, describeApart, randomName } from './appearance.js';
 import { OFFICER } from './personality.js';
 import { GENRE_LABEL, GENRES, makeTape, tapeLabel, mediaWord } from './tapes.js';
 
 const ST = {
   BOOT: 'BOOT', TITLE: 'TITLE', HOWTO: 'HOWTO', OPTIONS: 'OPTIONS', PADCFG: 'PADCFG',
+  /* The keyboard rebind screen, reached from OPTIONS, same shape as PADCFG. */
+  KEYCFG: 'KEYCFG',
   ESTABLISH: 'ESTABLISH', PLAY: 'PLAY', REPORT: 'REPORT', ENDING: 'ENDING', PAUSE: 'PAUSE',
   /* Are you sure. Quitting is the only thing in here that cannot be undone. */
   QUIT: 'QUIT',
@@ -156,6 +158,14 @@ export class Game {
       // below the effects so the room sits under the job; voice/phone full so
       // the deputy and the caller are always clear.
       volAmb: 0.8, volSfx: 0.9, volVoice: 1.0,
+      // Accessibility & readability (Stage 11). Defaults preserve the current
+      // intended presentation exactly: full VHS, flicker on, motion full,
+      // normal text.
+      //   vhsMode      'full' | 'reduced' | 'off' -- the retro presentation.
+      //   reduceFlicker suppress rapid brightness flashes (photosensitivity).
+      //   reduceMotion  damp head-bob and camera shake.
+      //   textScale     UI text multiplier (0.9 / 1.0 / 1.15 / 1.3).
+      vhsMode: 'full', reduceFlicker: false, reduceMotion: false, textScale: 1.0,
     };
     /* Player preferences that live across sessions and across campaigns --
        separate from the Story save (which is one run) and from the pad binds
@@ -166,6 +176,7 @@ export class Game {
     this.menuSel = 0;
     this.optSel = 0;
     this.padSel = 0;
+    this.keySel = 0;
     this.wantLock = false;
     this.dlg = new DialogueRunner();
     this.phone = new DialogueRunner();
@@ -221,6 +232,7 @@ export class Game {
     this.distress = 0; this.tension = 0;
     this.staticFrame = 0; this.staticT = 0;
     this.shake = 0;
+    this.motionScale = 1;   // reduced-motion multiplier, set by applyOptions
     this.drawer = 0;
     this._lastTyped = -1;
   }
@@ -265,6 +277,20 @@ export class Game {
       this.grabLock();
     };
     addEventListener('resize', () => this.layout());
+    /* Tab hidden or window blurred: freeze the audio context so the room tone,
+       the music and the phone stop while the player is looking elsewhere.
+       Suspending (not stopping) the context leaves the beds exactly where they
+       were, so nothing restarts or stacks on the way back; resume() only wakes
+       a context that was already running, so it never fights the autoplay
+       policy. Gameplay itself already auto-pauses when the pointer lock is
+       lost on blur. */
+    const onHide = () => { try { this.sound.suspend(); } catch (e) { /* no audio yet */ } };
+    const onShow = () => { try { if (this.sound.ready) this.sound.resume(); } catch (e) { /* ignore */ } };
+    addEventListener('blur', onHide);
+    addEventListener('focus', onShow);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => (document.hidden ? onHide() : onShow()));
+    }
     this.layout();
 
     this.state = ST.TITLE;
@@ -486,6 +512,7 @@ export class Game {
       case ST.TITLE: this.updateTitle(dt); break;
       case ST.HOWTO: case ST.OPTIONS: this.updatePanelMenu(dt); break;
       case ST.PADCFG: this.updatePadMenu(dt); break;
+      case ST.KEYCFG: this.updateKeyMenu(dt); break;
       case ST.ESTABLISH: this.updateEstablish(dt); break;
       case ST.PLAY: this.updatePlay(dt); break;
       case ST.PAUSE: this.updatePause(dt); break;
@@ -563,6 +590,7 @@ export class Game {
     if (this.state === ST.HOWTO) this.ui.showPanel(howToHtml());
     else if (this.state === ST.OPTIONS) { this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel); }
     else if (this.state === ST.PADCFG) this.showPadMenu();
+    else if (this.state === ST.KEYCFG) this.showKeyMenu();
     else if (this.state === ST.PAUSE) this.showPauseMenu();
     else if (this.state === ST.QUIT) this.showQuitConfirm(this.quitSel);
     else if (this.state === ST.STORYDONE) this.showStoryComplete();
@@ -832,17 +860,99 @@ export class Game {
     }
   }
 
+  /**
+   * The options menu as a flat list of selectable rows, defined once so the
+   * markup and the key handler cannot drift apart. Every entry is a row you
+   * can land on; `left(d)` adjusts it (left/right), `enter()` acts on it
+   * (confirm). Sliders and enums have no `enter`, so confirming them is a
+   * no-op, exactly as before. Adjusting a row applies and saves immediately.
+   */
+  optRows() {
+    const o = this.opts, p = this.prefs;
+    const bar = (v) => `[${'#'.repeat(Math.round(v * 10)).padEnd(10, '.')}]`;
+    const apply = () => { this.applyOptions(); this.savePrefs(); };
+    const slide = (label, get, set, lo, hi, indent) => ({
+      label, sub: !!indent, value: bar(get()),
+      left: (d) => { set(clamp(get() + d * 0.1, lo, hi)); apply(); },
+    });
+    const toggle = (label, get, set) => {
+      const flip = () => { set(!get()); apply(); };
+      return { label, value: get() ? 'ON' : 'OFF', left: flip, enter: flip };
+    };
+    const cycle = (label, get, set, steps, labelOf) => {
+      const go = (d) => {
+        const at = Math.max(0, steps.indexOf(get()));
+        set(steps[((at + d) % steps.length + steps.length) % steps.length]); apply();
+      };
+      return { label, value: labelOf(get()), left: (d) => go(d || 1), enter: () => go(1) };
+    };
+    const vhsLabel = { full: 'FULL', reduced: 'REDUCED', off: 'OFF &mdash; clean PS1' };
+    const scaleLabel = (v) => (v < 0.95 ? 'SMALL' : v < 1.05 ? 'DEFAULT' : v < 1.2 ? 'LARGE' : 'LARGER')
+      + ` <span class="quiet">${Math.round(v * 100)}%</span>`;
+    return [
+      slide('Look sensitivity', () => o.sens, (v) => { o.sens = v; }, 0.1, 1.0),
+      toggle('Invert look', () => o.invert, (v) => { o.invert = v; }),
+      slide('Master volume', () => o.vol, (v) => { o.vol = v; }, 0, 1),
+      slide('Ambience', () => o.volAmb, (v) => { o.volAmb = v; }, 0, 1, true),
+      slide('Sound effects', () => o.volSfx, (v) => { o.volSfx = v; }, 0, 1, true),
+      slide('Voice / phone', () => o.volVoice, (v) => { o.volVoice = v; }, 0, 1, true),
+      {
+        label: 'Internal resolution', value: RES[o.res][2],
+        left: (d) => { o.res = clamp(o.res + d, 0, RES.length - 1); this.layout(); apply(); },
+        enter: () => { o.res = (o.res + 1) % RES.length; this.layout(); apply(); },
+      },
+      { ...toggle('Polygon jitter', () => o.snap, (v) => { o.snap = v; }), value: o.snap ? 'PS1 (ON)' : 'SMOOTH' },
+      cycle('VHS filter', () => o.vhsMode, (v) => { o.vhsMode = v; }, ['full', 'reduced', 'off'], (v) => vhsLabel[v] || 'FULL'),
+      {
+        ...slide('Tape damage', () => o.grain, (v) => { o.grain = v; }, 0, 1, true),
+        value: bar(o.grain) + (o.vhsMode === 'off' ? ' <span class="quiet">(tape off)</span>' : ''),
+      },
+      toggle('Reduced flicker', () => o.reduceFlicker, (v) => { o.reduceFlicker = v; }),
+      toggle('Reduced camera motion', () => o.reduceMotion, (v) => { o.reduceMotion = v; }),
+      cycle('Text size', () => o.textScale, (v) => { o.textScale = v; }, [0.9, 1.0, 1.15, 1.3], scaleLabel),
+      toggle('First-shift hints', () => p.hintsEnabled, (v) => { p.hintsEnabled = v; }),
+      {
+        label: 'Reset first-shift hints', value: '',
+        enter: () => {
+          p.hintsSeen = {}; p.hintsEnabled = true; this.savePrefs();
+          this.sound.uiSelect(); this.ui.toast('First-shift hints reset.', 'good');
+        },
+      },
+      {
+        label: 'Keyboard controls', value: '',
+        enter: () => {
+          this.quietly(() => this.sound.uiSelect());
+          this.state = ST.KEYCFG; this.keySel = 0;
+          this.input.cancelCaptureKey();
+          this.showKeyMenu();
+        },
+      },
+      {
+        label: 'Controller', value: this.input.padId ? '' : '<span class="quiet">(none connected)</span>',
+        enter: () => {
+          this.quietly(() => this.sound.uiSelect());
+          this.state = ST.PADCFG; this.padSel = 0;
+          this.input.cancelCapture();
+          this.showPadMenu();
+        },
+      },
+      { label: 'Back', value: '', enter: () => this.leaveOptions() },
+    ];
+  }
+
   optView() {
     return {
-      sens: this.opts.sens, invert: this.opts.invert, vol: this.opts.vol,
-      resLabel: RES[this.opts.res][2], snap: this.opts.snap, grain: this.opts.grain,
-      vhs: this.opts.vhs,
-      volAmb: this.opts.volAmb, volSfx: this.opts.volSfx, volVoice: this.opts.volVoice,
-      hints: this.prefs.hintsEnabled,
-      // Named here so a pad that behaves oddly can at least be identified.
+      rows: this.optRows(),
       pad: this.input.padId,
       padNeedsSetup: !!this.input.padId && !this.input.padTrusted && !this.input.bindsAreUser,
     };
+  }
+
+  /** Back out of OPTIONS, to the pause menu if we came from there, else title. */
+  leaveOptions() {
+    this.sound.uiBack();
+    if (this._fromPause) { this._fromPause = false; this.showPauseMenu(); }
+    else { this.ui.hidePanel(); this.state = ST.TITLE; }
   }
 
   updatePanelMenu() {
@@ -856,66 +966,31 @@ export class Game {
       }
       return;
     }
-    /* Row layout (see optionsHtml): 0 sens, 1 invert, 2 master, 3 ambience,
-       4 sfx, 5 voice, 6 resolution, 7 jitter, 8 vhs, 9 tape damage, 10 hints,
-       11 reset hints, 12 controller, 13 back. */
-    const N = 14;
-    const BACK = N - 1;         // 13
-    const PADROW = N - 2;       // 12 Controller
-    const HINTS = 10;
-    const RESET = 11;
-    const TOGGLES = { 1: 'invert', 7: 'snap', 8: 'vhs' };
-    // Refresh the panel after a change, keeping the cursor where it is.
+    /* The rows -- their order, values, and behavior -- come from optRows(),
+       so this handler never has to know what sits at index 8. Rebuilt each
+       frame because a row's displayed value changes as you adjust it. */
+    const rows = this.optRows();
+    const N = rows.length;
+    this.optSel = clamp(this.optSel | 0, 0, N - 1);
     const refresh = () => { this.ui.showPanel(optionsHtml(this.optView())); this.ui.panelSelect(this.optSel); };
-    if (i.hit('ArrowUp', 'KeyW')) { this.optSel = (this.optSel + N - 1) % N; this.sound.uiMove(); }
-    if (i.hit('ArrowDown', 'KeyS')) { this.optSel = (this.optSel + 1) % N; this.sound.uiMove(); }
+    let dirty = false;
+    if (i.hit('ArrowUp', 'KeyW')) { this.optSel = (this.optSel + N - 1) % N; this.sound.uiMove(); dirty = true; }
+    if (i.hit('ArrowDown', 'KeyS')) { this.optSel = (this.optSel + 1) % N; this.sound.uiMove(); dirty = true; }
     const d = (i.hit('ArrowRight', 'KeyD') ? 1 : 0) - (i.hit('ArrowLeft', 'KeyA') ? 1 : 0);
-    if (d) {
-      this.sound.uiMove();
-      switch (this.optSel) {
-        case 0: this.opts.sens = clamp(this.opts.sens + d * 0.1, 0.1, 1.0); break;
-        case 2: this.opts.vol = clamp(this.opts.vol + d * 0.1, 0, 1); break;
-        case 3: this.opts.volAmb = clamp(this.opts.volAmb + d * 0.1, 0, 1); break;
-        case 4: this.opts.volSfx = clamp(this.opts.volSfx + d * 0.1, 0, 1); break;
-        case 5: this.opts.volVoice = clamp(this.opts.volVoice + d * 0.1, 0, 1); break;
-        case 6: this.opts.res = clamp(this.opts.res + d, 0, RES.length - 1); this.layout(); break;
-        case 9: this.opts.grain = clamp(this.opts.grain + d * 0.1, 0, 1); break;
-        case HINTS: this.prefs.hintsEnabled = !this.prefs.hintsEnabled; break;
-        default:
-          if (TOGGLES[this.optSel]) this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
-          break;
-      }
-      this.applyOptions();
-      this.savePrefs();
-      this.ui.showPanel(optionsHtml(this.optView()));
-    }
-    this.ui.panelSelect(this.optSel);
+    if (d && rows[this.optSel].left) { this.sound.uiMove(); rows[this.optSel].left(d); dirty = true; }
     const back = this.backHit();
-    if (this.confirmHit() || back) {
-      if (this.optSel === BACK || back) {
-        this.sound.uiBack();
-        if (this._fromPause) { this._fromPause = false; this.showPauseMenu(); }
-        else { this.ui.hidePanel(); this.state = ST.TITLE; }
-      } else if (this.optSel === PADROW) {
-        this.quietly(() => this.sound.uiSelect());
-        this.state = ST.PADCFG; this.padSel = 0;
-        this.input.cancelCapture();
-        this.showPadMenu();
-      } else if (this.optSel === HINTS) {
-        this.prefs.hintsEnabled = !this.prefs.hintsEnabled;
-        this.savePrefs(); this.sound.uiSelect(); refresh();
-      } else if (this.optSel === RESET) {
-        // Clear the seen-set so a fresh player's first-shift nudges return. No
-        // browser confirm -- a small workplace action with a toast.
-        this.prefs.hintsSeen = {};
-        this.prefs.hintsEnabled = true;
-        this.savePrefs(); this.sound.uiSelect();
-        this.ui.toast('First-shift hints reset.', 'good'); refresh();
-      } else if (TOGGLES[this.optSel]) {
-        this.opts[TOGGLES[this.optSel]] = !this.opts[TOGGLES[this.optSel]];
-        this.applyOptions(); this.savePrefs(); refresh();
+    if (back) { this.leaveOptions(); return; }
+    if (this.confirmHit()) {
+      const row = rows[this.optSel];
+      if (row.enter) {
+        row.enter();
+        // A toggle/action leaves us in OPTIONS and wants a redraw; one that
+        // changed state (keyboard, controller, back) has drawn its own screen.
+        if (this.state === ST.OPTIONS) { if (!row.left) this.sound.uiSelect(); dirty = true; }
       }
     }
+    if (dirty && this.state === ST.OPTIONS) refresh();
+    else this.ui.panelSelect(this.optSel);
   }
 
   /* ---------------- the controller screen ----------------
@@ -1004,6 +1079,84 @@ export class Game {
     }
   }
 
+  /* ---------------- the keyboard screen ----------------
+     The same shape as the controller one, for keys. Highlight an action and
+     the next key you press takes it. Menu keys (the arrows, Enter, Escape,
+     1-5) are never offered and always work, so a player cannot lock
+     themselves out of the menus. */
+  keyView() {
+    const i = this.input;
+    const caps = i.keyCaps();
+    return {
+      rows: KEY_BINDABLE.map((id) => ({
+        id, label: KEY_ACTIONS[id].label,
+        cap: caps[id] || codeLabel(i.keyBinds[id]),
+        capturing: i.capturingKey === id,
+      })),
+    };
+  }
+
+  showKeyMenu() {
+    this.ui.showPanel(keyboardHtml(this.keyView()));
+    this.ui.panelSelect(this.keySel);
+  }
+
+  updateKeyMenu() {
+    const i = this.input;
+    const N = KEY_BINDABLE.length + 2;       // the actions, plus reset and back
+    const RESET = N - 2;
+    const BACK = N - 1;
+    const leave = () => {
+      i.cancelCaptureKey();
+      this.quietly(() => this.sound.uiBack());
+      this.state = ST.OPTIONS;
+      this.ui.showPanel(optionsHtml(this.optView()));
+      this.ui.panelSelect(this.optSel);
+    };
+    // ESC (and the pad's Back) always leaves, even mid-capture.
+    if (this.backHit()) { leave(); return; }
+
+    let moved = false;
+    if (i.hit('ArrowUp')) { this.keySel = (this.keySel + N - 1) % N; moved = true; }
+    if (i.hit('ArrowDown')) { this.keySel = (this.keySel + 1) % N; moved = true; }
+    if (moved) {
+      i.cancelCaptureKey();
+      this.quietly(() => this.sound.uiMove());
+      this.showKeyMenu();
+      return;
+    }
+
+    if (this.keySel === RESET || this.keySel === BACK) {
+      // Enter or the pad's confirm; NOT a bare gameplay key, which might be
+      // the one being rebound. Arrows moved us here; Enter acts.
+      if (i.hit('Enter')) {
+        if (this.keySel === BACK) { leave(); return; }
+        i.resetKeyBinds();
+        this.savePrefs();
+        setKeyCaps(i.keyCaps());
+        this.quietly(() => this.sound.uiSelect());
+        this.showKeyMenu();
+      }
+      return;
+    }
+
+    /* An action line. Arm the capture; the next physical key pressed becomes
+       this action (a reserved menu key is refused and simply does nothing).
+       Enter opens the capture so a keyboard-only player can start it. */
+    const action = KEY_BINDABLE[this.keySel];
+    if (i.capturingKey !== action && (i.hit('Enter'))) {
+      i.captureKey(action);
+      i.onKeyCaptured = () => {
+        i.onKeyCaptured = null;
+        this.savePrefs();
+        setKeyCaps(i.keyCaps());
+        this.quietly(() => this.sound.uiSelect());
+        if (this.state === ST.KEYCFG) this.showKeyMenu();
+      };
+      this.showKeyMenu();
+    }
+  }
+
   /** Bindings are the one setting worth remembering between sessions. */
   savePadBinds() {
     /* The how-to page names buttons off these, so it has to be told when
@@ -1048,7 +1201,18 @@ export class Game {
           if (k in p.opts && typeof p.opts[k] === typeof this.opts[k]) this.opts[k] = p.opts[k];
         }
         this.opts.res = clamp(this.opts.res | 0, 0, RES.length - 1);
+        // Stage 10 saves stored a boolean `vhs`; Stage 11 replaced it with a
+        // three-way `vhsMode`. Fold the old value forward when the new one is
+        // absent, so an existing player's look is unchanged.
+        if (!('vhsMode' in p.opts) && typeof p.opts.vhs === 'boolean') {
+          this.opts.vhsMode = p.opts.vhs ? 'full' : 'off';
+        }
+        if (['full', 'reduced', 'off'].indexOf(this.opts.vhsMode) < 0) this.opts.vhsMode = 'full';
+        this.opts.vhs = this.opts.vhsMode !== 'off';   // keep the legacy flag consistent
       }
+      // Keyboard bindings live in the prefs blob, like the display settings; the
+      // input layer normalizes and validates whatever is there.
+      if (p.keyBinds && typeof p.keyBinds === 'object') this.input.setKeyBinds(p.keyBinds);
     } catch (err) { /* defaults are fine */ }
   }
 
@@ -1058,6 +1222,7 @@ export class Game {
         hintsEnabled: this.prefs.hintsEnabled,
         hintsSeen: this.prefs.hintsSeen,
         opts: this.opts,
+        keyBinds: this.input.keyBindsUser ? this.input.keyBinds : null,
       }));
     } catch (err) { /* nothing we can do, nothing worth doing */ }
   }
@@ -1089,12 +1254,27 @@ export class Game {
     // the very change they just made.
     if (!this._prefsLoaded) { this._prefsLoaded = true; this.loadPrefs(); }
     this.loadPadBinds();
+    // One "Look sensitivity" slider drives both the mouse and the stick, so a
+    // player who finds the camera too fast or too slow fixes both at once.
     this.input.sensitivity = 0.0009 + this.opts.sens * 0.0032;
+    this.input.padSensitivity = 2.2 + this.opts.sens * 4.6;   // ~2.5..6.8 rad/s
     this.input.invertY = this.opts.invert;
     this.sound.masterVol = this.opts.vol;
     if (this.sound.master) this.sound.master.gain.value = this.opts.vol;
     this.sound.setMix(this.opts.volAmb, this.opts.volSfx, this.opts.volVoice);
     this.raster.snap = this.opts.snap ? 1 : 0;
+    // Reduced camera motion: head-bob and camera shake are scaled down (not to
+    // zero -- a little grounds the walk -- but well below the point of nausea).
+    // The player reads it off the input; render reads this.motionScale for shake.
+    this.motionScale = this.opts.reduceMotion ? 0.28 : 1;
+    this.input.motionScale = this.motionScale;
+    // The legacy VHS flag mirrors the three-way mode for any code still reading
+    // it; the render layer reads vhsMode directly.
+    this.opts.vhs = this.opts.vhsMode !== 'off';
+    // UI text scale: a CSS variable the panels multiply their cqw sizes by.
+    try { document.documentElement.style.setProperty('--ui-scale', String(this.opts.textScale || 1)); } catch (e) { /* no DOM */ }
+    // Keep on-screen prompts in the player's own keyboard letters.
+    setKeyCaps(this.input.keyCaps ? this.input.keyCaps() : null);
   }
 
   /* ---------------- establishing shot ----------------
@@ -2007,7 +2187,9 @@ export class Game {
       if (d < 13) {
         k.spotted = true;
         this.sound.stinger(0.28);
-        this.flickerAmt = Math.max(this.flickerAmt, 0.65);
+        // The lights kick when you first catch sight of him. Reduced flicker
+        // still dips them (the cue survives) but does not strobe.
+        this.flickerAmt = Math.max(this.flickerAmt, this.opts.reduceFlicker ? 0.16 : 0.65);
       }
     }
   }
@@ -2030,17 +2212,31 @@ export class Game {
 
     this.distress += ((this.tension > 0.5 ? (this.tension - 0.5) * 1.6 : 0) * this.opts.grain * 2 - this.distress) * Math.min(1, dt * 1.5);
 
-    // flicker
+    // flicker. Reduced flicker keeps the fluorescents DIMMING under tension --
+    // so the room still reads as darker when the killer is near -- but caps the
+    // depth of each dip and drops the per-frame jitter, so nothing strobes.
+    // Uses Math.random() only, never the gameplay RNG, either way.
+    const rf = this.opts.reduceFlicker;
     this.flickerT -= dt;
     if (this.flickerT <= 0) {
       const base = this.tension > 0.5 ? 1.6 : 9;
       this.flickerT = base + Math.random() * base * 1.4;
-      this.flickerAmt = 0.10 + Math.random() * (this.tension > 0.5 ? 0.75 : 0.22);
+      const amt = 0.10 + Math.random() * (this.tension > 0.5 ? 0.75 : 0.22);
+      this.flickerAmt = rf ? Math.min(amt, 0.16) : amt;
       this.sound.flicker();
     }
     this.flickerAmt = Math.max(0, this.flickerAmt - dt * 2.6);
-    const target = 1 - this.flickerAmt * (0.4 + Math.random() * 0.6);
-    this.lights += (target - this.lights) * Math.min(1, dt * 22);
+    let target;
+    if (rf) {
+      // Instead of a rapid random flicker, a smooth SUSTAINED dim proportional
+      // to tension -- so the room still clearly darkens when he is near (the
+      // cue is kept, the player can tell dark from lit) -- plus a soft,
+      // non-strobing echo of the capped flicker. No per-frame randomness.
+      target = 1 - Math.min(0.2, this.tension * 0.2) - this.flickerAmt * 0.35;
+    } else {
+      target = 1 - this.flickerAmt * (0.4 + Math.random() * 0.6);
+    }
+    this.lights += (target - this.lights) * Math.min(1, dt * (rf ? 8 : 22));
     this.sound.setLights(this.lights);
 
     // heartbeat when he is close and inside
@@ -3305,7 +3501,7 @@ export class Game {
     /* Camera shake. Applied to the eye rather than the world so it survives
        everything downstream, and kept as a high-frequency jitter -- a slow
        wobble reads as a bad handheld, not as being hit. */
-    const sk = this.shake || 0;
+    const sk = (this.shake || 0) * (this.motionScale == null ? 1 : this.motionScale);
     let restore = null;
     if (sk > 0.001) {
       restore = { yaw: p.yaw, pitch: p.pitch, eye: p.eye, roll: p.roll };
@@ -3354,7 +3550,9 @@ export class Game {
       const t = this.time;
       floodShade = 0.94 + 0.06 * Math.sin(t * 2.3);        // a gentle breathing
       const ph = (t * 0.11) % 1;                            // ~ every 9 seconds
-      if (ph < 0.05) floodShade *= 0.5 + 0.45 * Math.abs(Math.sin(t * 58));
+      // The buzzy dip is a fast strobe; reduced flicker keeps the dip (so the
+      // fixture still reads as a failing one) but not the strobe inside it.
+      if (ph < 0.05) floodShade *= this.opts.reduceFlicker ? 0.84 : (0.5 + 0.45 * Math.abs(Math.sin(t * 58)));
       setTranslate(M.m, 0, 0, 0);
       rz.drawMesh(this.world.floodMesh, M.m, { shade: floodShade });
     }
@@ -3461,27 +3659,47 @@ export class Game {
     const k = this.killer;
     const nearPanic = k && (k.phase === KP.HUNT || k.phase === KP.BREACH || k.phase === KP.SIEGE)
       ? k.proximity : 0;
-    /* With the tape switched off you get the console and the CRT it was
-       plugged into -- dither, vignette, scanlines, vertex wobble -- and
-       none of the things that belong to a worn VHS: no chroma bleed, no
-       phosphor trail, no tracking damage. */
-    const tape = this.opts.vhs;
+    /* Three presentations, one dial (opts.vhsMode):
+         FULL     the worn tape -- chroma bleed, phosphor trail, tracking damage.
+         REDUCED  the same era, made legible: the chroma bleed that smears text
+                  is gone, the vertex/tracking wobble and dropouts are gone, the
+                  grain is quieter -- but the dither, scanlines, vignette and a
+                  faint phosphor stay, so it still reads as 1996, not 2016.
+         OFF      the console and the CRT it plugged into -- no tape at all.
+       Crucially none of this touches the room's LIGHTING (`dark`) or anything a
+       suspect is identified by: only how the picture is filtered, never what is
+       in it. */
+    const vhsMode = this.opts.vhsMode;
+    const tape = vhsMode !== 'off';
+    const reduced = vhsMode === 'reduced';
     const base = {
       dt,
       dither: true,
       vhs: tape,
-      bleed: tape ? 1 + (this.distress > 0.5 ? 1 : 0) : 0,
+      // Chroma bleed is the single biggest hit to text legibility; REDUCED kills it.
+      bleed: reduced ? 0 : (tape ? 1 + (this.distress > 0.5 ? 1 : 0) : 0),
       scan: tape ? 0.80 : 0.90,
-      ghost: tape ? 0.18 + this.distress * 0.12 : 0,
-      grain: tape ? 8 + this.opts.grain * 14 + this.distress * 18 : 3,
-      warp: tape ? this.distress * 1.5 + nearPanic * 2.2 : 0,
+      ghost: tape ? (reduced ? 0.09 : 0.18 + this.distress * 0.12) : 0,
+      grain: tape ? (reduced ? 4 + this.opts.grain * 6 : 8 + this.opts.grain * 14 + this.distress * 18) : 3,
+      // Vertex/tracking wobble bends straight edges; REDUCED keeps only a trace
+      // of the panic warp so the world still lurches a little when hunted.
+      warp: tape ? (reduced ? nearPanic * 0.4 : this.distress * 1.5 + nearPanic * 2.2) : 0,
       fade: this.fade,
-      flash: this.flash,
+      // A white impact flash (glass, a breach, the killer landing a blow).
+      // Reduced flicker keeps a soft acknowledgement of the hit but never a
+      // full-frame strobe; the events themselves are untouched.
+      flash: this.opts.reduceFlicker ? Math.min(this.flash, 0.22) : this.flash,
       dark: (1.06 + (L - 1) * 0.55) * (1 - nearPanic * 0.15),
       tintR: 1 + nearPanic * 0.25, tintG: 1 - nearPanic * 0.08, tintB: 1 - nearPanic * 0.05,
-      distress: tape ? Math.min(1, this.distress + nearPanic * 0.5) * this.opts.grain * 1.4 : 0,
+      // Dropouts and tearing are pure tape damage; REDUCED has none.
+      distress: (tape && !reduced) ? Math.min(1, this.distress + nearPanic * 0.5) * this.opts.grain * 1.4 : 0,
     };
-    const death = this.state === ST.ENDING && this.endKind === 'ATTACKED' ? this.deathFx() : null;
+    let death = this.state === ST.ENDING && this.endKind === 'ATTACKED' ? this.deathFx() : null;
+    // The attack cinematic is the one place with negative strobes and hard
+    // vertical roll -- the classic photosensitivity trigger. Reduced flicker
+    // takes those out (no inversion, a fraction of the roll) while leaving the
+    // grain, warp and darkening that carry the scene.
+    if (death && this.opts.reduceFlicker) death = { ...death, invert: 0, roll: (death.roll || 0) * 0.25 | 0 };
     // the death shot still gets to wreck the picture; without the tape it
     // wrecks it the way a console losing sync would, not the way a tape does
     this.post.render(rz.color, death ? Object.assign(base, death, { dt, vhs: tape }) : base);

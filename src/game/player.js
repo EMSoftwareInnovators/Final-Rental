@@ -87,15 +87,18 @@ export function updatePlayer(p, dt, input, ctx) {
   if (Math.abs(cz - nz) > 1e-6) p.vz *= 0.2;
   p.x = cx; p.z = cz;
 
+  // Reduced camera motion damps the head-bob and the walk-roll. The step
+  // rhythm (and its sound) is untouched -- only the visible sway shrinks.
+  const ms = input.motionScale == null ? 1 : input.motionScale;
   const sp = Math.hypot(p.vx, p.vz);
   if (sp > 0.25) {
     p.bobPhase += dt * (run ? 12.5 : 8.4);
-    p.bob = Math.sin(p.bobPhase) * (run ? 0.045 : 0.026);
-    p.roll = Math.cos(p.bobPhase * 0.5) * (run ? 0.014 : 0.008);
+    p.bob = Math.sin(p.bobPhase) * (run ? 0.045 : 0.026) * ms;
+    p.roll = Math.cos(p.bobPhase * 0.5) * (run ? 0.014 : 0.008) * ms;
     p.stepTimer -= dt * sp;
     if (p.stepTimer <= 0) { p.stepTimer = run ? 0.82 : 0.62; ctx.playerStep(run); }
   } else {
-    p.bob += (Math.sin(performance.now() * 0.0011) * 0.004 - p.bob) * Math.min(1, dt * 4);
+    p.bob += (Math.sin(performance.now() * 0.0011) * 0.004 * ms - p.bob) * Math.min(1, dt * 4);
     p.roll += (0 - p.roll) * Math.min(1, dt * 6);
   }
   return sp;

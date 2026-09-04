@@ -60,6 +60,19 @@ const STICKS = {
 let USER_BINDS = null;
 export function setPadBinds(binds) { USER_BINDS = binds || null; }
 
+/* The player's own keyboard caps, so a rebound key shows its real letter in
+   every prompt. Only the gameplay actions below are ever taken from here:
+   the menu keys (back, pause, the arrows) are deliberately fixed and must
+   keep their own caps, and several of those share a name with a movement
+   action (back = walk-back vs. cancel, left/right = strafe vs. menu arrow). */
+let KEYCAPS = null;
+export function setKeyCaps(caps) { KEYCAPS = caps || null; }
+const KEY_PROMPT = new Set(['interact', 'confirm', 'notes', 'drop', 'bolt', 'run']);
+function kbCap(action) {
+  if (KEYCAPS && KEY_PROMPT.has(action) && KEYCAPS[action]) return KEYCAPS[action];
+  return CAPS[action];
+}
+
 /* Prompts ask for "interact"; the binding table calls the same thing
    "confirm", because in a menu it is a select. One name, two words. */
 const ALIAS = { interact: 'confirm' };
@@ -108,11 +121,11 @@ export function glyph(action) {
     return `<span class="key btn ${ps ? stick[3] : stick[2]}">${ps ? stick[1] : stick[1]}</span>`;
   }
   if (SCHEME === 'kbm') {
-    const cap = CAPS[action];
+    const cap = kbCap(action);
     return `<span class="key">${cap || escape(String(action).toUpperCase())}</span>`;
   }
   const on = buttonsFor(action);
-  if (!on.length) return `<span class="key">${CAPS[action] || escape(String(action).toUpperCase())}</span>`;
+  if (!on.length) return `<span class="key">${kbCap(action) || escape(String(action).toUpperCase())}</span>`;
   /* An action can sit on more than one button -- sprint is on both
      triggers, and a player can put two jobs on one face button -- so say
      so rather than picking one and quietly being half right. Two is
@@ -124,9 +137,9 @@ export function glyph(action) {
 export function glyphText(action) {
   const stick = STICKS[action];
   if (stick) return SCHEME === 'kbm' ? stick[0] : stick[1];
-  if (SCHEME === 'kbm') return CAPS[action] || String(action).toUpperCase();
+  if (SCHEME === 'kbm') return kbCap(action) || String(action).toUpperCase();
   const on = buttonsFor(action);
-  if (!on.length) return CAPS[action] || String(action).toUpperCase();
+  if (!on.length) return kbCap(action) || String(action).toUpperCase();
   return on.slice(0, 2).map(padText).join('/');
 }
 
@@ -440,29 +453,60 @@ export function howToHtml() {
   <p class="pad-foot">${glyph('back')} back</p></div>`;
 }
 
-export function optionsHtml(o) {
-  const bar = (v) => `[${'#'.repeat(Math.round(v * 10)).padEnd(10, '.')}]`;
+/**
+ * The options menu, rendered from a list the game hands us.
+ *
+ * The rows -- their order, their values, and which ones are section headers
+ * -- are defined once in game.js (optRows) so the handler that reads the
+ * keys and this markup can never disagree about what row 8 is. Each row is
+ * { label, value, section?, quiet? }; a `section` row is a non-selectable
+ * heading. Selectable rows carry class "opt", in document order, which is
+ * exactly what panelSelect()/the handler count.
+ */
+export function optionsHtml(view) {
+  const rows = view.rows.map((r) => {
+    // Labels are plain text (escaped); values may carry markup (a bar, a
+    // "(none)" note), so they are not. `sub` indents a grouped row.
+    const pre = r.sub ? '&nbsp;&nbsp;' : '';
+    const val = r.value != null && r.value !== '' ? ` &nbsp; ${r.value}` : '';
+    return `<li class="opt">${pre}${escape(r.label)}${val}</li>`;
+  }).join('\n    ');
   return `<h2>OPTIONS</h2>
-  <ul>
-    <li class="opt sel">Look sensitivity &nbsp; ${bar(o.sens)}</li>
-    <li class="opt">Invert look &nbsp; ${o.invert ? 'ON' : 'OFF'}</li>
-    <li class="opt">Master volume &nbsp; ${bar(o.vol)}</li>
-    <li class="opt">&nbsp;&nbsp;Ambience &nbsp; ${bar(o.volAmb)}</li>
-    <li class="opt">&nbsp;&nbsp;Sound effects &nbsp; ${bar(o.volSfx)}</li>
-    <li class="opt">&nbsp;&nbsp;Voice / phone &nbsp; ${bar(o.volVoice)}</li>
-    <li class="opt">Internal resolution &nbsp; ${o.resLabel}</li>
-    <li class="opt">Polygon jitter &nbsp; ${o.snap ? 'PS1 (ON)' : 'SMOOTH'}</li>
-    <li class="opt">VHS tape &nbsp; ${o.vhs ? 'ON' : 'OFF &mdash; clean PS1'}</li>
-    <li class="opt">Tape damage &nbsp; ${bar(o.grain)}${o.vhs ? '' : ' <span class="quiet">(tape off)</span>'}</li>
-    <li class="opt">First-shift hints &nbsp; ${o.hints ? 'ON' : 'OFF'}</li>
-    <li class="opt">Reset first-shift hints</li>
-    <li class="opt">Controller${o.pad ? '' : ' <span class="quiet">(none connected)</span>'}</li>
-    <li class="opt">Back</li>
+  <ul class="opts">
+    ${rows}
   </ul>
   <p class="pad-foot">${glyph('left')}${glyph('right')} adjust &nbsp;&middot;&nbsp; ${glyph('confirm')} select &nbsp;&middot;&nbsp; ${glyph('back')} back</p>
-  <p class="pad-foot quiet">${o.pad
-    ? `Controller: ${escape(o.pad)}${o.padNeedsSetup ? ' &mdash; layout not recognized, set it up below' : ''}`
+  <p class="pad-foot quiet">${view.pad
+    ? `Controller: ${escape(view.pad)}${view.padNeedsSetup ? ' &mdash; layout not recognized, set it up below' : ''}`
     : 'No controller detected'}</p>`;
+}
+
+/**
+ * The keyboard screen -- the same idea as the controller one, but for keys.
+ *
+ * Each row is an action and the key it is on; highlight one and the next key
+ * you press takes it. The menu keys (the arrows, Enter, Escape) are never
+ * offered and always work, so you cannot strand yourself in here. Rows come
+ * in as { label, cap, capturing }.
+ */
+export function keyboardHtml(v) {
+  const row = (r) => {
+    const val = r.capturing
+      ? '<span class="k">press a key&hellip;</span>'
+      : `<span class="key">${escape(r.cap)}</span>`;
+    return `<li class="opt">${escape(r.label)} &nbsp; ${val}</li>`;
+  };
+  return `<h2>KEYBOARD</h2>
+  <p class="pad-foot">Rebind any action to another key. Movement can go anywhere;
+  the arrow keys always walk as well, so you are never stranded.</p>
+  <ul>
+    ${v.rows.map(row).join('\n    ')}
+    <li class="opt">Reset to defaults</li>
+    <li class="opt">Back</li>
+  </ul>
+  <p class="pad-foot quiet">Highlight a line with ${glyphText('up')}${glyphText('down')} and press the
+  key you want for it. The menu keys &mdash; the arrows, ENTER, ESC, 1&ndash;5 &mdash; cannot be
+  reassigned and always work. ESC leaves at any time.</p>`;
 }
 
 /**

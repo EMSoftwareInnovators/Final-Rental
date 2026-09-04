@@ -601,11 +601,11 @@ async function oddPad() {
   check('odd pad: a button the standard table does not know still works a menu',
     (await st()).state === 'OPTIONS', (await st()).state);
 
-  // Down to the Controller row and into it. (Options rows, in order: sens,
-  // invert, master, ambience, sfx, voice, resolution, jitter, VHS, tape damage,
-  // first-shift hints, reset hints, CONTROLLER, back -- so the pad row is 12.)
-  await ev(() => { window.__game.optSel = 12; window.__ui && 0; });
-  await ev(() => { window.__game.ui.panelSelect(12); });
+  // Down to the Controller row and into it. The options list has grown
+  // (accessibility rows, a keyboard screen), so find the row by label rather
+  // than counting -- that is exactly the kind of thing that drifts.
+  const ctrlRow = await ev(() => window.__game.optView().rows.findIndex((r) => r.label === 'Controller'));
+  await ev((idx) => { window.__game.optSel = idx; window.__game.ui.panelSelect(idx); }, ctrlRow);
   await tap(11);
   check('odd pad: the controller screen opens', (await st()).state === 'PADCFG', (await st()).state);
 

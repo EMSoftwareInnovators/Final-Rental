@@ -29,12 +29,15 @@ check('escape pauses', (await st()).s === 'PAUSE', (await st()).head);
 await page.keyboard.press('ArrowDown'); await page.waitForTimeout(120);
 await page.keyboard.press('Enter'); await page.waitForTimeout(300);
 check('options opens from pause', (await st()).s === 'OPTIONS', (await st()).head);
-// toggle the VHS filter while in there. Rows: 0 sens, 1 invert, 2 master,
-// 3 ambience, 4 sfx, 5 voice, 6 resolution, 7 jitter, 8 VHS -- so eight down.
-for (let i = 0; i < 8; i++) { await page.keyboard.press('ArrowDown'); await page.waitForTimeout(80); }
-await page.keyboard.press('Enter'); await page.waitForTimeout(200);
-const vhs = await page.evaluate(() => window.__game.opts.vhs);
-check('VHS toggles from the pause options', vhs === false);
+// cycle the VHS filter while in there. It is a three-way now -- FULL, REDUCED,
+// OFF -- so from FULL two presses of Enter reach OFF. Land on it by label
+// rather than counting rows, since the list has grown accessibility settings.
+const vhsRow = await page.evaluate(() => window.__game.optView().rows.findIndex((r) => r.label === 'VHS filter'));
+for (let i = 0; i < vhsRow; i++) { await page.keyboard.press('ArrowDown'); await page.waitForTimeout(80); }
+await page.keyboard.press('Enter'); await page.waitForTimeout(120);   // FULL -> REDUCED
+await page.keyboard.press('Enter'); await page.waitForTimeout(150);   // REDUCED -> OFF
+const vhs = await page.evaluate(() => ({ mode: window.__game.opts.vhsMode, flag: window.__game.opts.vhs }));
+check('VHS cycles to OFF from the pause options', vhs.mode === 'off' && vhs.flag === false, JSON.stringify(vhs));
 // back out: should land on the PAUSE menu, not the title
 await page.keyboard.press('Escape'); await page.waitForTimeout(300);
 let s2 = await st();
