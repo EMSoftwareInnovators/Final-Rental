@@ -13,7 +13,11 @@ const server = spawn(process.execPath, ['serve.cjs'], { stdio: 'ignore', env: { 
 await new Promise((r) => setTimeout(r, 700));
 
 let failed = 0;
-for (const t of ['tools/english.mjs', 'tools/pacing.mjs', 'tools/uvtest.mjs', 'tools/menuwalk.mjs', 'tools/campaign.mjs', 'tools/overtime.mjs', 'tools/padmenu.mjs', 'tools/phonelist.mjs', 'tools/lock.mjs', 'tools/deputy.mjs', 'tools/closing.mjs', 'tools/arrest.mjs', 'tools/sweep.mjs', 'tools/manager.mjs', 'tools/nuisance.mjs', 'tools/endings.mjs', 'tools/pizza.mjs', 'tools/popcorn.mjs', 'tools/bus.mjs', 'tools/soak.mjs', 'tools/specials.mjs', 'tools/playthrough.mjs']) {
+/* The desktop shell and its filesystem-save layer (tools/electron.mjs,
+   tools/desktopsave.mjs) need a real display; run those under xvfb with
+   `npm run check:app` and `npm run check:desktop`. This list is the
+   server-backed browser + pure-node suite. */
+for (const t of ['tools/english.mjs', 'tools/pacing.mjs', 'tools/uvtest.mjs', 'tools/storagefs.mjs', 'tools/storage.mjs', 'tools/menuwalk.mjs', 'tools/campaign.mjs', 'tools/overtime.mjs', 'tools/padmenu.mjs', 'tools/phonelist.mjs', 'tools/lock.mjs', 'tools/deputy.mjs', 'tools/closing.mjs', 'tools/arrest.mjs', 'tools/sweep.mjs', 'tools/manager.mjs', 'tools/nuisance.mjs', 'tools/endings.mjs', 'tools/pizza.mjs', 'tools/popcorn.mjs', 'tools/bus.mjs', 'tools/soak.mjs', 'tools/specials.mjs', 'tools/leak.mjs', 'tools/playthrough.mjs']) {
   console.log(`\n===== ${t} =====`);
   failed += await run(process.execPath, [t]);
 }

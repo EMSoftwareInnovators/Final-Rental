@@ -24,7 +24,12 @@ up, and whether there is anyone in the back.
 ## Running it
 
 ```bash
-npm start          # serves on http://localhost:8080
+npm install
+npm run dev          # web dev server on http://localhost:8080
+npm run dev:desktop  # the desktop app (Electron), from the repo
+npm test             # the browser + pure-node harness suite
+npm run build:web    # the itch.io web zip, into dist/
+npm run build:desktop  # desktop installers/archives for this platform, into dist/
 ```
 
 Then open <http://localhost:8080> and click to grab the mouse.
@@ -72,8 +77,63 @@ Cross-building is the usual Electron story: Windows and Linux artifacts build
 anywhere, macOS ones want a Mac (and want signing and notarizing if they are to
 open without a right-click on somebody else's machine).
 
-`npm run check:app` needs a display. On a headless box:
-`xvfb-run -a npm run check:app`.
+`npm run check:app` and `npm run check:desktop` need a display. On a headless
+box: `xvfb-run -a npm run check:app` and `xvfb-run -a npm run check:desktop`.
+The second launches the real app under a throwaway save directory and proves
+the filesystem saves, the localStorage→file migration, and the corruption
+recovery below.
+
+Signing and notarizing are not configured (unsigned local builds are fine to
+develop and test with); a Windows Authenticode certificate and an Apple
+Developer ID + notarization are what a public macOS/Windows release will need,
+and are the only thing between these archives and a double-click that does not
+warn.
+
+---
+
+## Saves
+
+Five independent save domains, each plain JSON. The game reaches them through
+one seam (`src/engine/storage.js`), so the gameplay code never knows which host
+it is on:
+
+| domain | file | holds |
+| --- | --- | --- |
+| `finalrental.campaign` | `campaign.json` | the active Story campaign |
+| `finalrental.profile`  | `profile.json`  | permanent completion + records |
+| `finalrental.overtime` | `overtime.json` | the active Overtime run |
+| `finalrental.prefs`    | `prefs.json`    | settings, tutorial state, keyboard |
+| `finalrental.padbinds` | `padbinds.json` | controller bindings |
+
+**Browser build:** these are `localStorage` keys, exactly as they always were.
+
+**Desktop build:** they are real files under the OS per-user app-data
+directory (`app.getPath('userData')/saves/`, never beside the executable, never
+needing admin rights), written by `electron/storage-fs.js`:
+
+- **Atomic writes.** A new save is written to a temp file, flushed, then renamed
+  over the real one — a crash leaves the whole old file or the whole new one.
+- **Last-known-good backup.** Each save keeps one previous good copy
+  (`campaign.backup.json`).
+- **Recovery.** On load, an unreadable primary falls back to its backup; if both
+  are gone the domain — and only that domain — resets to defaults. A corrupt
+  `prefs.json` never touches Story; a corrupt Overtime run never touches the
+  profile. The player is told, calmly, in the game's own panel.
+- **No silent loss.** A file that will not parse is kept as
+  `campaign.corrupt-<timestamp>.json` (capped at a few) before it is replaced.
+- **Migration.** A domain with no file but a valid legacy `localStorage` value
+  (from an earlier desktop build of this app) is written to a file once, then
+  the file wins forever — idempotent across relaunches. This cannot migrate
+  from the *browser/itch* build: that is a different origin the desktop app
+  cannot see, and it does not go looking.
+
+Window size, position and fullscreen live in `window.json` — a device setting,
+deliberately kept out of every gameplay save. A local log (message-only, no
+telemetry, rotated once) sits in `logs/`.
+
+The three files worth pointing a future Steam Cloud at are `campaign.json`,
+`profile.json` and `overtime.json`. Prefs and binds are arguably machine-local;
+`window.json` and `logs/` definitely are.
 
 ---
 

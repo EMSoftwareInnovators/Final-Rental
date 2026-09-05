@@ -7,6 +7,7 @@ import { Raster } from '../engine/raster.js';
 import { PostFX } from '../engine/postfx.js';
 import { Input, PAD_ACTIONS, BINDABLE, normaliseBinds, KEY_ACTIONS, KEY_BINDABLE, codeLabel } from '../engine/input.js';
 import { Sound } from '../engine/audio.js';
+import { storage } from '../engine/storage.js';
 import { buildTextures } from '../engine/texture.js';
 import { mat, mul, setPosYaw, setRotX, setRotY, setTranslate, invertRigid, clamp, angleTowards } from '../engine/mathx.js';
 import {
@@ -56,6 +57,9 @@ const ST = {
      records screen, its run-over summary, and the "abandon your run?" confirm.
      All retro panels, controller- and keyboard-navigable, not the shift. */
   OTMENU: 'OTMENU', OTRECORDS: 'OTRECORDS', OTSUMMARY: 'OTSUMMARY', OTNEW: 'OTNEW',
+  /* A calm one-off panel shown at boot if a save had to be recovered from
+     backup or reset after corruption (desktop build). Never a browser alert. */
+  NOTICE: 'NOTICE',
 };
 
 const RES = [[256, 192, '256x192'], [320, 240, '320x240'], [400, 300, '400x300']];
@@ -254,6 +258,10 @@ export class Game {
     this.staticFrame = 0; this.staticT = 0;
     this.shake = 0;
     this.motionScale = 1;   // reduced-motion multiplier, set by applyOptions
+    /* The desktop bridge (electron/preload.js), when this is the packaged/dev
+       desktop build; null in the browser. Only used for host-level things the
+       web build gets elsewhere: a Settings fullscreen toggle. */
+    this.desktop = (typeof window !== 'undefined' && window.finalRentalDesktop) || null;
     this.drawer = 0;
     this._lastTyped = -1;
   }
@@ -567,6 +575,7 @@ export class Game {
       case ST.OTRECORDS: this.updateOvertimeRecords(); break;
       case ST.OTSUMMARY: this.updateOvertimeSummary(); break;
       case ST.OTNEW: this.updateOvertimeNewConfirm(); break;
+      case ST.NOTICE: this.updateBootNotice(); break;
       case ST.REPORT: this.updateReport(dt); break;
       case ST.ENDING: this.updateEnding(dt); break;
       default: break;
@@ -1008,6 +1017,54 @@ export class Game {
     this.showOvertimeSummary();
   }
 
+  /* ---- boot recovery notice (desktop) ----
+     Calm, accurate, and never alarming: it tells the player exactly what the
+     save host had to do -- restore a file from its backup, or reset one domain
+     to defaults -- without a stack trace and without implying more was lost
+     than was. Shown once at boot, over the title, and dismissed to the title. */
+  showBootNotice(notices) {
+    const NAME = {
+      'finalrental.campaign': 'your Story campaign',
+      'finalrental.profile': 'your records and completion',
+      'finalrental.overtime': 'your Overtime run',
+      'finalrental.prefs': 'your settings',
+      'finalrental.padbinds': 'your controller bindings',
+    };
+    const nm = (n) => NAME[n.key] || 'a save';
+    const list = (arr) => arr.length <= 1 ? arr[0]
+      : arr.slice(0, -1).join(', ') + ' and ' + arr[arr.length - 1];
+    const cap = (s) => s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+    const recovered = notices.filter((n) => n.kind === 'recovered').map(nm);
+    const reset = notices.filter((n) => n.kind === 'reset');
+    const resetNames = reset.map(nm);
+    const lines = [];
+    if (recovered.length) {
+      lines.push(`<p>${cap(list(recovered))} could not be read this time and ${recovered.length > 1 ? 'were' : 'was'} restored from a backup. Nothing was lost.</p>`);
+    }
+    if (resetNames.length) {
+      lines.push(`<p>${cap(list(resetNames))} could not be read and ${resetNames.length > 1 ? 'were' : 'was'} set back to defaults. The unreadable file was kept, in case it can be looked at.</p>`);
+    }
+    // A reset of only the machine-side settings is not a "save" problem.
+    const onlySettings = reset.length && reset.every((n) => n.key === 'finalrental.prefs' || n.key === 'finalrental.padbinds');
+    const head = recovered.length ? 'SAVE RECOVERED' : (onlySettings ? 'SETTINGS RESET' : 'SAVE RESET');
+    this.state = ST.NOTICE;
+    this.ui.showPanel(`<h2>${head}</h2>
+      ${lines.join('\n      ')}
+      <ul><li class="opt sel">Continue</li></ul>
+      <p class="pad-foot">${this.ui.keyHint('confirm')} continue</p>`);
+    this.ui.panelSelect(0);
+    this._noticeT = 0;
+  }
+
+  updateBootNotice() {
+    this._noticeT = (this._noticeT || 0) + (1 / 60);
+    if (this._noticeT > 0.4 && (this.confirmOrClick() || this.backHit())) {
+      this.quietly(() => this.sound.uiSelect());
+      this.ui.hidePanel();
+      this.state = ST.TITLE; this.refreshTitleMenu();
+    }
+  }
+
   /* ---- Overtime front-end panels ---- */
 
   /** The rows of Overtime's own menu, as {label, run}. CONTINUE only appears
@@ -1194,6 +1251,15 @@ export class Game {
         enter: () => { o.res = (o.res + 1) % RES.length; this.layout(); apply(); },
       },
       { ...toggle('Polygon jitter', () => o.snap, (v) => { o.snap = v; }), value: o.snap ? 'PS1 (ON)' : 'SMOOTH' },
+      /* Desktop only: a discoverable fullscreen toggle driving the same native
+         fullscreen F11 does. The browser build gets fullscreen from its host
+         page (and cannot request it from a polled keypress anyway), so the row
+         is not shown there. */
+      ...(this.desktop ? [{
+        label: 'Fullscreen', value: this.desktop.isFullscreen() ? 'ON' : 'OFF',
+        left: () => { this.desktop.toggleFullscreen(); },
+        enter: () => { this.desktop.toggleFullscreen(); },
+      }] : []),
       cycle('VHS filter', () => o.vhsMode, (v) => { o.vhsMode = v; }, ['full', 'reduced', 'off'], (v) => vhsLabel[v] || 'FULL'),
       {
         ...slide('Tape damage', () => o.grain, (v) => { o.grain = v; }, 0, 1, true),
@@ -1455,13 +1521,13 @@ export class Game {
        they move -- otherwise rebinding sprint leaves the page describing
        where sprint used to be. */
     setPadBinds(this.input.bindsAreUser ? this.input.binds : null);
-    try { localStorage.setItem('finalrental.padbinds', JSON.stringify(this.input.binds)); }
+    try { storage.setItem('finalrental.padbinds', JSON.stringify(this.input.binds)); }
     catch (err) { /* private browsing, or no storage at all. Not fatal. */ }
   }
 
   loadPadBinds() {
     try {
-      const raw = localStorage.getItem('finalrental.padbinds');
+      const raw = storage.getItem('finalrental.padbinds');
       if (!raw) return;
       const b = JSON.parse(raw);
       if (b && typeof b === 'object' && Object.keys(b).length) {
@@ -1480,7 +1546,7 @@ export class Game {
      storage at all just means defaults. */
   loadPrefs() {
     try {
-      const raw = localStorage.getItem('finalrental.prefs');
+      const raw = storage.getItem('finalrental.prefs');
       if (!raw) return;
       const p = JSON.parse(raw);
       if (!p || typeof p !== 'object') return;
@@ -1510,7 +1576,7 @@ export class Game {
 
   savePrefs() {
     try {
-      localStorage.setItem('finalrental.prefs', JSON.stringify({
+      storage.setItem('finalrental.prefs', JSON.stringify({
         hintsEnabled: this.prefs.hintsEnabled,
         hintsSeen: this.prefs.hintsSeen,
         opts: this.opts,

@@ -4,18 +4,24 @@
   "private": true,
   "description": "FINAL RENTAL - a first-person PS1-era horror game set in a 1996 video rental store",
   "scripts": {
-    "start": "node serve.cjs",
     "dev": "node serve.cjs",
-    "check": "node tools/check.mjs",
+    "start": "node serve.cjs",
+    "dev:desktop": "electron .",
     "app": "electron .",
+    "test": "node tools/check.mjs",
+    "check": "node tools/check.mjs",
+    "check:app": "node tools/electron.mjs",
+    "check:desktop": "node tools/desktopsave.mjs",
+    "check:web": "node tools/embed.mjs",
+    "build:web": "node tools/web.mjs",
+    "web": "node tools/web.mjs",
+    "build:desktop": "electron-builder --publish never",
+    "pack:desktop": "electron-builder --dir --publish never",
     "dist": "electron-builder --publish never",
     "dist:win": "electron-builder --win --publish never",
     "dist:mac": "electron-builder --mac --publish never",
     "dist:linux": "electron-builder --linux --publish never",
-    "icon": "node tools/icon.mjs",
-    "check:app": "node tools/electron.mjs",
-    "web": "node tools/web.mjs",
-    "check:web": "node tools/embed.mjs"
+    "icon": "node tools/icon.mjs"
   },
   "engines": {
     "node": ">=18"

@@ -1,4 +1,6 @@
 node_modules/
 /shots/
-package-lock.json
+# Build output: the web zip and every desktop package/installer land here.
 dist/
+# Local desktop run data (saves, logs, window state) never lives in the repo;
+# it goes in the OS per-user app-data directory at runtime.

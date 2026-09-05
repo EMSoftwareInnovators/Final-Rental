@@ -26,6 +26,8 @@
    campaign save version and the overtime save version on purpose -- these
    are unrelated schemas and tying them together only creates false
    migrations. */
+import { storage } from '../engine/storage.js';
+
 export const PROFILE_VERSION = 1;
 
 const SAVE_KEY = 'finalrental.profile';
@@ -382,9 +384,7 @@ function nowIso() {
    is a fresh one, never a crash. localStorage can itself throw.
    ------------------------------------------------------------ */
 
-function store() {
-  try { return window.localStorage; } catch { return null; }
-}
+function store() { return storage; }   // engine/storage.js -- web localStorage or desktop FS
 
 /** Read the profile, always returning a valid one (fresh if absent/broken). */
 export function loadProfile() {

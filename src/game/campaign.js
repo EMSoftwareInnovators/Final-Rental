@@ -36,6 +36,8 @@
    arrests, and real use of storyFlags. A v2 save has neither; migrate() folds
    in an empty cases list and leaves storyFlags as it found it, so nothing is
    lost and the game simply reads "no arrests on record yet". */
+import { storage } from '../engine/storage.js';
+
 export const SAVE_VERSION = 3;
 
 /* Its own key. Deliberately nothing to do with 'finalrental.padbinds',
@@ -807,9 +809,11 @@ export function investigationPolicy(campaign, n) {
    ------------------------------------------------------------ */
 
 function store() {
-  // Reached through a getter so a throwing localStorage is caught, not
-  // thrown at module load.
-  try { return window.localStorage; } catch { return null; }
+  /* The one persistence seam (engine/storage.js). On the browser build this
+     is live localStorage exactly as before; on the desktop build it is the
+     filesystem save host. Same getItem/setItem/removeItem surface either way,
+     so nothing in this file had to change beyond this line. */
+  return storage;
 }
 
 /** Write the campaign. Called at night boundaries, never mid-shift. */

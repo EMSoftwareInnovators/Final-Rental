@@ -12,14 +12,94 @@
    ============================================================ */
 'use strict';
 
-const { app, BrowserWindow, Menu, protocol, screen, shell } = require('electron');
+const { app, BrowserWindow, Menu, protocol, screen, shell, ipcMain, dialog } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
+const storageFs = require('./storage-fs.js');
 
 /* Where the game's files are. In development that is the repo; in a
    packaged build it is inside app.asar, which fs reads straight through. */
 const ROOT = path.join(__dirname, '..');
 const DEV = !app.isPackaged;
+
+/* ------------------------------------------------------------
+   SAVES, DEVICE STATE, AND THE LOG all live under the OS's standard per-user
+   application-data directory (app.getPath('userData')) -- never beside the
+   executable, never needing administrator rights. The layout:
+
+     <userData>/
+       saves/      campaign.json, profile.json, overtime.json,
+                   prefs.json, padbinds.json  (+ .backup and .corrupt-* files)
+       logs/       current.log, previous.log
+       window.json the window's size/position/fullscreen (a device setting,
+                   deliberately NOT part of any gameplay save)
+
+   The save files are plain JSON with stable names, so a later Steam Cloud
+   configuration can target campaign/profile/overtime directly. */
+const SAVE_DIR = () => path.join(app.getPath('userData'), 'saves');
+const LOG_DIR = () => path.join(app.getPath('userData'), 'logs');
+
+/* ------------------------------------------------------------
+   LOGGING. A single local log, rotated once at startup when it gets large.
+   No telemetry, nothing uploaded, and deliberately no personal data: messages
+   only, never file contents, never keystrokes, never dialogue the player types.
+   ------------------------------------------------------------ */
+const LOG_MAX = 512 * 1024;   // rotate current -> previous past half a meg
+let logStream = null;
+
+function initLog() {
+  try {
+    fs.mkdirSync(LOG_DIR(), { recursive: true });
+    const current = path.join(LOG_DIR(), 'current.log');
+    try {
+      if (fs.statSync(current).size > LOG_MAX) {
+        fs.renameSync(current, path.join(LOG_DIR(), 'previous.log'));
+      }
+    } catch { /* no current log yet */ }
+    logStream = fs.createWriteStream(current, { flags: 'a' });
+    log(`--- Final Rental ${app.getVersion()} ${DEV ? 'dev' : 'production'} started ${new Date().toISOString()} ---`);
+  } catch { logStream = null; }
+}
+
+function log(message) {
+  const line = `[${new Date().toISOString()}] ${message}\n`;
+  try { if (logStream) logStream.write(line); } catch { /* logging must never throw */ }
+  if (DEV) { try { process.stdout.write(line); } catch { /* ignore */ } }
+}
+
+/* ------------------------------------------------------------
+   STORAGE IPC. The only bridge the renderer has (electron/preload.js), and it
+   is narrow: load all saves, write one, remove one, plus a production flag and
+   an error sink. Every key is validated inside storage-fs against the five
+   known domains, so an unexpected key reaches nothing. Writes are synchronous
+   (sendSync) and atomic, so there is nothing to flush at quit and no way for an
+   old write to overwrite a newer one.
+   ------------------------------------------------------------ */
+function registerStorageIpc() {
+  ipcMain.handle('storage:hydrate', (_e, legacyValues) => {
+    try { return storageFs.hydrate(SAVE_DIR(), legacyValues || null, log); }
+    catch (err) { log(`hydrate failed: ${err && err.message}`); return { values: {}, notices: [] }; }
+  });
+  ipcMain.on('storage:save', (e, key, value) => {
+    e.returnValue = storageFs.write(SAVE_DIR(), key, value, log);
+  });
+  ipcMain.on('storage:remove', (e, key) => {
+    try { storageFs.remove(SAVE_DIR(), key, log); } catch (err) { log(`remove failed: ${err && err.message}`); }
+    e.returnValue = true;
+  });
+  ipcMain.on('app:isProduction', (e) => { e.returnValue = !DEV; });
+  ipcMain.on('log:error', (_e, message) => log(`[renderer] ${message}`));
+  /* The Settings fullscreen toggle drives the same native fullscreen F11 does,
+     so there is only ever one fullscreen state on the desktop. */
+  ipcMain.on('window:toggle-fullscreen', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    if (w) w.setFullScreen(!w.isFullScreen());
+  });
+  ipcMain.on('window:is-fullscreen', (e) => {
+    const w = BrowserWindow.fromWebContents(e.sender);
+    e.returnValue = !!(w && w.isFullScreen());
+  });
+}
 
 /* ------------------------------------------------------------
    THE ORIGIN
@@ -171,6 +251,10 @@ function createWindow() {
     show: false,
     autoHideMenuBar: true,
     webPreferences: {
+      /* The one bridge: a sandboxed, context-isolated preload that exposes only
+         the save layer (load/save/remove) plus a production flag and an error
+         sink. No Node, no fs, no general IPC reaches the game. */
+      preload: path.join(__dirname, 'preload.js'),
       sandbox: true,
       contextIsolation: true,
       nodeIntegration: false,
@@ -192,8 +276,13 @@ function createWindow() {
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  let showingFatal = false;
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith(ORIGIN)) e.preventDefault();
+    // The game never navigates. The one exception is our own fatal-error page,
+    // a scriptless data: URL loaded from the main process below.
+    if (url.startsWith(ORIGIN)) return;
+    if (showingFatal && url.startsWith('data:text/html')) return;
+    e.preventDefault();
   });
 
   /* A game needs the mouse and, if it asks, the screen. It does not need
@@ -216,6 +305,27 @@ function createWindow() {
       win.webContents.toggleDevTools();
     }
   });
+
+  /* If the page cannot load or the renderer dies, do not leave a black window
+     with a console nobody opened. Log it and show a plain, friendly page that
+     points at the log -- never a Chromium error screen. */
+  const fatalPage = (what) => {
+    log(`renderer fatal: ${what}`);
+    const logPath = path.join(LOG_DIR(), 'current.log');
+    const html = `<!doctype html><meta charset=utf-8>
+      <body style="margin:0;background:#0a0704;color:#ffb641;font:16px/1.6 monospace;
+        display:grid;place-items:center;height:100vh;text-align:center">
+      <div><h1 style="letter-spacing:2px">FINAL RENTAL COULD NOT START</h1>
+      <p style="color:#8a5c17">Something went wrong loading the game.</p>
+      <p style="color:#5a5140;font-size:13px">A log was written to<br>${logPath.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>
+      </div></body>`;
+    showingFatal = true;
+    try { win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html)); win.show(); } catch { /* nothing more to do */ }
+  };
+  win.webContents.on('did-fail-load', (_e, code, desc, url) => {
+    if (url && url.startsWith(ORIGIN)) fatalPage(`did-fail-load ${code} ${desc}`);
+  });
+  win.webContents.on('render-process-gone', (_e, details) => fatalPage(`render-process-gone ${details && details.reason}`));
 
   win.once('ready-to-show', () => win.show());
 
@@ -251,7 +361,21 @@ if (!app.requestSingleInstanceLock()) {
      accelerators include reloading the page in the middle of a shift. */
   Menu.setApplicationMenu(null);
 
+  /* A fatal error in the main process before a window exists would otherwise
+     surface as a raw Chromium/Node crash. Catch it, write it to the log, and
+     tell the player calmly where to look -- no stack trace as the UX. */
+  process.on('uncaughtException', (err) => {
+    log(`FATAL main-process error: ${err && err.stack ? err.stack : err}`);
+    try {
+      dialog.showErrorBox('Final Rental could not start',
+        `Something went wrong starting the game.\n\nA log was written to:\n${path.join(LOG_DIR(), 'current.log')}`);
+    } catch { /* if even that fails, the log is the record */ }
+    app.quit();
+  });
+
   app.whenReady().then(() => {
+    initLog();
+    registerStorageIpc();
     serveGameFiles();
     createWindow();
     // macOS: clicking the dock icon with no window open opens one.

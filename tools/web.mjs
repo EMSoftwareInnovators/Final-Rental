@@ -10,7 +10,7 @@
  * common way one of these gets rejected.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdirSync, rmSync, cpSync, existsSync, statSync } from 'node:fs';
+import { mkdirSync, rmSync, cpSync, existsSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const OUT = 'dist';
@@ -24,8 +24,17 @@ mkdirSync(STAGE, { recursive: true });
 
 /* index.html at the root, and the game beside it. Nothing else: the tests,
    the tools, the screenshots, the dev server and the desktop shell are all
-   irrelevant to a browser and would only be served to anyone who asked. */
-cpSync('index.html', path.join(STAGE, 'index.html'));
+   irrelevant to a browser and would only be served to anyone who asked.
+
+   The one change from the repo copy: a production marker injected into <head>,
+   so the shipped web build hides its debug globals (window.__game, the
+   timeScale fast-forward, every test hook) exactly as the packaged desktop
+   build does. The repo index.html carries no marker, so the dev server and the
+   whole test suite stay in development mode. */
+const PROD_MARK = '<script>window.__FR_PROD__=true;</script>';
+let html = readFileSync('index.html', 'utf8');
+if (!html.includes('__FR_PROD__')) html = html.replace('</head>', `  ${PROD_MARK}\n</head>`);
+writeFileSync(path.join(STAGE, 'index.html'), html);
 cpSync('src', path.join(STAGE, 'src'), { recursive: true });
 
 /* Zipped from inside the staging folder so the paths in the archive start

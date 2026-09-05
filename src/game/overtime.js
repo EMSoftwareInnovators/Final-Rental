@@ -25,6 +25,8 @@
    ============================================================ */
 
 /* Independent of the campaign and profile save versions -- unrelated schema. */
+import { storage } from '../engine/storage.js';
+
 export const OVERTIME_VERSION = 1;
 
 const SAVE_KEY = 'finalrental.overtime';
@@ -218,9 +220,7 @@ export function bankShift(run, result = {}) {
    Storage. Fails soft, same discipline as campaign.js / profile.js.
    ------------------------------------------------------------ */
 
-function store() {
-  try { return window.localStorage; } catch { return null; }
-}
+function store() { return storage; }   // engine/storage.js -- web localStorage or desktop FS
 
 /** Write the active run. Called at shift boundaries, never mid-shift. */
 export function saveOvertimeRun(run) {
